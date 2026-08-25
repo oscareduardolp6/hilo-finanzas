@@ -8,9 +8,11 @@ Ideas y funcionalidades que queremos agregar a Hilo, una por archivo. No es un b
 | --- | --- | --- |
 | [Visualización de escritorio](desktop-view.md) | 1 | Implementada |
 | [Migrar a IndexedDB (o similar) para guardado local](local-storage-migration.md) | 2 | Pendiente |
-| [Sincronizar escritorio y móvil](desktop-mobile-sync.md) | 3 | Pendiente |
-| [Importar backups de Monefy](monefy-import.md) | 4 | Pendiente |
-| [Reconocimiento de tickets de súper](receipt-ocr.md) | 5 | Pendiente |
+| [Instalar como PWA](pwa-install.md) | 3 | Pendiente |
+| [Sincronizar escritorio y móvil](desktop-mobile-sync.md) | 4 | Pendiente |
+| [Modo de presupuesto](budget-mode.md) | 5 | Pendiente |
+| [Importar backups de Monefy](monefy-import.md) | 6 | Pendiente |
+| [Reconocimiento de tickets de súper](receipt-ocr.md) | 7 | Pendiente |
 
 ## Formato
 

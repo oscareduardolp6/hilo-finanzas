@@ -1,6 +1,6 @@
 ---
 status: pendiente
-priority: 3
+priority: 4
 ---
 
 # Sincronizar escritorio y móvil
