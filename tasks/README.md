@@ -7,7 +7,7 @@ Ideas y funcionalidades que queremos agregar a Hilo, una por archivo. No es un b
 | Task | Prioridad | Status |
 | --- | --- | --- |
 | [Visualización de escritorio](desktop-view.md) | 1 | Implementada |
-| [Migrar a IndexedDB (o similar) para guardado local](local-storage-migration.md) | 2 | Pendiente |
+| [Migrar a IndexedDB (o similar) para guardado local](local-storage-migration.md) | 2 | Implementada |
 | [Instalar como PWA](pwa-install.md) | 3 | Pendiente |
 | [Sincronizar escritorio y móvil](desktop-mobile-sync.md) | 4 | Pendiente |
 | [Modo de presupuesto](budget-mode.md) | 5 | Pendiente |

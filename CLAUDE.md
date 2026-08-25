@@ -8,16 +8,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Product direction: local-only SPA, no backend
 
-The intent, at least for now, is for Hilo to stay a **client-only single-page app with no backend**. There is no server, no API, no sync — everything a user enters should be stored **locally in their own browser**. The persistence mechanism is not finalized yet (IndexedDB is the leading candidate over plain `localStorage`, given the amount of structured data), so don't assume a specific storage API is settled — check [hilo-finanzas.jsx](hilo-finanzas.jsx) for the current implementation before relying on it.
+The intent, at least for now, is for Hilo to stay a **client-only single-page app with no backend**. There is no server, no API, no sync — everything a user enters is stored **locally in their own browser**, via IndexedDB (native `indexedDB` API, no wrapper library — see `openDb`/`loadState`/`saveState` in [hilo-finanzas.jsx](hilo-finanzas.jsx)). This is what makes the app work as a real local tool in a normal browser (dev build or eventually a deployed static build), independent of any host.
 
-Right now the component still uses `window.storage.get` / `window.storage.set`, the **Claude Artifact host API** — not `localStorage`/IndexedDB and not a backend. This only works when the file is rendered inside a published Claude Artifact; when run via the local dev server (see below), those calls fail silently and nothing persists across reloads (there is no in-app warning about this — it's expected while the app only runs as an Artifact or in local dev). Migrating this to a real browser-local storage mechanism (IndexedDB or similar) is expected future work, not yet done.
+The app is no longer designed to run as a Claude Artifact — that mode was only used early on to prototype and validate the idea, and is not maintained going forward. Pasting the file into an Artifact or React sandbox still renders the UI for a quick visual check, but nothing will persist there (no `window.storage` fallback). See [tasks/local-storage-migration.md](tasks/local-storage-migration.md) and [agents/plans/local-storage-migration.md](agents/plans/local-storage-migration.md) for why the migration dropped Artifact support instead of keeping a dual path.
 
 ### Running it
 
-Two ways to view the app, both driven by the same [hilo-finanzas.jsx](hilo-finanzas.jsx):
-
-- **Local dev (this repo has a minimal Vite scaffold for it)** — see [README.md](README.md) for setup. This is a real local toolchain (`package.json`, Vite, Tailwind build) that mounts `App` from `hilo-finanzas.jsx` into `src/main.jsx`; it's plumbing only, not part of the app's own architecture. Data won't persist between reloads yet (see above).
-- **As a Claude Artifact** — publish `hilo-finanzas.jsx` as an Artifact to get working persistence via `window.storage`, or paste it into a React sandbox with `lucide-react` and `recharts` available for a quick visual check without installing anything.
+The app runs via the **local dev toolchain** (this repo has a minimal Vite scaffold for it) — see [README.md](README.md) for setup. This is a real local toolchain (`package.json`, Vite, Tailwind build) that mounts `App` from `hilo-finanzas.jsx` into `src/main.jsx`; it's plumbing only, not part of the app's own architecture. Data persists across reloads via IndexedDB, in both desktop and mobile browsers.
 
 ## Architecture
 
@@ -46,8 +43,8 @@ Above `max-w-md` on a narrow viewport (< 1024px), `App` renders the mobile tree 
 
 ### State flow
 
-- Load: on mount, `App` reads `STORAGE_KEY` (`hilo_finanzas_data_v1`) from `window.storage`, hydrating `accounts`/`categories`/`transactions`/`installmentPlans` if present, else keeps the seeded demo data.
-- Save: a single `useEffect` watches all four collections and writes the whole state back to `window.storage` as one JSON blob on every change (post-load).
+- Load: on mount, `App` reads the state blob (keyed by `STORAGE_KEY`, `hilo_finanzas_data_v1`) from the `state` object store in the `hilo_finanzas` IndexedDB database via `loadState()`, hydrating `accounts`/`categories`/`transactions`/`installmentPlans` if present, else keeps the seeded demo data.
+- Save: a single `useEffect` watches all four collections and writes the whole state back via `saveState()` on every change (post-load); a failed write (IndexedDB unavailable or erroring) surfaces as a `Toast`, it no longer fails silently.
 - All month-scoped views (`HomeView`, totals, `categoryTotals`) filter by `monthKey(monthCursor)` (`YYYY-MM` prefix match on `date`); `HistoryView` can additionally toggle `showAllTime` and filter by type/category/store.
 - Editing a transaction reuses `AddTransactionSheet` with `editingId` set; deleting requires an inline confirm step (`confirmDelete`) rather than a browser `confirm()`.
 

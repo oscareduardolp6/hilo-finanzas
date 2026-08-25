@@ -92,6 +92,39 @@ const DEFAULT_ACCOUNTS = [
 
 const STORAGE_KEY = 'hilo_finanzas_data_v1';
 
+const DB_NAME = 'hilo_finanzas';
+const DB_VERSION = 1;
+const STORE_NAME = 'state';
+
+function openDb() {
+  return new Promise((resolve, reject) => {
+    if (!('indexedDB' in window)) { reject(new Error('IndexedDB no disponible')); return; }
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => { req.result.createObjectStore(STORE_NAME); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function loadState() {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(STORAGE_KEY);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveState(data) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put(data, STORAGE_KEY);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 const NAV_ITEMS = [
   { id: 'home', label: 'Inicio', icon: LayoutGrid },
   { id: 'history', label: 'Historial', icon: Receipt },
@@ -1849,9 +1882,8 @@ export default function App() {
     let mounted = true;
     (async () => {
       try {
-        const res = await window.storage.get(STORAGE_KEY);
-        if (mounted && res && res.value) {
-          const data = JSON.parse(res.value);
+        const data = await loadState();
+        if (mounted && data) {
           if (data.accounts) setAccounts(data.accounts);
           if (data.categories) setCategories(data.categories);
           if (data.transactions) setTransactions(data.transactions);
@@ -1870,9 +1902,9 @@ export default function App() {
     if (!loaded) return;
     (async () => {
       try {
-        await window.storage.set(STORAGE_KEY, JSON.stringify({ accounts, categories, transactions, installmentPlans }));
+        await saveState({ accounts, categories, transactions, installmentPlans });
       } catch (e) {
-        // sin window.storage (p. ej. en dev local): no persiste, pero no rompe la UI
+        setToast('No se pudo guardar el cambio localmente');
       }
     })();
   }, [accounts, categories, transactions, installmentPlans, loaded]);
