@@ -92,9 +92,32 @@ const DEFAULT_ACCOUNTS = [
 
 const STORAGE_KEY = 'hilo_finanzas_data_v1';
 
+const NAV_ITEMS = [
+  { id: 'home', label: 'Inicio', icon: LayoutGrid },
+  { id: 'history', label: 'Historial', icon: Receipt },
+  { id: 'msi', label: 'MSI', icon: Layers },
+  { id: 'accounts', label: 'Cuentas', icon: Landmark },
+];
+
+const DESKTOP_BREAKPOINT = 1024; // Tailwind `lg` — layout de escritorio (ver DesktopShell)
+
 /* ------------------------------------------------------------------ */
 /* Helpers                                                              */
 /* ------------------------------------------------------------------ */
+
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth >= DESKTOP_BREAKPOINT
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(min-width: ${DESKTOP_BREAKPOINT}px)`);
+    const handler = (e) => setIsDesktop(e.matches);
+    setIsDesktop(mq.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+  return isDesktop;
+}
 
 function uid(prefix) {
   return `${prefix || 'id'}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -226,7 +249,16 @@ function GlobalStyles() {
   );
 }
 
-function SheetOverlay({ onClose, children }) {
+function SheetOverlay({ onClose, children, desktop }) {
+  if (desktop) {
+    return (
+      <div className="fixed inset-0 z-30 flex items-center justify-center hilo-overlay p-6" style={{ backgroundColor: 'rgba(0,0,0,0.55)' }} onClick={onClose}>
+        <div className="hilo-sheet rounded-3xl overflow-y-auto hilo-scroll w-full max-w-lg" style={{ backgroundColor: COLORS.surface, maxHeight: '88vh' }} onClick={e => e.stopPropagation()}>
+          {children}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="absolute inset-0 z-30 flex flex-col justify-end hilo-overlay" style={{ backgroundColor: 'rgba(0,0,0,0.55)' }} onClick={onClose}>
       <div className="hilo-sheet rounded-t-3xl overflow-y-auto hilo-scroll" style={{ backgroundColor: COLORS.surface, maxHeight: '88%' }} onClick={e => e.stopPropagation()}>
@@ -236,9 +268,15 @@ function SheetOverlay({ onClose, children }) {
   );
 }
 
-function Toast({ message }) {
+function Toast({ message, desktop }) {
+  const className = desktop
+    ? 'fixed z-50 rounded-xl px-4 py-3 shadow-lg flex items-center gap-2'
+    : 'absolute left-5 right-5 z-50 rounded-xl px-4 py-3 shadow-lg flex items-center gap-2';
+  const style = desktop
+    ? { bottom: 24, right: 24, backgroundColor: COLORS.elevated, border: `1px solid ${COLORS.borderStrong}` }
+    : { top: 16, backgroundColor: COLORS.elevated, border: `1px solid ${COLORS.borderStrong}` };
   return (
-    <div className="absolute left-5 right-5 z-50 rounded-xl px-4 py-3 shadow-lg flex items-center gap-2" style={{ top: 16, backgroundColor: COLORS.elevated, border: `1px solid ${COLORS.borderStrong}` }}>
+    <div className={className} style={style}>
       <Check size={15} style={{ color: COLORS.income }} />
       <span className="text-sm" style={{ color: COLORS.text }}>{message}</span>
     </div>
@@ -607,15 +645,9 @@ function TransactionRow({ txn, accounts, categories, plans, onClick }) {
 }
 
 function BottomNav({ active, onChange }) {
-  const items = [
-    { id: 'home', label: 'Inicio', icon: LayoutGrid },
-    { id: 'history', label: 'Historial', icon: Receipt },
-    { id: 'msi', label: 'MSI', icon: Layers },
-    { id: 'accounts', label: 'Cuentas', icon: Landmark },
-  ];
   return (
     <div className="flex items-center justify-around border-t px-1 py-2 shrink-0" style={{ backgroundColor: COLORS.surface, borderColor: COLORS.border }}>
-      {items.map(it => {
+      {NAV_ITEMS.map(it => {
         const Icon = it.icon;
         const isActive = active === it.id;
         return (
@@ -878,10 +910,298 @@ function MsiView({ plans, progress, categories, onAdd, onOpenPlan }) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Desktop views                                                       */
+/* ------------------------------------------------------------------ */
+/* Árbol de componentes paralelo al de arriba, usado solo cuando useIsDesktop()
+   es true (ver DesktopShell). Aprovecha el ancho con grids multi-columna en
+   vez de reflowear las vistas móviles; mismas firmas de props que sus
+   contrapartes móviles para poder recibir los mismos datos derivados de App
+   sin transformarlos. */
+
+function DesktopSidebar({ active, onChange, onOpenSettings, onAddTransaction }) {
+  return (
+    <div className="w-60 shrink-0 h-full flex flex-col border-r px-4 py-6" style={{ backgroundColor: COLORS.surface, borderColor: COLORS.border }}>
+      <div className="px-2 mb-8">
+        <h1 className="text-xl font-semibold font-display leading-tight" style={{ color: COLORS.text }}>Hilo</h1>
+        <p className="text-xs" style={{ color: COLORS.textMuted }}>Control de gastos</p>
+      </div>
+      <button onClick={onAddTransaction} className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold mb-6" style={{ backgroundColor: COLORS.accent, color: COLORS.bg }}>
+        <Plus size={16} /> Nueva transacción
+      </button>
+      <nav className="flex-1 space-y-1">
+        {NAV_ITEMS.map(it => {
+          const Icon = it.icon;
+          const isActive = active === it.id;
+          return (
+            <button key={it.id} onClick={() => onChange(it.id)} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium" style={{ backgroundColor: isActive ? COLORS.accentSoft : 'transparent', color: isActive ? COLORS.accent : COLORS.textMuted }}>
+              <Icon size={18} />
+              {it.label}
+            </button>
+          );
+        })}
+      </nav>
+      <button onClick={onOpenSettings} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium" style={{ color: COLORS.textMuted }}>
+        <Settings size={18} /> Ajustes
+      </button>
+    </div>
+  );
+}
+
+function HomeViewDesktop({ monthCursor, onPrevMonth, onNextMonth, totalBalance, totalIncome, totalExpense, categoryTotals, accounts, balances, recentTxns, categories, installmentPlans, planProgress, onSliceClick, onSeeAll, onSeeMsi, onOpenMsiPlan, onOpenTxn }) {
+  const activePlans = installmentPlans.filter(p => !(planProgress[p.id] && planProgress[p.id].isPaidOff));
+  return (
+    <div className="grid grid-cols-3 gap-6">
+      <div className="col-span-2 space-y-6">
+        <div className="rounded-2xl p-6" style={{ backgroundColor: COLORS.surface }}>
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-xs" style={{ color: COLORS.textMuted }}>Saldo total</p>
+              <p className="font-mono-custom font-bold text-4xl mt-1" style={{ color: COLORS.text }}>{formatMoney(totalBalance)}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={onPrevMonth} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: COLORS.surfaceAlt }}>
+                <ChevronLeft size={15} style={{ color: COLORS.textMuted }} />
+              </button>
+              <p className="text-sm font-medium w-32 text-center" style={{ color: COLORS.text }}>{monthLabel(monthCursor)}</p>
+              <button onClick={onNextMonth} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: COLORS.surfaceAlt }}>
+                <ChevronRight size={15} style={{ color: COLORS.textMuted }} />
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4 mt-5">
+            <div className="rounded-xl p-4" style={{ backgroundColor: COLORS.incomeSoft }}>
+              <div className="flex items-center gap-1">
+                <ArrowUpRight size={14} style={{ color: COLORS.income }} />
+                <span className="text-xs" style={{ color: COLORS.income }}>Ingresos</span>
+              </div>
+              <p className="font-mono-custom font-semibold text-lg mt-1" style={{ color: COLORS.income }}>{formatMoney(totalIncome)}</p>
+            </div>
+            <div className="rounded-xl p-4" style={{ backgroundColor: COLORS.expenseSoft }}>
+              <div className="flex items-center gap-1">
+                <ArrowDownRight size={14} style={{ color: COLORS.expense }} />
+                <span className="text-xs" style={{ color: COLORS.expense }}>Gastos</span>
+              </div>
+              <p className="font-mono-custom font-semibold text-lg mt-1" style={{ color: COLORS.expense }}>{formatMoney(totalExpense)}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl p-6" style={{ backgroundColor: COLORS.surface }}>
+          <p className="text-sm font-semibold font-display mb-3" style={{ color: COLORS.text }}>Gastos por categoría</p>
+          <ExpenseDonut data={categoryTotals} total={totalExpense} onSliceClick={onSliceClick} />
+        </div>
+
+        <div className="rounded-2xl p-6" style={{ backgroundColor: COLORS.surface }}>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-semibold font-display" style={{ color: COLORS.text }}>Movimientos recientes</p>
+            <button onClick={onSeeAll} className="text-xs font-medium" style={{ color: COLORS.accent }}>Ver todo</button>
+          </div>
+          {recentTxns.length === 0 ? (
+            <EmptyState text="Aún no hay movimientos este mes." />
+          ) : (
+            <div>
+              {recentTxns.map(t => <TransactionRow key={t.id} txn={t} accounts={accounts} categories={categories} plans={installmentPlans} onClick={() => onOpenTxn(t)} />)}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-6">
+        <div className="rounded-2xl p-5" style={{ backgroundColor: COLORS.surface }}>
+          <p className="text-sm font-semibold font-display mb-3" style={{ color: COLORS.text }}>Cuentas</p>
+          <div className="grid grid-cols-2 gap-3">
+            {accounts.map(a => {
+              const typeInfo = ACCOUNT_TYPES.find(t => t.id === a.type) || ACCOUNT_TYPES[ACCOUNT_TYPES.length - 1];
+              const TypeIcon = typeInfo.icon;
+              const bal = balances[a.id] || 0;
+              return (
+                <div key={a.id} className="rounded-xl p-3" style={{ backgroundColor: COLORS.surfaceAlt }}>
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center mb-2" style={{ backgroundColor: a.color + '26' }}>
+                    <TypeIcon size={15} style={{ color: a.color }} />
+                  </div>
+                  <p className="text-xs truncate" style={{ color: COLORS.textMuted }}>{a.name}</p>
+                  <p className="font-mono-custom text-sm font-semibold mt-0.5" style={{ color: bal < 0 ? COLORS.expense : COLORS.text }}>{formatMoney(bal)}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {activePlans.length > 0 && (
+          <div className="rounded-2xl p-5" style={{ backgroundColor: COLORS.surface }}>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-semibold font-display" style={{ color: COLORS.text }}>Compras a meses</p>
+              <button onClick={onSeeMsi} className="text-xs font-medium" style={{ color: COLORS.accent }}>Ver todo</button>
+            </div>
+            <div className="space-y-2">
+              {activePlans.slice(0, 4).map(p => (
+                <MsiPlanCard key={p.id} plan={p} progress={planProgress[p.id]} categories={categories} onClick={() => onOpenMsiPlan(p)} />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function HistoryViewDesktop({ transactions, accounts, categories, installmentPlans, knownStores, monthCursor, onPrevMonth, onNextMonth, showAllTime, setShowAllTime, filterType, setFilterType, filterCategory, setFilterCategory, filterStore, setFilterStore, onOpenTxn }) {
+  const filtered = useMemo(() => {
+    let list = transactions;
+    if (!showAllTime) {
+      const key = monthKey(monthCursor);
+      list = list.filter(t => t.date && t.date.startsWith(key));
+    }
+    if (filterType === 'msi') list = list.filter(t => !!t.installmentPlanId);
+    else if (filterType !== 'all') list = list.filter(t => t.type === filterType);
+    if (filterCategory !== 'all') {
+      list = list.filter(t =>
+        (t.type === 'expense' && t.categoryId === filterCategory) ||
+        (t.type === 'income' && t.categoryId === filterCategory) ||
+        (t.type === 'transfer' && t.taggedAsExpense && t.categoryId === filterCategory)
+      );
+    }
+    if (filterStore !== 'all') list = list.filter(t => t.store === filterStore);
+    return list;
+  }, [transactions, showAllTime, monthCursor, filterType, filterCategory, filterStore]);
+
+  const groups = groupByDate(filtered);
+  const expenseCats = categories.filter(c => c.type === 'expense');
+  const typeFilters = [
+    { id: 'all', label: 'Todos' },
+    { id: 'expense', label: 'Gastos' },
+    { id: 'income', label: 'Ingresos' },
+    { id: 'transfer', label: 'Transferencias' },
+    { id: 'msi', label: 'MSI' },
+  ];
+
+  return (
+    <div className="rounded-2xl p-6" style={{ backgroundColor: COLORS.surface }}>
+      <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex items-center gap-2">
+          <button onClick={onPrevMonth} disabled={showAllTime} className="w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-30" style={{ backgroundColor: COLORS.surfaceAlt }}>
+            <ChevronLeft size={15} style={{ color: COLORS.textMuted }} />
+          </button>
+          <p className="text-sm font-medium w-32 text-center" style={{ color: COLORS.text }}>{showAllTime ? 'Todo el tiempo' : monthLabel(monthCursor)}</p>
+          <button onClick={onNextMonth} disabled={showAllTime} className="w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-30" style={{ backgroundColor: COLORS.surfaceAlt }}>
+            <ChevronRight size={15} style={{ color: COLORS.textMuted }} />
+          </button>
+        </div>
+        <button onClick={() => setShowAllTime(s => !s)} className="text-xs font-medium" style={{ color: COLORS.accent }}>
+          {showAllTime ? 'Ver por mes' : 'Ver todo el tiempo'}
+        </button>
+        <div className="flex-1" />
+        <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }}>
+          <option value="all">Todas las categorías</option>
+          {expenseCats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <select value={filterStore} onChange={e => setFilterStore(e.target.value)} className="px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }}>
+          <option value="all">Todas las tiendas</option>
+          {knownStores.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </div>
+
+      <div className="flex gap-2 mt-4">
+        {typeFilters.map(f => (
+          <button key={f.id} onClick={() => setFilterType(f.id)} className="px-3 py-1.5 rounded-full text-xs font-medium" style={{ backgroundColor: filterType === f.id ? COLORS.accent : COLORS.surfaceAlt, color: filterType === f.id ? COLORS.bg : COLORS.textMuted }}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-5">
+        {groups.length === 0 ? (
+          <EmptyState text="No hay movimientos con estos filtros." />
+        ) : groups.map(([label, list]) => (
+          <div key={label} className="mt-4 first:mt-0">
+            <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: COLORS.textFaint }}>{label}</p>
+            {list.map(t => <TransactionRow key={t.id} txn={t} accounts={accounts} categories={categories} plans={installmentPlans} onClick={() => onOpenTxn(t)} />)}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AccountsViewDesktop({ accounts, balances, onAdd, onEdit }) {
+  const total = Object.values(balances).reduce((s, v) => s + v, 0);
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm font-semibold font-display" style={{ color: COLORS.text }}>Tus cuentas</p>
+        <button onClick={onAdd} className="flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-full" style={{ backgroundColor: COLORS.accentSoft, color: COLORS.accent }}>
+          <Plus size={13} /> Agregar
+        </button>
+      </div>
+      <div className="grid grid-cols-3 gap-4">
+        {accounts.map(a => {
+          const typeInfo = ACCOUNT_TYPES.find(t => t.id === a.type) || ACCOUNT_TYPES[ACCOUNT_TYPES.length - 1];
+          const TypeIcon = typeInfo.icon;
+          const bal = balances[a.id] || 0;
+          return (
+            <button key={a.id} onClick={() => onEdit(a)} className="text-left p-5 rounded-2xl" style={{ backgroundColor: COLORS.surface }}>
+              <div className="w-11 h-11 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: a.color + '26' }}>
+                <TypeIcon size={19} style={{ color: a.color }} />
+              </div>
+              <p className="text-sm font-medium" style={{ color: COLORS.text }}>{a.name}</p>
+              <p className="text-xs mt-0.5" style={{ color: COLORS.textMuted }}>{typeInfo.label}</p>
+              <p className="font-mono-custom text-lg font-semibold mt-3" style={{ color: bal < 0 ? COLORS.expense : COLORS.text }}>{formatMoney(bal)}</p>
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-6 rounded-xl p-4 inline-block" style={{ backgroundColor: COLORS.surfaceAlt }}>
+        <p className="text-xs" style={{ color: COLORS.textMuted }}>Saldo total</p>
+        <p className="font-mono-custom font-semibold text-lg mt-0.5" style={{ color: COLORS.text }}>{formatMoney(total)}</p>
+      </div>
+    </div>
+  );
+}
+
+function MsiViewDesktop({ plans, progress, categories, onAdd, onOpenPlan }) {
+  const active = plans.filter(p => !(progress[p.id] && progress[p.id].isPaidOff)).sort((a, b) => b.createdAt - a.createdAt);
+  const completed = plans.filter(p => progress[p.id] && progress[p.id].isPaidOff).sort((a, b) => b.createdAt - a.createdAt);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-sm font-semibold font-display" style={{ color: COLORS.text }}>Compras a meses (MSI)</p>
+        <button onClick={onAdd} className="flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-full" style={{ backgroundColor: COLORS.accentSoft, color: COLORS.accent }}>
+          <Plus size={13} /> Nuevo
+        </button>
+      </div>
+      <p className="text-xs mb-4" style={{ color: COLORS.textFaint }}>Cada pago que hagas se resta del total automáticamente, aunque no sea un pago completo.</p>
+
+      {active.length === 0 && completed.length === 0 ? (
+        <EmptyState text="Aún no registras compras a meses. Usa + Nuevo, o marca una transferencia como pago de MSI." />
+      ) : (
+        <>
+          {active.length === 0 ? (
+            <EmptyState text="No tienes MSI activos por pagar." />
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              {active.map(p => <MsiPlanCard key={p.id} plan={p} progress={progress[p.id]} categories={categories} onClick={() => onOpenPlan(p)} />)}
+            </div>
+          )}
+          {completed.length > 0 && (
+            <div className="mt-6">
+              <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: COLORS.textFaint }}>Ya pagados</p>
+              <div className="grid grid-cols-2 gap-3">
+                {completed.map(p => <MsiPlanCard key={p.id} plan={p} progress={progress[p.id]} categories={categories} onClick={() => onOpenPlan(p)} muted />)}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Modals / sheets                                                      */
 /* ------------------------------------------------------------------ */
 
-function AddTransactionSheet({ formType, editingId, form, setForm, accounts, categories, plans, planProgress, knownStores, onClose, onSave, onDelete, onSwitchType, onCreateCategory, onCreatePlan }) {
+function AddTransactionSheet({ formType, editingId, form, setForm, accounts, categories, plans, planProgress, knownStores, onClose, onSave, onDelete, onSwitchType, onCreateCategory, onCreatePlan, desktop }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [expenseMode, setExpenseMode] = useState(form && form.installmentPlanId ? 'msi' : 'single');
   if (!form) return null;
@@ -927,7 +1247,7 @@ function AddTransactionSheet({ formType, editingId, form, setForm, accounts, cat
   const toOptions = accounts.filter(a => a.id !== form.fromAccountId);
 
   return (
-    <SheetOverlay onClose={onClose}>
+    <SheetOverlay onClose={onClose} desktop={desktop}>
       <div className="px-5 pt-4 pb-1 flex items-center justify-between">
         <p className="text-lg font-semibold font-display" style={{ color: COLORS.text }}>
           {editingId ? `Editar ${typeMeta[formType].label.toLowerCase()}` : 'Nuevo movimiento'}
@@ -1105,7 +1425,7 @@ function AddTransactionSheet({ formType, editingId, form, setForm, accounts, cat
   );
 }
 
-function AccountFormModal({ account, canDelete, onClose, onSave, onDelete }) {
+function AccountFormModal({ account, canDelete, onClose, onSave, onDelete, desktop }) {
   const [name, setName] = useState(account ? account.name : '');
   const [type, setType] = useState(account ? account.type : 'debito');
   const [color, setColor] = useState(account ? account.color : CATEGORY_PALETTE[0]);
@@ -1115,7 +1435,7 @@ function AccountFormModal({ account, canDelete, onClose, onSave, onDelete }) {
   const isValid = name.trim().length > 0;
 
   return (
-    <SheetOverlay onClose={onClose}>
+    <SheetOverlay onClose={onClose} desktop={desktop}>
       <div className="px-5 pt-4 pb-1 flex items-center justify-between">
         <p className="text-lg font-semibold font-display" style={{ color: COLORS.text }}>{account ? 'Editar cuenta' : 'Nueva cuenta'}</p>
         <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: COLORS.surfaceAlt }}>
@@ -1187,7 +1507,7 @@ function AccountFormModal({ account, canDelete, onClose, onSave, onDelete }) {
   );
 }
 
-function MsiPlanModal({ plan, progress, payments, categories, knownStores, onClose, onSave, onDelete, onCreateCategory }) {
+function MsiPlanModal({ plan, progress, payments, categories, knownStores, onClose, onSave, onDelete, onCreateCategory, desktop }) {
   const [description, setDescription] = useState(plan ? plan.description : '');
   const [store, setStore] = useState(plan ? (plan.store || '') : '');
   const [totalAmount, setTotalAmount] = useState(plan ? String(plan.totalAmount) : '');
@@ -1204,7 +1524,7 @@ function MsiPlanModal({ plan, progress, payments, categories, knownStores, onClo
   }
 
   return (
-    <SheetOverlay onClose={onClose}>
+    <SheetOverlay onClose={onClose} desktop={desktop}>
       <div className="px-5 pt-4 pb-1 flex items-center justify-between">
         <p className="text-lg font-semibold font-display" style={{ color: COLORS.text }}>{plan ? 'Editar plan MSI' : 'Nuevo plan MSI'}</p>
         <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: COLORS.surfaceAlt }}>
@@ -1303,10 +1623,10 @@ function MsiPlanModal({ plan, progress, payments, categories, knownStores, onClo
   );
 }
 
-function SettingsModal({ onClose, onResetTransactions }) {
+function SettingsModal({ onClose, onResetTransactions, desktop }) {
   const [confirmingReset, setConfirmingReset] = useState(false);
   return (
-    <SheetOverlay onClose={onClose}>
+    <SheetOverlay onClose={onClose} desktop={desktop}>
       <div className="px-5 pt-4 pb-1 flex items-center justify-between">
         <p className="text-lg font-semibold font-display" style={{ color: COLORS.text }}>Ajustes</p>
         <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: COLORS.surfaceAlt }}>
@@ -1339,12 +1659,168 @@ function SettingsModal({ onClose, onResetTransactions }) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Desktop shell                                                       */
+/* ------------------------------------------------------------------ */
+/* Layout raíz de escritorio: sidebar fijo + área principal ancha, montado por
+   App cuando useIsDesktop() es true, en vez del árbol móvil (max-w-md +
+   BottomNav). Recibe el mismo estado/handlers que App ya pasa al árbol móvil
+   — ver el bloque `if (isDesktop)` en App más abajo. */
+
+function DesktopShell(props) {
+  const {
+    activeTab, setActiveTab,
+    monthCursor, onPrevMonth, onNextMonth,
+    totalBalance, totalIncome, totalExpense, categoryTotals,
+    accounts, balances, recentTxns, categories, installmentPlans, planProgress,
+    onSliceClick, onOpenMsiPlan, onOpenTxn,
+    transactions, knownStores,
+    showAllTime, setShowAllTime, filterType, setFilterType, filterCategory, setFilterCategory, filterStore, setFilterStore,
+    onAddAccount, onEditAccount,
+    onAddPlan,
+    onOpenAddSheet, onOpenSettings,
+    sheetOpen, formType, editingId, form, setForm, onCloseSheet, onSaveTransaction, onDeleteTransaction, onSwitchFormType, onCreateCategory, onCreatePlan,
+    accountModalOpen, editingAccount, onCloseAccountModal, onSaveAccount, onDeleteAccount, accountCanDelete,
+    msiModalOpen, editingPlan, msiPayments, onCloseMsiModal, onSavePlan, onDeletePlan,
+    settingsOpen, onCloseSettings, onResetTransactions,
+    toast,
+  } = props;
+
+  const tabTitles = { home: 'Inicio', history: 'Historial', msi: 'Compras a meses', accounts: 'Cuentas' };
+
+  return (
+    <div className="w-full h-screen flex" style={{ backgroundColor: COLORS.bg, fontFamily: "'Inter', sans-serif" }}>
+      <GlobalStyles />
+      <DesktopSidebar active={activeTab} onChange={setActiveTab} onOpenSettings={onOpenSettings} onAddTransaction={() => onOpenAddSheet('expense')} />
+
+      <div className="flex-1 h-full overflow-y-auto hilo-scroll relative">
+        <div className="max-w-6xl mx-auto px-10 py-8">
+          <h2 className="text-2xl font-semibold font-display mb-6" style={{ color: COLORS.text }}>{tabTitles[activeTab]}</h2>
+
+          {activeTab === 'home' && (
+            <HomeViewDesktop
+              monthCursor={monthCursor}
+              onPrevMonth={onPrevMonth}
+              onNextMonth={onNextMonth}
+              totalBalance={totalBalance}
+              totalIncome={totalIncome}
+              totalExpense={totalExpense}
+              categoryTotals={categoryTotals}
+              accounts={accounts}
+              balances={balances}
+              recentTxns={recentTxns}
+              categories={categories}
+              installmentPlans={installmentPlans}
+              planProgress={planProgress}
+              onSliceClick={onSliceClick}
+              onSeeAll={() => setActiveTab('history')}
+              onSeeMsi={() => setActiveTab('msi')}
+              onOpenMsiPlan={onOpenMsiPlan}
+              onOpenTxn={onOpenTxn}
+            />
+          )}
+          {activeTab === 'history' && (
+            <HistoryViewDesktop
+              transactions={transactions}
+              accounts={accounts}
+              categories={categories}
+              installmentPlans={installmentPlans}
+              knownStores={knownStores}
+              monthCursor={monthCursor}
+              onPrevMonth={onPrevMonth}
+              onNextMonth={onNextMonth}
+              showAllTime={showAllTime}
+              setShowAllTime={setShowAllTime}
+              filterType={filterType}
+              setFilterType={setFilterType}
+              filterCategory={filterCategory}
+              setFilterCategory={setFilterCategory}
+              filterStore={filterStore}
+              setFilterStore={setFilterStore}
+              onOpenTxn={onOpenTxn}
+            />
+          )}
+          {activeTab === 'msi' && (
+            <MsiViewDesktop
+              plans={installmentPlans}
+              progress={planProgress}
+              categories={categories}
+              onAdd={onAddPlan}
+              onOpenPlan={onOpenMsiPlan}
+            />
+          )}
+          {activeTab === 'accounts' && (
+            <AccountsViewDesktop
+              accounts={accounts}
+              balances={balances}
+              onAdd={onAddAccount}
+              onEdit={onEditAccount}
+            />
+          )}
+        </div>
+
+        {toast && <Toast message={toast} desktop />}
+      </div>
+
+      {sheetOpen && (
+        <AddTransactionSheet
+          formType={formType}
+          editingId={editingId}
+          form={form}
+          setForm={setForm}
+          accounts={accounts}
+          categories={categories}
+          plans={installmentPlans}
+          planProgress={planProgress}
+          knownStores={knownStores}
+          onClose={onCloseSheet}
+          onSave={onSaveTransaction}
+          onDelete={onDeleteTransaction}
+          onSwitchType={onSwitchFormType}
+          onCreateCategory={onCreateCategory}
+          onCreatePlan={onCreatePlan}
+          desktop
+        />
+      )}
+
+      {accountModalOpen && (
+        <AccountFormModal
+          account={editingAccount}
+          canDelete={accountCanDelete}
+          onClose={onCloseAccountModal}
+          onSave={onSaveAccount}
+          onDelete={onDeleteAccount}
+          desktop
+        />
+      )}
+
+      {msiModalOpen && (
+        <MsiPlanModal
+          plan={editingPlan}
+          progress={editingPlan ? planProgress[editingPlan.id] : null}
+          payments={msiPayments}
+          categories={categories.filter(c => c.type === 'expense')}
+          knownStores={knownStores}
+          onClose={onCloseMsiModal}
+          onSave={onSavePlan}
+          onDelete={onDeletePlan}
+          onCreateCategory={onCreateCategory}
+          desktop
+        />
+      )}
+
+      {settingsOpen && (
+        <SettingsModal onClose={onCloseSettings} onResetTransactions={onResetTransactions} desktop />
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* App                                                                  */
 /* ------------------------------------------------------------------ */
 
 export default function App() {
   const [loaded, setLoaded] = useState(false);
-  const [saveError, setSaveError] = useState(false);
   const [accounts, setAccounts] = useState(DEFAULT_ACCOUNTS);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [transactions, setTransactions] = useState(() => buildDefaultTransactions());
@@ -1395,9 +1871,8 @@ export default function App() {
     (async () => {
       try {
         await window.storage.set(STORAGE_KEY, JSON.stringify({ accounts, categories, transactions, installmentPlans }));
-        setSaveError(false);
       } catch (e) {
-        setSaveError(true);
+        // sin window.storage (p. ej. en dev local): no persiste, pero no rompe la UI
       }
     })();
   }, [accounts, categories, transactions, installmentPlans, loaded]);
@@ -1473,6 +1948,8 @@ export default function App() {
     installmentPlans.forEach(p => { if (p.store) set.add(p.store); });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [transactions, installmentPlans]);
+
+  const isDesktop = useIsDesktop();
 
   function prevMonth() { setMonthCursor(d => { const nd = new Date(d); nd.setMonth(nd.getMonth() - 1); return nd; }); }
   function nextMonth() { setMonthCursor(d => { const nd = new Date(d); nd.setMonth(nd.getMonth() + 1); return nd; }); }
@@ -1605,6 +2082,73 @@ export default function App() {
     );
   }
 
+  if (isDesktop) {
+    return (
+      <DesktopShell
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        monthCursor={monthCursor}
+        onPrevMonth={prevMonth}
+        onNextMonth={nextMonth}
+        totalBalance={totalBalance}
+        totalIncome={totalIncome}
+        totalExpense={totalExpense}
+        categoryTotals={categoryTotals}
+        accounts={accounts}
+        balances={balances}
+        recentTxns={recentTxns}
+        categories={categories}
+        installmentPlans={installmentPlans}
+        planProgress={planProgress}
+        onSliceClick={handleSliceClick}
+        onOpenMsiPlan={(p) => { setEditingPlan(p); setMsiModalOpen(true); }}
+        onOpenTxn={openEditSheet}
+        transactions={transactions}
+        knownStores={knownStores}
+        showAllTime={showAllTime}
+        setShowAllTime={setShowAllTime}
+        filterType={filterType}
+        setFilterType={setFilterType}
+        filterCategory={filterCategory}
+        setFilterCategory={setFilterCategory}
+        filterStore={filterStore}
+        setFilterStore={setFilterStore}
+        onAddAccount={() => { setEditingAccount(null); setAccountModalOpen(true); }}
+        onEditAccount={(a) => { setEditingAccount(a); setAccountModalOpen(true); }}
+        onAddPlan={() => { setEditingPlan(null); setMsiModalOpen(true); }}
+        onOpenAddSheet={openAddSheet}
+        onOpenSettings={() => setSettingsOpen(true)}
+        sheetOpen={sheetOpen}
+        formType={formType}
+        editingId={editingId}
+        form={form}
+        setForm={setForm}
+        onCloseSheet={closeSheet}
+        onSaveTransaction={handleSaveTransaction}
+        onDeleteTransaction={handleDeleteTransaction}
+        onSwitchFormType={(t) => { setFormType(t); setForm(initialFormState(t, accounts, categories)); }}
+        onCreateCategory={handleCreateCategory}
+        onCreatePlan={handleCreatePlan}
+        accountModalOpen={accountModalOpen}
+        editingAccount={editingAccount}
+        onCloseAccountModal={() => { setAccountModalOpen(false); setEditingAccount(null); }}
+        onSaveAccount={handleSaveAccount}
+        onDeleteAccount={() => editingAccount && handleDeleteAccount(editingAccount.id)}
+        accountCanDelete={editingAccount ? !accountHasTransactions(editingAccount.id) : false}
+        msiModalOpen={msiModalOpen}
+        editingPlan={editingPlan}
+        msiPayments={editingPlan ? transactions.filter(t => t.installmentPlanId === editingPlan.id).sort((a, b) => b.date.localeCompare(a.date)) : []}
+        onCloseMsiModal={() => { setMsiModalOpen(false); setEditingPlan(null); }}
+        onSavePlan={handleSavePlan}
+        onDeletePlan={() => editingPlan && handleDeletePlan(editingPlan.id)}
+        settingsOpen={settingsOpen}
+        onCloseSettings={() => setSettingsOpen(false)}
+        onResetTransactions={handleResetTransactions}
+        toast={toast}
+      />
+    );
+  }
+
   return (
     <div className="w-full h-screen flex justify-center" style={{ backgroundColor: COLORS.bg }}>
       <div className="relative w-full max-w-md h-full flex flex-col overflow-hidden" style={{ backgroundColor: COLORS.bg, fontFamily: "'Inter', sans-serif" }}>
@@ -1619,12 +2163,6 @@ export default function App() {
             <Settings size={16} style={{ color: COLORS.textMuted }} />
           </button>
         </div>
-
-        {saveError && (
-          <div className="mx-5 mb-2 px-3 py-2 rounded-lg text-xs shrink-0" style={{ backgroundColor: COLORS.expenseSoft, color: COLORS.expense }}>
-            Tus cambios no se están guardando: esto es normal hasta que publiques el artifact (botón "Publish" arriba). También requiere un plan Pro, Max, Team o Enterprise.
-          </div>
-        )}
 
         <div className="flex-1 overflow-y-auto hilo-scroll px-5 pb-24">
           {activeTab === 'home' && (

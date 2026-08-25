@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The intent, at least for now, is for Hilo to stay a **client-only single-page app with no backend**. There is no server, no API, no sync — everything a user enters should be stored **locally in their own browser**. The persistence mechanism is not finalized yet (IndexedDB is the leading candidate over plain `localStorage`, given the amount of structured data), so don't assume a specific storage API is settled — check [hilo-finanzas.jsx](hilo-finanzas.jsx) for the current implementation before relying on it.
 
-Right now the component still uses `window.storage.get` / `window.storage.set`, the **Claude Artifact host API** — not `localStorage`/IndexedDB and not a backend. This only works when the file is rendered inside a published Claude Artifact (see the `saveError` banner logic near the end of the file); when run via the local dev server (see below), those calls fail silently and nothing persists across reloads. Migrating this to a real browser-local storage mechanism (IndexedDB or similar) is expected future work, not yet done.
+Right now the component still uses `window.storage.get` / `window.storage.set`, the **Claude Artifact host API** — not `localStorage`/IndexedDB and not a backend. This only works when the file is rendered inside a published Claude Artifact; when run via the local dev server (see below), those calls fail silently and nothing persists across reloads (there is no in-app warning about this — it's expected while the app only runs as an Artifact or in local dev). Migrating this to a real browser-local storage mechanism (IndexedDB or similar) is expected future work, not yet done.
 
 ### Running it
 
@@ -30,6 +30,10 @@ Everything lives in [hilo-finanzas.jsx](hilo-finanzas.jsx), organized top-to-bot
 5. **Modals/sheets** — `AddTransactionSheet` (create/edit expense, income, or transfer), `AccountFormModal`, `MsiPlanModal`, `SettingsModal`.
 6. **`App`** (default export) — owns *all* state (accounts, categories, transactions, installmentPlans, UI/nav/filter state, open modals) and every derived value via `useMemo`; passes data and callbacks down as props. There is no context, no reducer, no external state library — just one big component tree fed from the top.
 
+### Desktop layout
+
+Above `max-w-md` on a narrow viewport (< 1024px), `App` renders the mobile tree described above unchanged. At `>= 1024px` (`useIsDesktop()`, a `matchMedia` hook), `App` early-returns a **separate, parallel component tree** instead: `DesktopShell` (sidebar nav + wide main area) composing `DesktopSidebar` and `HomeViewDesktop`/`HistoryViewDesktop`/`AccountsViewDesktop`/`MsiViewDesktop` — desktop-specific layouts (multi-column grids, more visible at once) that accept the *same props* as their mobile counterparts, so `App`'s state/derived-data layer doesn't change at all between the two. `SheetOverlay` and `Toast` take a `desktop` prop to switch from mobile bottom-sheet/toast positioning to a centered modal / corner toast; the four modal components (`AddTransactionSheet`, `AccountFormModal`, `MsiPlanModal`, `SettingsModal`) just forward it through. Both trees stay in this one file — see [tasks/desktop-view.md](tasks/desktop-view.md) and [agents/plans/desktop-view.md](agents/plans/desktop-view.md) for why a separate tree was chosen over a single responsive one.
+
 ### Domain model
 
 - **Accounts** (`accounts`): `{ id, name, type, color, initialBalance }`. Balance is never stored — `computeAccountBalance` derives it by folding over all transactions every render.
@@ -46,3 +50,11 @@ Everything lives in [hilo-finanzas.jsx](hilo-finanzas.jsx), organized top-to-bot
 - Save: a single `useEffect` watches all four collections and writes the whole state back to `window.storage` as one JSON blob on every change (post-load).
 - All month-scoped views (`HomeView`, totals, `categoryTotals`) filter by `monthKey(monthCursor)` (`YYYY-MM` prefix match on `date`); `HistoryView` can additionally toggle `showAllTime` and filter by type/category/store.
 - Editing a transaction reuses `AddTransactionSheet` with `editingId` set; deleting requires an inline confirm step (`confirmDelete`) rather than a browser `confirm()`.
+
+## Keeping specs and plans in sync with the code
+
+Implementation plans for tasks live in `agents/plans/`, generally one file per entry in `tasks/` (e.g. [agents/plans/desktop-view.md](agents/plans/desktop-view.md) implements [tasks/desktop-view.md](tasks/desktop-view.md)).
+
+A plan is a snapshot of the intended approach at the time it was written. If the implementation ends up deviating from it, or a later change touches code a plan describes, **update that plan file in the same change** so it reflects current reality — don't leave it stale. A plan that no longer matches the code is worse than no plan at all, since it actively misleads whoever reads it next (human or Claude).
+
+When a task is finished: update its plan as above, flip its `status` in `tasks/<name>.md` frontmatter (vocabulary in [tasks/README.md](tasks/README.md): `pendiente` / `en-progreso` / `implementada`), and reflect that status change in the table in `tasks/README.md`.

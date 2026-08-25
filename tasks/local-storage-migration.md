@@ -17,4 +17,4 @@ Importante: **no se trata de sincronizar datos entre dispositivos.** La meta es 
 
 - IndexedDB directo vs. una librería wrapper (p. ej. `idb`) para no lidiar con la API de bajo nivel a mano.
 - Si vale la pena versionar el esquema de guardado desde ahora (para futuras migraciones), o mantenerlo simple mientras el modelo de datos siga cambiando.
-- Qué pasa con el banner de `saveError` actual (pensado para el mensaje específico de Artifacts) una vez que el guardado ya no dependa de `window.storage`.
+- Si vale la pena un indicador de error de guardado una vez que el guardado ya no dependa de `window.storage` (el banner específico de Artifacts que existía se quitó — ver [hilo-finanzas.jsx](../hilo-finanzas.jsx)).
