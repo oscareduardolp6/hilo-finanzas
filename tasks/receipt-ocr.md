@@ -1,6 +1,6 @@
 ---
 status: pendiente
-priority: 3
+priority: 5
 ---
 
 # Reconocimiento de tickets de súper
