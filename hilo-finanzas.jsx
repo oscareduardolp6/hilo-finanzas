@@ -226,7 +226,7 @@ function initialFormState(type, accounts, categories) {
   const incomeCats = categories.filter(c => c.type === 'income');
   const base = { date: todayIso(), description: '', amount: '', store: '' };
   if (type === 'expense') {
-    return { ...base, accountId: accounts[0] ? accounts[0].id : '', categoryId: expenseCats[0] ? expenseCats[0].id : '' };
+    return { ...base, accountId: accounts[0] ? accounts[0].id : '', categoryId: expenseCats[0] ? expenseCats[0].id : '', installmentPlanId: null, size: '', brand: '', quantity: '' };
   }
   if (type === 'income') {
     return { ...base, accountId: accounts[0] ? accounts[0].id : '', categoryId: incomeCats[0] ? incomeCats[0].id : '' };
@@ -384,6 +384,32 @@ function guessCategoryIcon(name) {
   return 'MoreHorizontal';
 }
 
+/* Convención personal de Oscar en Monefy (opcional, no es un feature de
+   Monefy): "Base (N/D)" marca el progreso de un pago a meses (él lleva sus
+   cuentas quincenales, así que un pago cuenta como medio "mes"), y todo lo
+   que sigue -por guiones- son "lugar - tamaño - marca - cantidad". Ambos
+   patrones comparten el mismo separador, así que una sola función cubre los
+   dos casos (con y sin fracción). */
+const OSCAR_FRACTION_RE = /[(\[]\s*([0-9]+(?:\.[0-9]+)?)\s*\/\s*([0-9]+)\s*[)\]]/;
+
+function parseOscarDescription(raw) {
+  const text = raw || '';
+  const m = text.match(OSCAR_FRACTION_RE);
+  let base, rest, numerator = null, denominator = null;
+  if (m) {
+    base = text.slice(0, m.index).trim();
+    rest = text.slice(m.index + m[0].length).replace(/^[\s-]+/, '').trim();
+    numerator = parseFloat(m[1]);
+    denominator = parseInt(m[2], 10);
+  } else {
+    const parts = text.split(' - ');
+    base = parts[0].trim();
+    rest = parts.slice(1).join(' - ').trim();
+  }
+  const [store, size, brand, quantity] = rest ? rest.split(' - ').map(s => s.trim()).filter(Boolean) : [];
+  return { description: base || text.trim(), store: store || '', size: size || '', brand: brand || '', quantity: quantity || '', numerator, denominator };
+}
+
 function buildMonefyImportPreview(rows) {
   const accountsByName = new Map();
   function ensureAccount(name, appearsDirectly) {
@@ -417,8 +443,33 @@ function buildMonefyImportPreview(rows) {
       ensureAccount(row.otherAccount, false);
       fromRows.push(row);
     } else {
-      plain.push({ date: row.date, accountName: row.account, categoryName: row.category, type: row.amount < 0 ? 'expense' : 'income', amount: row.amount, description: row.description });
+      plain.push({ date: row.date, accountName: row.account, categoryName: row.category, type: row.amount < 0 ? 'expense' : 'income', amount: row.amount, description: row.description, _idx: plain.length, oscarParsed: parseOscarDescription(row.description) });
     }
+  }
+
+  const msiSeries = new Map();
+  const seriesRows = new Map();
+  for (const p of plain) {
+    if (p.type !== 'expense' || p.oscarParsed.numerator == null) continue;
+    const key = `${p.accountName}||${p.oscarParsed.description.toLowerCase()}||${p.oscarParsed.denominator}`;
+    if (!seriesRows.has(key)) seriesRows.set(key, []);
+    seriesRows.get(key).push(p);
+  }
+  for (const [key, entries] of seriesRows) {
+    entries.sort((a, b) => a.date.localeCompare(b.date) || a._idx - b._idx);
+    const categoryCounts = new Map();
+    for (const e of entries) categoryCounts.set(e.categoryName, (categoryCounts.get(e.categoryName) || 0) + 1);
+    let categoryName = entries[0].categoryName;
+    let bestCount = 0;
+    for (const [c, n] of categoryCounts) { if (n > bestCount) { bestCount = n; categoryName = c; } }
+    let store = '';
+    for (const e of entries) { if (e.oscarParsed.store) { store = e.oscarParsed.store; break; } }
+    const paidSoFar = entries.reduce((s, e) => s + Math.abs(e.amount), 0);
+    const finalNumerator = entries[entries.length - 1].oscarParsed.numerator;
+    const denominator = entries[0].oscarParsed.denominator;
+    const totalAmount = finalNumerator > 0 ? paidSoFar * denominator / finalNumerator : paidSoFar;
+    msiSeries.set(key, { accountName: entries[0].accountName, description: entries[0].oscarParsed.description, store, categoryName, installmentsCount: denominator, totalAmount, startDate: entries[0].date });
+    for (const e of entries) e._msiSeriesKey = key;
   }
 
   function pairKey(date, amount, fromName, toName) {
@@ -441,12 +492,12 @@ function buildMonefyImportPreview(rows) {
       const toRow = queue.shift();
       transfers.push({ date: row.date, fromName: row.otherAccount, toName: row.account, amount: Math.abs(row.amount), description: row.description || toRow.description });
     } else {
-      degraded.push({ date: row.date, accountName: row.account, categoryName: MONEFY_TRANSFER_CATEGORY, type: 'income', amount: Math.abs(row.amount), description: row.description });
+      degraded.push({ date: row.date, accountName: row.account, categoryName: MONEFY_TRANSFER_CATEGORY, type: 'income', amount: Math.abs(row.amount), description: row.description, oscarParsed: parseOscarDescription(row.description) });
     }
   }
   for (const queue of toQueues.values()) {
     for (const row of queue) {
-      degraded.push({ date: row.date, accountName: row.account, categoryName: MONEFY_TRANSFER_CATEGORY, type: 'expense', amount: Math.abs(row.amount), description: row.description });
+      degraded.push({ date: row.date, accountName: row.account, categoryName: MONEFY_TRANSFER_CATEGORY, type: 'expense', amount: Math.abs(row.amount), description: row.description, oscarParsed: parseOscarDescription(row.description) });
     }
   }
 
@@ -456,11 +507,16 @@ function buildMonefyImportPreview(rows) {
     transactionCount: plain.length + degraded.length + transfers.length,
     transferCount: transfers.length,
     initialBalances,
-    skeleton: { plain: [...plain, ...degraded], transfers },
+    skeleton: { plain: [...plain, ...degraded], transfers, msiSeries },
+    oscarConvention: {
+      seriesCount: msiSeries.size,
+      transactionsWithFraction: plain.filter(p => p.oscarParsed.numerator != null).length,
+      transactionsWithDash: plain.filter(p => p.oscarParsed.store || p.oscarParsed.size || p.oscarParsed.brand || p.oscarParsed.quantity).length,
+    },
   };
 }
 
-function buildMonefyImportPlan(skeleton, initialBalances, { accountDecisions, existingAccounts, existingCategories }) {
+function buildMonefyImportPlan(skeleton, initialBalances, { accountDecisions, existingAccounts, existingCategories, useOscarConvention }) {
   const accountsToAdd = [];
   const categoriesToAdd = [];
   const newAccountIds = new Map();
@@ -507,18 +563,44 @@ function buildMonefyImportPlan(skeleton, initialBalances, { accountDecisions, ex
   }
 
   const transactions = [];
+  const installmentPlansToAdd = [];
   const baseCreatedAt = Date.now();
   let seq = 0;
+
+  const planBySeriesKey = new Map();
+  if (useOscarConvention && skeleton.msiSeries) {
+    for (const [key, series] of skeleton.msiSeries) {
+      const catId = categoryIdFor(series.categoryName, 'expense');
+      const planId = uid('msi');
+      installmentPlansToAdd.push({
+        id: planId, description: series.description, store: series.store,
+        totalAmount: series.totalAmount, installmentsCount: series.installmentsCount,
+        categoryId: catId, startDate: series.startDate, createdAt: baseCreatedAt + (seq++),
+      });
+      planBySeriesKey.set(key, { id: planId, categoryId: catId });
+    }
+  }
 
   for (const row of skeleton.plain) {
     const accountId = accountIdFor(row.accountName);
     if (!accountId) continue;
-    const categoryId = categoryIdFor(row.categoryName, row.type);
-    transactions.push({
+    const plan = useOscarConvention && row._msiSeriesKey ? planBySeriesKey.get(row._msiSeriesKey) : null;
+    const categoryId = plan ? plan.categoryId : categoryIdFor(row.categoryName, row.type);
+    const useOscar = useOscarConvention && row.oscarParsed;
+    const txn = {
       id: uid('txn'), type: row.type, accountId, categoryId,
-      amount: Math.abs(row.amount), date: row.date, description: row.description, store: '',
+      amount: Math.abs(row.amount), date: row.date,
+      description: useOscar ? row.oscarParsed.description : row.description,
+      store: useOscar ? (row.oscarParsed.store || '') : '',
       createdAt: baseCreatedAt + (seq++),
-    });
+    };
+    if (row.type === 'expense') {
+      txn.installmentPlanId = plan ? plan.id : null;
+      txn.size = useOscar ? (row.oscarParsed.size || null) : null;
+      txn.brand = useOscar ? (row.oscarParsed.brand || null) : null;
+      txn.quantity = useOscar ? (row.oscarParsed.quantity || null) : null;
+    }
+    transactions.push(txn);
   }
 
   for (const row of skeleton.transfers) {
@@ -540,7 +622,7 @@ function buildMonefyImportPlan(skeleton, initialBalances, { accountDecisions, ex
     }
   }
 
-  return { accountsToAdd, categoriesToAdd, transactions };
+  return { accountsToAdd, categoriesToAdd, installmentPlansToAdd, transactions };
 }
 
 /* ------------------------------------------------------------------ */
@@ -947,6 +1029,7 @@ function TransactionRow({ txn, accounts, categories, plans, onClick }) {
   const cat = categories.find(c => c.id === txn.categoryId);
   const Icon = IconFor(cat ? cat.icon : null);
   const isExpense = txn.type === 'expense';
+  const plan = txn.installmentPlanId ? (plans || []).find(p => p.id === txn.installmentPlanId) : null;
   return (
     <button onClick={onClick} className="w-full flex items-start gap-3 py-3 border-b text-left" style={{ borderColor: COLORS.border }}>
       <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: (cat ? cat.color : COLORS.textMuted) + '26' }}>
@@ -960,6 +1043,12 @@ function TransactionRow({ txn, accounts, categories, plans, onClick }) {
           </p>
         </div>
         <p className="text-xs mt-0.5 truncate" style={{ color: COLORS.textMuted }}>{cat ? cat.name : ''}{cat && acc ? ' · ' : ''}{acc ? acc.name : ''}{txn.store ? ` · ${txn.store}` : ''}</p>
+        {plan && (
+          <div className="flex items-center gap-1.5 mt-1.5 pl-2" style={{ borderLeft: `2px dashed ${COLORS.accent}` }}>
+            <Layers size={12} style={{ color: COLORS.accent }} />
+            <span className="text-xs font-medium" style={{ color: COLORS.accent }}>MSI · {plan.description}{plan.store ? ` (${plan.store})` : ''}</span>
+          </div>
+        )}
       </div>
     </button>
   );
@@ -1525,6 +1614,9 @@ function MsiViewDesktop({ plans, progress, categories, onAdd, onOpenPlan }) {
 function AddTransactionSheet({ formType, editingId, form, setForm, accounts, categories, plans, planProgress, knownStores, onClose, onSave, onDelete, onSwitchType, onCreateCategory, onCreatePlan, desktop }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [expenseMode, setExpenseMode] = useState(form && form.installmentPlanId ? 'msi' : 'single');
+  useEffect(() => {
+    setExpenseMode(form && form.installmentPlanId ? 'msi' : 'single');
+  }, [formType]);
   if (!form) return null;
 
   const expenseCats = categories.filter(c => c.type === 'expense');
@@ -1555,6 +1647,7 @@ function AddTransactionSheet({ formType, editingId, form, setForm, accounts, cat
       }
       return true;
     }
+    if (formType === 'expense' && expenseMode === 'msi' && !form.installmentPlanId) return false;
     if (!form.accountId || !form.categoryId) return false;
     return true;
   }, [form, formType, expenseMode]);
@@ -1653,6 +1746,38 @@ function AddTransactionSheet({ formType, editingId, form, setForm, accounts, cat
         </div>
       )}
 
+      {formType === 'expense' && (
+        <div className="px-5 mt-5">
+          <button onClick={() => { const next = expenseMode === 'msi' ? 'single' : 'msi'; setExpenseMode(next); if (next === 'single') setForm(f => ({ ...f, installmentPlanId: null })); }} className="w-full flex items-center justify-between p-3 rounded-xl" style={{ backgroundColor: COLORS.surfaceAlt }}>
+            <div className="flex items-center gap-2">
+              <Layers size={16} style={{ color: COLORS.accent }} />
+              <span className="text-sm font-medium" style={{ color: COLORS.text }}>Vincular a un plan de MSI</span>
+            </div>
+            <div className="w-10 h-6 rounded-full relative transition-colors" style={{ backgroundColor: expenseMode === 'msi' ? COLORS.accent : COLORS.border }}>
+              <div className="w-5 h-5 rounded-full absolute top-0.5 transition-all" style={{ backgroundColor: COLORS.bg, left: expenseMode === 'msi' ? 18 : 2 }} />
+            </div>
+          </button>
+          {expenseMode === 'msi' && (
+            <div className="mt-3">
+              <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>¿A qué plan de MSI pertenece este pago?</p>
+              <InstallmentPlanPicker
+                plans={plans}
+                progress={planProgress}
+                selectedId={form.installmentPlanId}
+                onSelect={(id) => {
+                  const p = plans.find(x => x.id === id);
+                  setForm(f => ({ ...f, installmentPlanId: id, categoryId: p ? p.categoryId : f.categoryId, description: f.description || (p ? p.description : f.description) }));
+                }}
+                onCreate={handleNewPlan}
+                categories={expenseCats}
+                knownStores={knownStores}
+                onCreateCategory={handleNewCategory}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       {formType === 'transfer' && (
         <div className="px-5 mt-5">
           <button onClick={() => setForm(f => ({ ...f, taggedAsExpense: !f.taggedAsExpense }))} className="w-full flex items-center justify-between p-3 rounded-xl" style={{ backgroundColor: COLORS.surfaceAlt }}>
@@ -1713,6 +1838,22 @@ function AddTransactionSheet({ formType, editingId, form, setForm, accounts, cat
         </div>
         {(formType === 'expense' || (formType === 'transfer' && form.taggedAsExpense && expenseMode !== 'msi')) && (
           <StoreInput value={form.store || ''} onChange={(v) => setForm(f => ({ ...f, store: v }))} knownStores={knownStores} />
+        )}
+        {formType === 'expense' && (
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Tamaño</p>
+              <input type="text" value={form.size || ''} onChange={e => setForm(f => ({ ...f, size: e.target.value }))} placeholder="Ej. 1L" className="w-full px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
+            </div>
+            <div>
+              <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Marca</p>
+              <input type="text" value={form.brand || ''} onChange={e => setForm(f => ({ ...f, brand: e.target.value }))} placeholder="Ej. Lala" className="w-full px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
+            </div>
+            <div>
+              <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Cantidad</p>
+              <input type="text" value={form.quantity || ''} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} placeholder="Ej. 2" className="w-full px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
+            </div>
+          </div>
         )}
         <div>
           <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Fecha</p>
@@ -1950,6 +2091,7 @@ function MonefyImportModal({ existingAccounts, existingCategories, onClose, onCo
   const [fileName, setFileName] = useState('');
   const [preview, setPreview] = useState(null);
   const [accountDecisions, setAccountDecisions] = useState({});
+  const [useOscarConvention, setUseOscarConvention] = useState(true);
   const [result, setResult] = useState(null);
 
   function handleFile(e) {
@@ -1989,7 +2131,7 @@ function MonefyImportModal({ existingAccounts, existingCategories, onClose, onCo
     setStep('importing');
     setTimeout(() => {
       const plan = buildMonefyImportPlan(preview.skeleton, preview.initialBalances, {
-        accountDecisions, existingAccounts, existingCategories,
+        accountDecisions, existingAccounts, existingCategories, useOscarConvention,
       });
       setResult(plan);
       setStep('done');
@@ -2031,7 +2173,20 @@ function MonefyImportModal({ existingAccounts, existingCategories, onClose, onCo
             <p className="text-xs mt-0.5" style={{ color: COLORS.textMuted }}>
               {formatDateLabel(preview.dateRange.min)} — {formatDateLabel(preview.dateRange.max)} · {preview.transferCount} transferencias
             </p>
+            {useOscarConvention && preview.oscarConvention.seriesCount > 0 && (
+              <p className="text-xs mt-0.5" style={{ color: COLORS.accent }}>{preview.oscarConvention.seriesCount} planes de MSI detectados por la convención de Oscar</p>
+            )}
           </div>
+
+          <button onClick={() => setUseOscarConvention(v => !v)} className="w-full flex items-center justify-between p-3 rounded-xl mb-4" style={{ backgroundColor: COLORS.surfaceAlt }}>
+            <div className="flex-1 text-left pr-3">
+              <span className="text-sm font-medium block" style={{ color: COLORS.text }}>Usar la convención de Oscar</span>
+              <span className="text-xs block mt-0.5" style={{ color: COLORS.textFaint }}>Reconoce fracciones "(N/D)" como pagos de MSI y separa "item - lugar - tamaño - marca - cantidad". Es específico de esta forma de anotar en Monefy, no una función genérica.</span>
+            </div>
+            <div className="w-10 h-6 rounded-full relative transition-colors shrink-0" style={{ backgroundColor: useOscarConvention ? COLORS.accent : COLORS.border }}>
+              <div className="w-5 h-5 rounded-full absolute top-0.5 transition-all" style={{ backgroundColor: COLORS.bg, left: useOscarConvention ? 18 : 2 }} />
+            </div>
+          </button>
 
           <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Cuentas detectadas</p>
           <p className="text-xs mb-3" style={{ color: COLORS.textFaint }}>Si excluyes una cuenta, no se importa ninguno de sus movimientos; las transferencias donde participaba se convierten en gasto/ingreso en la otra cuenta.</p>
@@ -2088,7 +2243,7 @@ function MonefyImportModal({ existingAccounts, existingCategories, onClose, onCo
         <div className="px-5 mt-3 pb-6">
           <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: COLORS.incomeSoft }}>
             <p className="text-sm font-medium" style={{ color: COLORS.income }}>¡Listo! Se importaron {result.transactions.length} movimientos.</p>
-            <p className="text-xs mt-1" style={{ color: COLORS.textMuted }}>{result.accountsToAdd.length} cuentas nuevas · {result.categoriesToAdd.length} categorías nuevas</p>
+            <p className="text-xs mt-1" style={{ color: COLORS.textMuted }}>{result.accountsToAdd.length} cuentas nuevas · {result.categoriesToAdd.length} categorías nuevas{result.installmentPlansToAdd.length > 0 ? ` · ${result.installmentPlansToAdd.length} planes de MSI` : ''}</p>
           </div>
           <button onClick={finish} className="w-full py-3 rounded-xl font-semibold text-sm" style={{ backgroundColor: COLORS.accent, color: COLORS.bg }}>
             Listo
@@ -2419,7 +2574,7 @@ export default function App() {
   const planProgress = useMemo(() => {
     const map = {};
     for (const p of installmentPlans) {
-      const paid = transactions.filter(t => t.type === 'transfer' && t.installmentPlanId === p.id).reduce((s, t) => s + t.amount, 0);
+      const paid = transactions.filter(t => (t.type === 'transfer' || t.type === 'expense') && t.installmentPlanId === p.id).reduce((s, t) => s + t.amount, 0);
       const per = p.installmentsCount > 0 ? p.totalAmount / p.installmentsCount : 0;
       const installmentsPaid = per > 0 ? paid / per : 0;
       const remaining = Math.max(p.totalAmount - paid, 0);
@@ -2465,7 +2620,13 @@ export default function App() {
     const base = { date: payload.date || todayIso(), description: (payload.description || '').trim(), amount };
     let txn;
     if (formType === 'expense') {
-      txn = { ...base, type: 'expense', accountId: payload.accountId, categoryId: payload.categoryId, store: (payload.store || '').trim() || null };
+      txn = {
+        ...base, type: 'expense', accountId: payload.accountId, categoryId: payload.categoryId, store: (payload.store || '').trim() || null,
+        installmentPlanId: payload.installmentPlanId || null,
+        size: (payload.size || '').trim() || null,
+        brand: (payload.brand || '').trim() || null,
+        quantity: (payload.quantity || '').trim() || null,
+      };
     } else if (formType === 'income') {
       txn = { ...base, type: 'income', accountId: payload.accountId, categoryId: payload.categoryId };
     } else {
@@ -2541,6 +2702,7 @@ export default function App() {
   function handleImportMonefy(plan) {
     if (plan.accountsToAdd.length) setAccounts(prev => [...prev, ...plan.accountsToAdd]);
     if (plan.categoriesToAdd.length) setCategories(prev => [...prev, ...plan.categoriesToAdd]);
+    if (plan.installmentPlansToAdd && plan.installmentPlansToAdd.length) setInstallmentPlans(prev => [...prev, ...plan.installmentPlansToAdd]);
     setTransactions(prev => [...prev, ...plan.transactions]);
     setToast(`Se importaron ${plan.transactions.length} movimientos de Monefy`);
   }

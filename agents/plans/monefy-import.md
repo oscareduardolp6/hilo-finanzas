@@ -1,6 +1,8 @@
 # Plan: Importar historial de Monefy a Hilo
 
 > Implementa [tasks/monefy-import.md](../../tasks/monefy-import.md). Ver la nota de sincronización en [CLAUDE.md](../../CLAUDE.md) — si el código diverge de lo aquí descrito, actualiza este documento en el mismo cambio.
+>
+> **Extensión**: [tasks/monefy-import-oscar-convention.md](../../tasks/monefy-import-oscar-convention.md) / [agents/plans/monefy-import-oscar-convention.md](monefy-import-oscar-convention.md) agrega un checkbox opcional "Convención de Oscar" a `MonefyImportModal` y un parámetro `useOscarConvention` a `buildMonefyImportPlan`, que reconoce fracciones `(N/D)` y campos separados por guion en la descripción de Monefy.
 
 ## Context
 

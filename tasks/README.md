@@ -12,6 +12,7 @@ Ideas y funcionalidades que queremos agregar a Hilo, una por archivo. No es un b
 | [Sincronizar escritorio y móvil](desktop-mobile-sync.md) | 4 | Pendiente |
 | [Modo de presupuesto](budget-mode.md) | 5 | Pendiente |
 | [Importar backups de Monefy](monefy-import.md) | 6 | Implementada |
+| [Convención de Oscar en la importación de Monefy](monefy-import-oscar-convention.md) | 6 | Implementada |
 | [Reconocimiento de tickets de súper](receipt-ocr.md) | 7 | Pendiente |
 | [Agregar testing](testing.md) | 8 | Pendiente |
 | [Refactorizar hacia una arquitectura en capas](layered-architecture.md) | 20 | Pendiente |
