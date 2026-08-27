@@ -9,12 +9,16 @@ Ideas y funcionalidades que queremos agregar a Hilo, una por archivo. No es un b
 | [Visualización de escritorio](desktop-view.md) | 1 | Implementada |
 | [Migrar a IndexedDB (o similar) para guardado local](local-storage-migration.md) | 2 | Implementada |
 | [Instalar como PWA](pwa-install.md) | 3 | Implementada |
+| [Conservar el monto al cambiar entre gasto / ingreso / transferencia](cantidad-persiste-al-cambiar-tipo.md) | 4 | Pendiente |
 | [Sincronizar escritorio y móvil](desktop-mobile-sync.md) | 4 | Pendiente |
+| [Campos de producto en transferencias marcadas como gasto](campos-producto-en-transferencia-gasto.md) | 5 | Pendiente |
 | [Modo de presupuesto](budget-mode.md) | 5 | Pendiente |
 | [Importar backups de Monefy](monefy-import.md) | 6 | Implementada |
 | [Convención de Oscar en la importación de Monefy](monefy-import-oscar-convention.md) | 6 | Implementada |
 | [Reconocimiento de tickets de súper](receipt-ocr.md) | 7 | Pendiente |
 | [Agregar testing](testing.md) | 8 | Pendiente |
+| [Buscador de cuentas](buscador-de-cuentas.md) | 9 | Pendiente |
+| [Caso especial para gastos de gasolina](gasolina-tracking.md) | 15 | Pendiente |
 | [Refactorizar hacia una arquitectura en capas](layered-architecture.md) | 20 | Pendiente |
 
 ## Formato
