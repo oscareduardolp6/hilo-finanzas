@@ -6,7 +6,7 @@ import {
   RotateCcw, ChevronLeft, ChevronRight, Settings, Receipt, LayoutGrid, Link2, Trash2,
   Check, Banknote, Music, Plane, Coffee, Dumbbell, Book, Wrench, Smartphone, Baby,
   Star, Umbrella, Fuel, Ticket, Layers,
-  QrCode, Camera, Download, Upload, Copy, Share2, RefreshCw, DatabaseBackup,
+  QrCode, Camera, Download, Upload, Copy, Share2, RefreshCw, DatabaseBackup, ScanLine,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import jsQR from 'jsqr';
@@ -79,6 +79,7 @@ const DEFAULT_INCOME_CATEGORIES = [
   { id: 'inversion_ingreso', name: 'Inversión', icon: 'TrendingUp', color: '#2E8B6F' },
   { id: 'regalo_ingreso', name: 'Regalo', icon: 'Gift', color: '#C9A24B' },
   { id: 'reembolso', name: 'Reembolso', icon: 'RotateCcw', color: '#4A7FC4' },
+  { id: 'descuentos', name: 'Descuentos', icon: 'Ticket', color: '#6FA8A0' },
   { id: 'otros_ingreso', name: 'Otros', icon: 'MoreHorizontal', color: '#8A9490' },
 ];
 
@@ -94,6 +95,14 @@ const DEFAULT_ACCOUNTS = [
 ];
 
 const STORAGE_KEY = 'hilo_finanzas_data_v1';
+
+/* Config del escaneo de tickets (API key + modelo). Vive en el mismo object
+   store de IndexedDB que el estado, pero bajo su propia clave: NUNCA entra al
+   blob `STORAGE_KEY`, así que queda fuera de sync / QR / respaldo por
+   construcción (buildExportPayload solo toca las 5 colecciones). */
+const OCR_SETTINGS_STORAGE_KEY = 'hilo_receipt_ocr_settings';
+const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
+const RECEIPT_MODEL_DEFAULT = 'claude-haiku-4-5';
 
 const DB_NAME = 'hilo_finanzas';
 const DB_VERSION = 1;
@@ -123,6 +132,27 @@ async function saveState(data) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
     tx.objectStore(STORE_NAME).put(data, STORAGE_KEY);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function loadOcrSettings() {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(OCR_SETTINGS_STORAGE_KEY);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveOcrSettings(next) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    if (next && (next.apiKey || next.model)) store.put({ apiKey: next.apiKey || '', model: next.model || '' }, OCR_SETTINGS_STORAGE_KEY);
+    else store.delete(OCR_SETTINGS_STORAGE_KEY);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
@@ -830,6 +860,186 @@ function buildMonefyImportPlan(skeleton, initialBalances, { accountDecisions, ex
 }
 
 /* ------------------------------------------------------------------ */
+/* Escaneo de tickets (OCR con IA)                                     */
+/* ------------------------------------------------------------------ */
+/* Única parte de Hilo que llama a una API externa: la de Anthropic,
+   directo desde el navegador con la key que el usuario pega en Ajustes
+   (ver OCR_SETTINGS_STORAGE_KEY). No hay servidor del proyecto. La foto
+   solo vive en memoria durante el escaneo. */
+
+const RECEIPT_TOOL = {
+  name: 'emit_receipt',
+  description: 'Devuelve los datos estructurados de un ticket de compra de supermercado.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      store: { type: 'string', description: 'Nombre del comercio/tienda. Cadena vacía si no se distingue.' },
+      date: { type: 'string', description: 'Fecha del ticket en formato YYYY-MM-DD. Cadena vacía si no aparece.' },
+      currency: { type: 'string', description: 'Código de moneda, normalmente MXN.' },
+      lineItems: {
+        type: 'array',
+        description: 'Un elemento por artículo comprado.',
+        items: {
+          type: 'object',
+          properties: {
+            description: { type: 'string', description: 'Nombre del artículo tal como aparece en el ticket.' },
+            listPrice: { type: 'number', description: 'Precio del renglón ANTES de descuentos a nivel ticket. Si la cantidad es mayor a 1, es el total del renglón.' },
+            quantity: { type: ['number', 'null'], description: 'Unidades del artículo, o null si no se indica.' },
+            categoryId: { type: ['string', 'null'], description: 'Id de categoría de gasto: EXACTAMENTE uno de los ids listados en el prompt, o null si ninguno encaja.' },
+          },
+          required: ['description', 'listPrice'],
+        },
+      },
+      discounts: {
+        type: 'array',
+        description: 'Descuentos, ahorros o promociones aplicados al total del ticket. Montos POSITIVOS.',
+        items: {
+          type: 'object',
+          properties: {
+            label: { type: 'string', description: 'Nombre del descuento tal como aparece (ej. "Ahorro total", "Promo 2x1").' },
+            amount: { type: 'number', description: 'Monto ahorrado, positivo.' },
+          },
+          required: ['label', 'amount'],
+        },
+      },
+      ticketTotal: { type: 'number', description: 'Total efectivamente pagado, tal como se imprime en el ticket.' },
+    },
+    required: ['store', 'date', 'lineItems', 'discounts', 'ticketTotal'],
+  },
+};
+
+function fileToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const comma = result.indexOf(',');
+      const header = comma >= 0 ? result.slice(0, comma) : '';
+      const match = header.match(/data:([^;]+)/);
+      resolve({ media_type: match ? match[1] : (blob.type || 'image/jpeg'), data: comma >= 0 ? result.slice(comma + 1) : result });
+    };
+    reader.onerror = () => reject(new Error('No se pudo leer la imagen.'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+/* Reescala a JPEG con lado máximo `maxDim` para bajar peso y costo de la API
+   y normalizar formatos raros (HEIC/webp). Devuelve el archivo original si ya
+   es un JPEG chico o si el navegador no puede decodificar la imagen. */
+function downscaleImage(file, maxDim = 1600) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const longest = Math.max(img.width, img.height) || 1;
+      const scale = Math.min(1, maxDim / longest);
+      if (scale === 1 && file.type === 'image/jpeg' && file.size < 3 * 1024 * 1024) {
+        URL.revokeObjectURL(url);
+        resolve(file);
+        return;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      canvas.toBlob((blob) => resolve(blob || file), 'image/jpeg', 0.85);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
+
+async function scanReceipt({ apiKey, model, image, expenseCategories }) {
+  const catLines = expenseCategories.map(c => `${c.id} — ${c.name}`).join('\n');
+  const prompt = [
+    'Analiza esta foto de un ticket de compra de supermercado (México, montos en pesos MXN).',
+    'Devuelve, usando la herramienta emit_receipt:',
+    '- store: el nombre del comercio.',
+    '- date: la fecha del ticket en formato YYYY-MM-DD (cadena vacía si no aparece).',
+    '- lineItems: un elemento por artículo, con su precio de renglón ANTES de aplicar descuentos a nivel ticket.',
+    '- discounts: los descuentos / ahorros / promociones aplicados al total, como montos POSITIVOS y por separado.',
+    '- ticketTotal: el total pagado tal como se imprime.',
+    'Para categoryId de cada artículo elige EXACTAMENTE uno de estos ids (o null si ninguno encaja):',
+    catLines,
+  ].join('\n');
+
+  let res;
+  try {
+    res = await fetch(ANTHROPIC_API_URL, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({
+        model: model || RECEIPT_MODEL_DEFAULT,
+        max_tokens: 4096,
+        tools: [RECEIPT_TOOL],
+        tool_choice: { type: 'tool', name: 'emit_receipt' },
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: image.media_type, data: image.data } },
+            { type: 'text', text: prompt },
+          ],
+        }],
+      }),
+    });
+  } catch (e) {
+    throw new Error('No hay conexión para leer el ticket.');
+  }
+
+  if (!res.ok) {
+    if (res.status === 401) throw new Error('La clave de API no es válida.');
+    if (res.status === 429) throw new Error('Se alcanzó el límite de uso de tu cuenta de API.');
+    let detail = '';
+    try { const body = await res.json(); if (body && body.error && body.error.message) detail = ` (${body.error.message})`; } catch (e) { /* sin cuerpo */ }
+    throw new Error(`El servicio de OCR falló (código ${res.status})${detail}`);
+  }
+
+  let data;
+  try { data = await res.json(); } catch (e) { throw new Error('No se pudo interpretar el ticket, intenta con otra foto.'); }
+  const block = (data.content || []).find(b => b.type === 'tool_use');
+  if (!block || !block.input) throw new Error('No se pudo interpretar el ticket, intenta con otra foto.');
+  return block.input;
+}
+
+function isValidIsoDate(s) {
+  return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
+}
+
+function buildReceiptDraft(scan, { expenseCategories }) {
+  const fallbackCat = expenseCategories[0] ? expenseCategories[0].id : '';
+  const catIds = new Set(expenseCategories.map(c => c.id));
+  const rows = (Array.isArray(scan.lineItems) ? scan.lineItems : []).map(it => ({
+    id: uid('rrow'),
+    description: (it.description || '').trim(),
+    amount: Math.abs(Number(it.listPrice) || 0),
+    quantity: it.quantity != null && Number(it.quantity) ? String(Number(it.quantity)) : '',
+    categoryId: catIds.has(it.categoryId) ? it.categoryId : fallbackCat,
+    accountId: null,
+    included: true,
+  }));
+  const discounts = (Array.isArray(scan.discounts) ? scan.discounts : []).map(d => ({
+    id: uid('rdsc'),
+    label: (d.label || '').trim() || 'Descuento',
+    amount: Math.abs(Number(d.amount) || 0),
+    accountId: null,
+    included: true,
+  }));
+  return {
+    store: (scan.store || '').trim(),
+    date: isValidIsoDate(scan.date) ? scan.date : todayIso(),
+    ticketTotal: Math.abs(Number(scan.ticketTotal) || 0),
+    rows,
+    discounts,
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* Small shared pieces                                                  */
 /* ------------------------------------------------------------------ */
 
@@ -1532,15 +1742,18 @@ function MsiView({ plans, progress, categories, onAdd, onOpenPlan }) {
    contrapartes móviles para poder recibir los mismos datos derivados de App
    sin transformarlos. */
 
-function DesktopSidebar({ active, onChange, onOpenSettings, onAddTransaction }) {
+function DesktopSidebar({ active, onChange, onOpenSettings, onAddTransaction, onScanReceipt }) {
   return (
     <div className="w-60 shrink-0 h-full flex flex-col border-r px-4 py-6" style={{ backgroundColor: COLORS.surface, borderColor: COLORS.border }}>
       <div className="px-2 mb-8">
         <h1 className="text-xl font-semibold font-display leading-tight" style={{ color: COLORS.text }}>Hilo</h1>
         <p className="text-xs" style={{ color: COLORS.textMuted }}>Control de gastos</p>
       </div>
-      <button onClick={onAddTransaction} className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold mb-6" style={{ backgroundColor: COLORS.accent, color: COLORS.bg }}>
+      <button onClick={onAddTransaction} className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold mb-2" style={{ backgroundColor: COLORS.accent, color: COLORS.bg }}>
         <Plus size={16} /> Nueva transacción
+      </button>
+      <button onClick={onScanReceipt} className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold mb-6" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
+        <ScanLine size={16} /> Escanear ticket
       </button>
       <nav className="flex-1 space-y-1">
         {NAV_ITEMS.map(it => {
@@ -2459,6 +2672,285 @@ function MonefyImportModal({ existingAccounts, existingCategories, onClose, onCo
 }
 
 /* ------------------------------------------------------------------ */
+/* Escanear ticket (OCR con IA)                                        */
+/* ------------------------------------------------------------------ */
+
+function ReceiptScanModal({ accounts, categories, apiKey, model, onClose, onConfirm, onOpenSettings, desktop }) {
+  const expenseCats = useMemo(() => categories.filter(c => c.type === 'expense'), [categories]);
+
+  const [step, setStep] = useState('capture'); // capture | processing | review | saving
+  const [error, setError] = useState('');
+  const [draft, setDraft] = useState(null);
+
+  const [store, setStore] = useState('');
+  const [date, setDate] = useState(todayIso());
+  const [rows, setRows] = useState([]);
+  const [discounts, setDiscounts] = useState([]);
+  const [primaryAccountId, setPrimaryAccountId] = useState(accounts[0] ? accounts[0].id : '');
+  const [originAccountId, setOriginAccountId] = useState(accounts[1] ? accounts[1].id : (accounts[0] ? accounts[0].id : ''));
+  const [accountModes, setAccountModes] = useState({}); // { [accountId]: bool } — solo este ticket
+
+  function accountName(id) {
+    const a = accounts.find(x => x.id === id);
+    return a ? a.name : '—';
+  }
+
+  async function handleFile(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setError('');
+    setStep('processing');
+    try {
+      const small = await downscaleImage(file);
+      const image = await fileToBase64(small);
+      const scan = await scanReceipt({ apiKey, model, image, expenseCategories: expenseCats });
+      const d = buildReceiptDraft(scan, { expenseCategories: expenseCats });
+      setDraft(d);
+      setStore(d.store);
+      setDate(d.date);
+      setRows(d.rows);
+      setDiscounts(d.discounts);
+      setStep('review');
+    } catch (err) {
+      setError(err && err.message ? err.message : 'No se pudo leer el ticket.');
+      setStep('capture');
+    }
+  }
+
+  const rowAccountId = (r) => r.accountId || primaryAccountId;
+  const includedRows = rows.filter(r => r.included);
+  const includedDiscounts = discounts.filter(d => d.included);
+  const usedAccountIds = Array.from(new Set(includedRows.map(rowAccountId)));
+  const anyTransfer = usedAccountIds.some(id => accountModes[id]);
+
+  const sumRows = includedRows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+  const sumDiscounts = includedDiscounts.reduce((s, d) => s + (parseFloat(d.amount) || 0), 0);
+  const net = sumRows - sumDiscounts;
+  const ticketTotal = draft ? draft.ticketTotal : 0;
+  const mismatch = ticketTotal > 0 && Math.abs(net - ticketTotal) > 0.5;
+  const totalCount = includedRows.length + includedDiscounts.length;
+  const canSave = totalCount > 0 && !!primaryAccountId && (!anyTransfer || !!originAccountId);
+
+  function patchRow(id, patch) { setRows(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r)); }
+  function patchDiscount(id, patch) { setDiscounts(prev => prev.map(d => d.id === id ? { ...d, ...patch } : d)); }
+  function addDiscount() { setDiscounts(prev => [...prev, { id: uid('rdsc'), label: '', amount: '', accountId: null, included: true }]); }
+
+  function handleConfirm() {
+    setStep('saving');
+    onConfirm({
+      date,
+      store: store.trim(),
+      originAccountId,
+      rows: includedRows.map(r => ({
+        description: r.description.trim(),
+        amount: parseFloat(r.amount) || 0,
+        categoryId: r.categoryId,
+        accountId: rowAccountId(r),
+        quantity: (r.quantity || '').trim(),
+        viaTransfer: !!accountModes[rowAccountId(r)],
+      })),
+      discounts: includedDiscounts.map(d => ({
+        label: d.label.trim(),
+        amount: parseFloat(d.amount) || 0,
+        accountId: d.accountId || primaryAccountId,
+      })),
+    });
+    onClose();
+  }
+
+  const AccountChips = ({ value, onSelect }) => (
+    <div className="flex gap-2 overflow-x-auto hilo-scroll pb-1">
+      {accounts.map(a => {
+        const isSel = value === a.id;
+        return (
+          <button key={a.id} onClick={() => onSelect(a.id)} className="shrink-0 px-3 py-2 rounded-xl border text-sm font-medium" style={{ borderColor: isSel ? a.color : COLORS.border, backgroundColor: isSel ? a.color + '22' : 'transparent', color: COLORS.text }}>
+            {a.name}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  return (
+    <SheetOverlay onClose={onClose} desktop={desktop}>
+      <div className="px-5 pt-4 pb-1 flex items-center justify-between">
+        <p className="text-lg font-semibold font-display" style={{ color: COLORS.text }}>Escanear ticket</p>
+        <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: COLORS.surfaceAlt }}>
+          <X size={15} style={{ color: COLORS.textMuted }} />
+        </button>
+      </div>
+
+      {step === 'capture' && !apiKey && (
+        <div className="px-5 mt-3 pb-6">
+          <p className="text-sm leading-relaxed mb-4" style={{ color: COLORS.textMuted }}>
+            Para escanear tickets necesitas configurar tu API key de Anthropic en Ajustes. La foto se envía directo a la API de Anthropic con tu key; no pasa por ningún servidor de Hilo.
+          </p>
+          <button onClick={onOpenSettings} className="w-full py-3 rounded-xl font-semibold text-sm" style={{ backgroundColor: COLORS.accent, color: COLORS.bg }}>
+            Ir a Ajustes
+          </button>
+        </div>
+      )}
+
+      {step === 'capture' && apiKey && (
+        <div className="px-5 mt-3 pb-6">
+          <p className="text-xs leading-relaxed mb-4" style={{ color: COLORS.textMuted }}>
+            Toma o sube una foto del ticket. Se envía a la API de Anthropic con tu key; la imagen no se guarda.
+          </p>
+          <label className="w-full flex flex-col items-center justify-center gap-2 py-8 rounded-xl border cursor-pointer" style={{ borderColor: COLORS.border, borderStyle: 'dashed', backgroundColor: COLORS.surfaceAlt }}>
+            <ScanLine size={20} style={{ color: COLORS.textMuted }} />
+            <span className="text-sm font-medium" style={{ color: COLORS.text }}>Seleccionar o tomar foto</span>
+            <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFile} />
+          </label>
+          {error && <p className="text-xs mt-3" style={{ color: COLORS.expense }}>{error}</p>}
+        </div>
+      )}
+
+      {step === 'processing' && (
+        <div className="px-5 py-12 flex flex-col items-center gap-2">
+          <p className="text-sm" style={{ color: COLORS.textMuted }}>Leyendo el ticket…</p>
+        </div>
+      )}
+
+      {step === 'saving' && (
+        <div className="px-5 py-12 flex flex-col items-center gap-2">
+          <p className="text-sm" style={{ color: COLORS.textMuted }}>Guardando…</p>
+        </div>
+      )}
+
+      {step === 'review' && draft && (
+        <div className="px-5 mt-3 pb-6">
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            <div>
+              <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Tienda</p>
+              <input type="text" value={store} onChange={e => setStore(e.target.value)} className="w-full px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
+            </div>
+            <div>
+              <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Fecha</p>
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}`, colorScheme: 'dark' }} />
+            </div>
+          </div>
+
+          <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Cuenta principal</p>
+          <div className="mb-4"><AccountChips value={primaryAccountId} onSelect={setPrimaryAccountId} /></div>
+
+          <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Artículos ({includedRows.length})</p>
+          <div className="space-y-2 mb-4">
+            {rows.map(r => {
+              const isTransfer = !!accountModes[rowAccountId(r)];
+              return (
+                <div key={r.id} className="rounded-xl p-3" style={{ backgroundColor: COLORS.surfaceAlt, opacity: r.included ? 1 : 0.5 }}>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => patchRow(r.id, { included: !r.included })} className="w-5 h-5 rounded-md flex items-center justify-center shrink-0" style={{ backgroundColor: r.included ? COLORS.accent : 'transparent', border: `1px solid ${r.included ? COLORS.accent : COLORS.borderStrong}` }}>
+                      {r.included && <Check size={12} style={{ color: COLORS.bg }} />}
+                    </button>
+                    <input value={r.description} onChange={e => patchRow(r.id, { description: e.target.value })} placeholder="Artículo" className="flex-1 min-w-0 px-2 py-1 rounded-lg text-sm outline-none" style={{ backgroundColor: COLORS.elevated, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className="text-xs" style={{ color: COLORS.textFaint }}>$</span>
+                      <input value={r.amount} onChange={e => patchRow(r.id, { amount: e.target.value })} inputMode="decimal" className="w-20 px-2 py-1 rounded-lg text-sm outline-none text-right font-mono-custom" style={{ backgroundColor: COLORS.elevated, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
+                    </div>
+                  </div>
+                  {r.included && (
+                    <div className="mt-2 ml-7 flex items-center gap-2 flex-wrap">
+                      <select value={r.categoryId} onChange={e => patchRow(r.id, { categoryId: e.target.value })} className="px-2 py-1 rounded-lg text-xs outline-none" style={{ backgroundColor: COLORS.elevated, color: COLORS.text, border: `1px solid ${COLORS.border}` }}>
+                        {expenseCats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                      <select value={r.accountId || ''} onChange={e => patchRow(r.id, { accountId: e.target.value || null })} className="px-2 py-1 rounded-lg text-xs outline-none" style={{ backgroundColor: COLORS.elevated, color: COLORS.text, border: `1px solid ${COLORS.border}` }}>
+                        <option value="">{`Principal · ${accountName(primaryAccountId)}`}</option>
+                        {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                      </select>
+                      <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ backgroundColor: isTransfer ? COLORS.accentSoft : COLORS.expenseSoft, color: isTransfer ? COLORS.accent : COLORS.expense }}>
+                        {isTransfer ? 'Transferencia · gasto' : 'Gasto'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {usedAccountIds.length > 0 && (
+            <>
+              <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Cuentas de este ticket</p>
+              <div className="space-y-2 mb-2">
+                {usedAccountIds.map(id => {
+                  const on = !!accountModes[id];
+                  return (
+                    <button key={id} onClick={() => setAccountModes(prev => ({ ...prev, [id]: !prev[id] }))} className="w-full flex items-center justify-between p-3 rounded-xl" style={{ backgroundColor: COLORS.surfaceAlt }}>
+                      <div className="flex-1 text-left pr-3">
+                        <span className="text-sm font-medium block" style={{ color: COLORS.text }}>{accountName(id)}</span>
+                        <span className="text-xs block mt-0.5" style={{ color: COLORS.textFaint }}>{on ? 'Registrar como transferencia marcada como gasto' : 'Registrar como gasto simple'}</span>
+                      </div>
+                      <div className="w-10 h-6 rounded-full relative transition-colors shrink-0" style={{ backgroundColor: on ? COLORS.accent : COLORS.border }}>
+                        <div className="w-5 h-5 rounded-full absolute top-0.5 transition-all" style={{ backgroundColor: COLORS.bg, left: on ? 18 : 2 }} />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs mb-4 px-1" style={{ color: COLORS.textFaint }}>El modo "transferencia" es solo para este ticket; no cambia la cuenta.</p>
+            </>
+          )}
+
+          {anyTransfer && (
+            <div className="mb-4">
+              <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Cuenta de origen</p>
+              <AccountChips value={originAccountId} onSelect={setOriginAccountId} />
+              <p className="text-xs mt-1 px-1" style={{ color: COLORS.textFaint }}>De aquí sale el dinero de las transferencias marcadas como gasto.</p>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Descuentos</p>
+            <button onClick={addDiscount} className="text-xs font-medium flex items-center gap-1" style={{ color: COLORS.accent }}><Plus size={12} /> Agregar</button>
+          </div>
+          {discounts.length === 0 && <p className="text-xs mb-3" style={{ color: COLORS.textFaint }}>Sin descuentos detectados.</p>}
+          <div className="space-y-2 mb-1">
+            {discounts.map(d => (
+              <div key={d.id} className="rounded-xl p-3 flex items-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, opacity: d.included ? 1 : 0.5 }}>
+                <button onClick={() => patchDiscount(d.id, { included: !d.included })} className="w-5 h-5 rounded-md flex items-center justify-center shrink-0" style={{ backgroundColor: d.included ? COLORS.accent : 'transparent', border: `1px solid ${d.included ? COLORS.accent : COLORS.borderStrong}` }}>
+                  {d.included && <Check size={12} style={{ color: COLORS.bg }} />}
+                </button>
+                <input value={d.label} onChange={e => patchDiscount(d.id, { label: e.target.value })} placeholder="Descuento" className="flex-1 min-w-0 px-2 py-1 rounded-lg text-sm outline-none" style={{ backgroundColor: COLORS.elevated, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
+                <span className="text-xs" style={{ color: COLORS.textFaint }}>$</span>
+                <input value={d.amount} onChange={e => patchDiscount(d.id, { amount: e.target.value })} inputMode="decimal" className="w-20 px-2 py-1 rounded-lg text-sm outline-none text-right font-mono-custom" style={{ backgroundColor: COLORS.elevated, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
+              </div>
+            ))}
+          </div>
+          <p className="text-xs mb-4 px-1" style={{ color: COLORS.textFaint }}>Se registran como ingreso en la categoría "Descuentos".</p>
+
+          <div className="rounded-xl p-3 mb-2" style={{ backgroundColor: COLORS.surfaceAlt }}>
+            <div className="flex justify-between text-xs" style={{ color: COLORS.textMuted }}>
+              <span>Suma de artículos</span><span className="font-mono-custom">{formatMoney(sumRows)}</span>
+            </div>
+            <div className="flex justify-between text-xs mt-1" style={{ color: COLORS.textMuted }}>
+              <span>− Descuentos</span><span className="font-mono-custom">{formatMoney(sumDiscounts)}</span>
+            </div>
+            <div className="flex justify-between text-sm mt-1 font-medium" style={{ color: COLORS.text }}>
+              <span>= Neto</span><span className="font-mono-custom">{formatMoney(net)}</span>
+            </div>
+            {ticketTotal > 0 && (
+              <div className="flex justify-between text-xs mt-1" style={{ color: COLORS.textFaint }}>
+                <span>Total del ticket</span><span className="font-mono-custom">{formatMoney(ticketTotal)}</span>
+              </div>
+            )}
+          </div>
+          {mismatch && <p className="text-xs mb-3 px-1" style={{ color: COLORS.accent }}>La suma no cuadra con el total del ticket; revisa los montos.</p>}
+
+          <div className="flex gap-2 mt-3">
+            <button onClick={onClose} className="flex-1 py-3 rounded-xl font-semibold text-sm" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
+              Descartar
+            </button>
+            <button onClick={handleConfirm} disabled={!canSave} className="flex-1 py-3 rounded-xl font-semibold text-sm" style={{ backgroundColor: canSave ? COLORS.accent : COLORS.border, color: canSave ? COLORS.bg : COLORS.textFaint }}>
+              Agregar {totalCount} {totalCount === 1 ? 'movimiento' : 'movimientos'}
+            </button>
+          </div>
+        </div>
+      )}
+    </SheetOverlay>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Sincronizar dispositivos (merge, sin backend)                       */
 /* ------------------------------------------------------------------ */
 
@@ -2804,8 +3296,12 @@ function BackupModal({ state, onRestore, onClose, desktop }) {
   );
 }
 
-function SettingsModal({ onClose, onResetTransactions, onOpenImport, onOpenSync, onOpenBackup, desktop }) {
+function SettingsModal({ onClose, onResetTransactions, onOpenImport, onOpenSync, onOpenBackup, ocrSettings, onSaveOcrSettings, desktop }) {
   const [confirmingReset, setConfirmingReset] = useState(false);
+  const [keyDraft, setKeyDraft] = useState((ocrSettings && ocrSettings.apiKey) || '');
+  const [modelDraft, setModelDraft] = useState((ocrSettings && ocrSettings.model) || '');
+  const savedKey = (ocrSettings && ocrSettings.apiKey) || '';
+  const maskedKey = savedKey ? `•••• ${savedKey.slice(-4)}` : null;
   return (
     <SheetOverlay onClose={onClose} desktop={desktop}>
       <div className="px-5 pt-4 pb-1 flex items-center justify-between">
@@ -2830,6 +3326,40 @@ function SettingsModal({ onClose, onResetTransactions, onOpenImport, onOpenSync,
           <DatabaseBackup size={15} /> Respaldo de datos
         </button>
         <button onClick={onOpenImport} className="w-full py-3 rounded-xl text-sm font-semibold mb-3" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>Importar desde Monefy</button>
+
+        <div className="rounded-xl p-3 mb-3" style={{ backgroundColor: COLORS.surfaceAlt }}>
+          <p className="text-sm font-medium mb-1" style={{ color: COLORS.text }}>Escaneo de tickets (IA)</p>
+          <p className="text-xs leading-relaxed mb-3" style={{ color: COLORS.textMuted }}>
+            La key se guarda solo en este dispositivo y se envía directo a Anthropic junto con la foto del ticket. No se incluye en la sincronización ni en los respaldos. Usa una key dedicada para Hilo con un límite de gasto mensual: {' '}
+            <span style={{ color: COLORS.textFaint }}>console.anthropic.com/settings/keys</span>
+          </p>
+          <p className="text-xs mb-1" style={{ color: COLORS.textFaint }}>API key {maskedKey ? `· guardada (${maskedKey})` : ''}</p>
+          <input
+            type="password"
+            value={keyDraft}
+            onChange={e => setKeyDraft(e.target.value)}
+            placeholder="sk-ant-..."
+            className="w-full px-3 py-2 rounded-lg text-sm outline-none mb-2"
+            style={{ backgroundColor: COLORS.elevated, color: COLORS.text, border: `1px solid ${COLORS.border}` }}
+          />
+          <p className="text-xs mb-1" style={{ color: COLORS.textFaint }}>Modelo</p>
+          <input
+            type="text"
+            value={modelDraft}
+            onChange={e => setModelDraft(e.target.value)}
+            placeholder={RECEIPT_MODEL_DEFAULT}
+            className="w-full px-3 py-2 rounded-lg text-sm outline-none mb-1"
+            style={{ backgroundColor: COLORS.elevated, color: COLORS.text, border: `1px solid ${COLORS.border}` }}
+          />
+          <p className="text-xs mb-3" style={{ color: COLORS.textFaint }}>Déjalo vacío para usar el modelo por defecto (Haiku, más barato). Puedes poner otro id si quieres más precisión.</p>
+          <div className="flex gap-2">
+            <button onClick={() => onSaveOcrSettings({ apiKey: keyDraft.trim(), model: modelDraft.trim() })} className="flex-1 py-2 rounded-lg text-sm font-semibold" style={{ backgroundColor: COLORS.accent, color: COLORS.bg }}>Guardar</button>
+            {savedKey && (
+              <button onClick={() => { setKeyDraft(''); setModelDraft(''); onSaveOcrSettings({ apiKey: '', model: '' }); }} className="flex-1 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: COLORS.elevated, color: COLORS.text }}>Quitar</button>
+            )}
+          </div>
+        </div>
+
         {!confirmingReset ? (
           <button onClick={() => setConfirmingReset(true)} className="w-full py-3 rounded-xl text-sm font-semibold" style={{ backgroundColor: COLORS.expenseSoft, color: COLORS.expense }}>Borrar todos los movimientos</button>
         ) : (
@@ -2873,6 +3403,7 @@ function DesktopShell(props) {
     importModalOpen, onOpenImport, onCloseImportModal, onConfirmImport,
     syncModalOpen, backupModalOpen, onOpenSync, onOpenBackup, onCloseSyncModal, onCloseBackupModal, onMergeSync, onRestoreBackup,
     syncState,
+    receiptModalOpen, onOpenReceipt, onCloseReceiptModal, onConfirmReceipt, ocrSettings, onSaveOcrSettings,
     toast,
   } = props;
 
@@ -2881,7 +3412,7 @@ function DesktopShell(props) {
   return (
     <div className="w-full h-screen flex" style={{ backgroundColor: COLORS.bg, fontFamily: "'Inter', sans-serif" }}>
       <GlobalStyles />
-      <DesktopSidebar active={activeTab} onChange={setActiveTab} onOpenSettings={onOpenSettings} onAddTransaction={() => onOpenAddSheet('expense')} />
+      <DesktopSidebar active={activeTab} onChange={setActiveTab} onOpenSettings={onOpenSettings} onAddTransaction={() => onOpenAddSheet('expense')} onScanReceipt={onOpenReceipt} />
 
       <div className="flex-1 h-full overflow-y-auto hilo-scroll relative">
         <div className="max-w-6xl mx-auto px-10 py-8">
@@ -3000,7 +3531,7 @@ function DesktopShell(props) {
       )}
 
       {settingsOpen && (
-        <SettingsModal onClose={onCloseSettings} onResetTransactions={onResetTransactions} onOpenImport={onOpenImport} onOpenSync={onOpenSync} onOpenBackup={onOpenBackup} desktop />
+        <SettingsModal onClose={onCloseSettings} onResetTransactions={onResetTransactions} onOpenImport={onOpenImport} onOpenSync={onOpenSync} onOpenBackup={onOpenBackup} ocrSettings={ocrSettings} onSaveOcrSettings={onSaveOcrSettings} desktop />
       )}
 
       {importModalOpen && (
@@ -3009,6 +3540,19 @@ function DesktopShell(props) {
           existingCategories={categories}
           onClose={onCloseImportModal}
           onConfirm={onConfirmImport}
+          desktop
+        />
+      )}
+
+      {receiptModalOpen && (
+        <ReceiptScanModal
+          accounts={accounts}
+          categories={categories}
+          apiKey={ocrSettings.apiKey}
+          model={ocrSettings.model}
+          onClose={onCloseReceiptModal}
+          onConfirm={onConfirmReceipt}
+          onOpenSettings={() => { onCloseReceiptModal(); onOpenSettings(); }}
           desktop
         />
       )}
@@ -3056,6 +3600,8 @@ export default function App() {
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [syncModalOpen, setSyncModalOpen] = useState(false);
   const [backupModalOpen, setBackupModalOpen] = useState(false);
+  const [receiptModalOpen, setReceiptModalOpen] = useState(false);
+  const [ocrSettings, setOcrSettings] = useState({ apiKey: '', model: '' });
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
@@ -3076,6 +3622,7 @@ export default function App() {
         if (mounted) setLoaded(true);
       }
     })();
+    loadOcrSettings().then(s => { if (mounted && s) setOcrSettings({ apiKey: s.apiKey || '', model: s.model || '' }); }).catch(() => {});
     return () => { mounted = false; };
   }, []);
 
@@ -3293,6 +3840,63 @@ export default function App() {
     setBackupModalOpen(true);
   }
 
+  function handleSaveOcrSettings(next) {
+    const clean = { apiKey: (next.apiKey || '').trim(), model: (next.model || '').trim() };
+    setOcrSettings(clean);
+    saveOcrSettings(clean).catch(() => setToast('No se pudo guardar la config de escaneo'));
+    setToast(clean.apiKey ? 'Config de escaneo guardada' : 'API key eliminada');
+  }
+
+  function handleAddReceiptTransactions(payload) {
+    const now = Date.now();
+    const built = [];
+
+    payload.rows.forEach(r => {
+      const amount = parseFloat(r.amount) || 0;
+      if (amount <= 0) return;
+      const base = { date: payload.date || todayIso(), description: (r.description || '').trim(), amount };
+      if (r.viaTransfer) {
+        built.push({
+          ...base, type: 'transfer',
+          fromAccountId: payload.originAccountId, toAccountId: r.accountId,
+          taggedAsExpense: true, categoryId: r.categoryId, installmentPlanId: null,
+          store: payload.store || null, size: null, brand: null,
+          quantity: (r.quantity || '').trim() || null,
+        });
+      } else {
+        built.push({
+          ...base, type: 'expense',
+          accountId: r.accountId, categoryId: r.categoryId, installmentPlanId: null,
+          store: payload.store || null, size: null, brand: null,
+          quantity: (r.quantity || '').trim() || null,
+        });
+      }
+    });
+
+    const includedDiscounts = payload.discounts.filter(d => (parseFloat(d.amount) || 0) > 0);
+    let categoriesNext = categories;
+    if (includedDiscounts.length) {
+      let discountCat = categories.find(c => c.type === 'income' && c.name.trim().toLowerCase() === 'descuentos');
+      if (!discountCat) {
+        discountCat = { id: uid('cat'), name: 'Descuentos', icon: 'Ticket', color: '#6FA8A0', type: 'income', createdAt: now, updatedAt: now };
+        categoriesNext = [...categories, discountCat];
+        setCategories(categoriesNext);
+      }
+      includedDiscounts.forEach(d => {
+        built.push({
+          date: payload.date || todayIso(),
+          description: (d.label || '').trim() || 'Descuento',
+          amount: parseFloat(d.amount) || 0,
+          type: 'income', accountId: d.accountId, categoryId: discountCat.id,
+        });
+      });
+    }
+
+    if (!built.length) { setToast('No hay movimientos por agregar'); return; }
+    setTransactions(prev => [...prev, ...built.map(t => ({ ...t, id: uid('txn'), createdAt: now, updatedAt: now }))]);
+    setToast(`${built.length} ${built.length === 1 ? 'movimiento agregado' : 'movimientos agregados'} desde el ticket`);
+  }
+
   function handleMergeSync(incoming) {
     const merged = mergeDataState({ accounts, categories, transactions, installmentPlans, tombstones }, incoming);
     setAccounts(merged.accounts);
@@ -3437,6 +4041,12 @@ export default function App() {
         onMergeSync={handleMergeSync}
         onRestoreBackup={handleRestoreBackup}
         syncState={{ accounts, categories, transactions, installmentPlans, tombstones }}
+        receiptModalOpen={receiptModalOpen}
+        onOpenReceipt={() => setReceiptModalOpen(true)}
+        onCloseReceiptModal={() => setReceiptModalOpen(false)}
+        onConfirmReceipt={handleAddReceiptTransactions}
+        ocrSettings={ocrSettings}
+        onSaveOcrSettings={handleSaveOcrSettings}
         toast={toast}
       />
     );
@@ -3523,6 +4133,15 @@ export default function App() {
         <BottomNav active={activeTab} onChange={setActiveTab} />
 
         <button
+          onClick={() => setReceiptModalOpen(true)}
+          aria-label="Escanear ticket"
+          className="absolute right-6 z-20 w-11 h-11 rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+          style={{ backgroundColor: COLORS.surface, border: `1px solid ${COLORS.borderStrong}`, bottom: 150 }}
+        >
+          <ScanLine size={18} color={COLORS.text} />
+        </button>
+
+        <button
           onClick={() => openAddSheet('expense')}
           className="absolute right-5 z-20 w-14 h-14 rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform"
           style={{ backgroundColor: COLORS.accent, bottom: 82 }}
@@ -3575,7 +4194,7 @@ export default function App() {
         )}
 
         {settingsOpen && (
-          <SettingsModal onClose={() => setSettingsOpen(false)} onResetTransactions={handleResetTransactions} onOpenImport={openImportModal} onOpenSync={openSyncModal} onOpenBackup={openBackupModal} />
+          <SettingsModal onClose={() => setSettingsOpen(false)} onResetTransactions={handleResetTransactions} onOpenImport={openImportModal} onOpenSync={openSyncModal} onOpenBackup={openBackupModal} ocrSettings={ocrSettings} onSaveOcrSettings={handleSaveOcrSettings} />
         )}
 
         {importModalOpen && (
@@ -3584,6 +4203,18 @@ export default function App() {
             existingCategories={categories}
             onClose={() => setImportModalOpen(false)}
             onConfirm={handleImportMonefy}
+          />
+        )}
+
+        {receiptModalOpen && (
+          <ReceiptScanModal
+            accounts={accounts}
+            categories={categories}
+            apiKey={ocrSettings.apiKey}
+            model={ocrSettings.model}
+            onClose={() => setReceiptModalOpen(false)}
+            onConfirm={handleAddReceiptTransactions}
+            onOpenSettings={() => { setReceiptModalOpen(false); setSettingsOpen(true); }}
           />
         )}
 

@@ -15,7 +15,7 @@ Ideas y funcionalidades que queremos agregar a Hilo, una por archivo. No es un b
 | [Modo de presupuesto](budget-mode.md) | 5 | Pendiente |
 | [Importar backups de Monefy](monefy-import.md) | 6 | Implementada |
 | [Convención de Oscar en la importación de Monefy](monefy-import-oscar-convention.md) | 6 | Implementada |
-| [Reconocimiento de tickets de súper](receipt-ocr.md) | 7 | Pendiente |
+| [Reconocimiento de tickets de súper](receipt-ocr.md) | 7 | Implementada |
 | [Agregar testing](testing.md) | 8 | Pendiente |
 | [Buscador de cuentas](buscador-de-cuentas.md) | 9 | Pendiente |
 | [Caso especial para gastos de gasolina](gasolina-tracking.md) | 15 | Pendiente |
