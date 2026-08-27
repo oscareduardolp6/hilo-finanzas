@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Plus, X, ArrowUpRight, ArrowDownRight, ArrowRightLeft, Wallet, Landmark, CreditCard,
   PiggyBank, TrendingUp, Coins, UtensilsCrossed, Car, Home, Zap, HeartPulse, Sparkles,
@@ -6,7 +6,10 @@ import {
   RotateCcw, ChevronLeft, ChevronRight, Settings, Receipt, LayoutGrid, Link2, Trash2,
   Check, Banknote, Music, Plane, Coffee, Dumbbell, Book, Wrench, Smartphone, Baby,
   Star, Umbrella, Fuel, Ticket, Layers,
+  QrCode, Camera, Download, Upload, Copy, Share2, RefreshCw, DatabaseBackup,
 } from 'lucide-react';
+import QRCode from 'qrcode';
+import jsQR from 'jsqr';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
 /* ------------------------------------------------------------------ */
@@ -253,6 +256,207 @@ function buildDefaultInstallmentPlans() {
   return [
     { id: 'demo_msi_audifonos', description: 'Audífonos inalámbricos', store: 'Walmart', totalAmount: 900, installmentsCount: 6, categoryId: 'compras', startDate: todayIso(), createdAt: Date.now() - 900000 },
   ];
+}
+
+/* ------------------------------------------------------------------ */
+/* Export / sincronización / respaldo (sin backend)                    */
+/* ------------------------------------------------------------------ */
+/* Un mismo formato de "blob de datos" sirve para tres cosas: pasar los
+   datos a otro dispositivo (archivo, texto comprimido o QR), sincronizar
+   por merge, y guardar/restaurar un respaldo completo. No hay servidor:
+   el usuario mueve el archivo/texto/QR a mano. Ver
+   agents/plans/desktop-mobile-sync.md. */
+
+const EXPORT_APP_ID = 'hilo-finanzas';
+const EXPORT_SCHEMA = 1;
+const EXPORT_TEXT_PREFIX = 'hilo1:';
+const QR_BYTE_LIMIT = 2900;          // capacidad práctica de un QR byte-mode (v40, ECC L)
+const TOMBSTONE_TTL_MS = 180 * 864e5; // 180 días — después de eso se olvida el borrado
+
+const SYNC_COLLECTIONS = ['accounts', 'categories', 'transactions', 'installmentPlans'];
+
+function buildExportPayload(state) {
+  return {
+    app: EXPORT_APP_ID,
+    schema: EXPORT_SCHEMA,
+    exportedAt: new Date().toISOString(),
+    data: {
+      accounts: state.accounts || [],
+      categories: state.categories || [],
+      transactions: state.transactions || [],
+      installmentPlans: state.installmentPlans || [],
+      tombstones: state.tombstones || [],
+    },
+  };
+}
+
+function supportsCompression() {
+  return typeof CompressionStream === 'function' && typeof DecompressionStream === 'function';
+}
+
+async function gzipString(str) {
+  const stream = new Blob([new TextEncoder().encode(str)]).stream().pipeThrough(new CompressionStream('gzip'));
+  const buf = await new Response(stream).arrayBuffer();
+  return new Uint8Array(buf);
+}
+
+async function gunzipBytes(bytes) {
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+  const buf = await new Response(stream).arrayBuffer();
+  return new TextDecoder().decode(buf);
+}
+
+function bytesToBase64(bytes) {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+
+function base64ToBytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/* Valida un objeto ya parseado y devuelve las 5 colecciones normalizadas.
+   Lanza Error con mensaje legible si no parece un export de Hilo. */
+function normalizeExportPayload(obj) {
+  if (!obj || obj.app !== EXPORT_APP_ID || !obj.data) {
+    throw new Error('Esto no parece un export de Hilo.');
+  }
+  const d = obj.data;
+  for (const key of SYNC_COLLECTIONS) {
+    if (!Array.isArray(d[key])) throw new Error('El export de Hilo está incompleto o dañado.');
+  }
+  return {
+    accounts: d.accounts,
+    categories: d.categories,
+    transactions: d.transactions,
+    installmentPlans: d.installmentPlans,
+    tombstones: Array.isArray(d.tombstones) ? d.tombstones : [],
+  };
+}
+
+/* Punto de entrada único para texto pegado / contenido de archivo: acepta JSON
+   plano o "hilo1:<base64 gzip>". Async porque descomprimir lo es. */
+async function parseExportText(text) {
+  const trimmed = (text || '').trim();
+  if (!trimmed) throw new Error('No hay nada que leer.');
+  if (trimmed.startsWith(EXPORT_TEXT_PREFIX)) {
+    let json;
+    try {
+      json = await gunzipBytes(base64ToBytes(trimmed.slice(EXPORT_TEXT_PREFIX.length)));
+    } catch (e) {
+      throw new Error('No se pudo leer el texto comprimido de Hilo.');
+    }
+    return normalizeExportPayload(JSON.parse(json));
+  }
+  let obj;
+  try {
+    obj = JSON.parse(trimmed);
+  } catch (e) {
+    throw new Error('Esto no parece un export de Hilo.');
+  }
+  return normalizeExportPayload(obj);
+}
+
+/* Para el QR: los bytes escaneados son el JSON comprimido con gzip. */
+async function parseExportBytes(bytes) {
+  let json;
+  try {
+    json = await gunzipBytes(bytes);
+  } catch (e) {
+    throw new Error('El QR no contiene datos de Hilo legibles.');
+  }
+  return normalizeExportPayload(JSON.parse(json));
+}
+
+const recordStamp = (r) => r.updatedAt ?? r.createdAt ?? 0;
+
+/* Funde dos listas por `id` (gana el `recordStamp` mayor; empate → entrante),
+   luego descarta los registros con un tombstone posterior a su última edición. */
+function mergeCollection(currentList, incomingList, tombstoneMap) {
+  const map = new Map((currentList || []).map((r) => [r.id, r]));
+  let added = 0;
+  let updated = 0;
+  for (const inc of incomingList || []) {
+    const cur = map.get(inc.id);
+    if (!cur) {
+      map.set(inc.id, inc);
+      added++;
+    } else if (recordStamp(inc) >= recordStamp(cur)) {
+      map.set(inc.id, inc);
+      if (recordStamp(inc) > recordStamp(cur)) updated++;
+    }
+  }
+  let removed = 0;
+  const list = [];
+  for (const r of map.values()) {
+    const deletedAt = tombstoneMap.get(r.id);
+    if (deletedAt != null && deletedAt >= recordStamp(r)) {
+      removed++;
+      continue;
+    }
+    list.push(r);
+  }
+  return { list, added, updated, removed };
+}
+
+function mergeTombstones(a, b) {
+  const cutoff = Date.now() - TOMBSTONE_TTL_MS;
+  const map = new Map();
+  for (const t of [...(a || []), ...(b || [])]) {
+    if (!t || !t.id || typeof t.deletedAt !== 'number') continue;
+    if (t.deletedAt < cutoff) continue;
+    const prev = map.get(t.id);
+    if (prev == null || t.deletedAt > prev) map.set(t.id, t.deletedAt);
+  }
+  return [...map.entries()].map(([id, deletedAt]) => ({ id, deletedAt }));
+}
+
+/* Merge de sincronización: une tombstones, aplica el mapa a las 4 colecciones. */
+function mergeDataState(current, incoming) {
+  const tombstones = mergeTombstones(current.tombstones, incoming.tombstones);
+  const tombstoneMap = new Map(tombstones.map((t) => [t.id, t.deletedAt]));
+  const out = { tombstones, stats: { added: 0, updated: 0, removed: 0 } };
+  for (const key of SYNC_COLLECTIONS) {
+    const res = mergeCollection(current[key], incoming[key], tombstoneMap);
+    out[key] = res.list;
+    out.stats.added += res.added;
+    out.stats.updated += res.updated;
+    out.stats.removed += res.removed;
+  }
+  return out;
+}
+
+/* Restaurar respaldo: reemplaza todo con la foto del payload. */
+function replaceDataState(incoming) {
+  return {
+    accounts: incoming.accounts || [],
+    categories: incoming.categories || [],
+    transactions: incoming.transactions || [],
+    installmentPlans: incoming.installmentPlans || [],
+    tombstones: Array.isArray(incoming.tombstones) ? incoming.tombstones : [],
+  };
+}
+
+function exportFileName(kind) {
+  const d = new Date();
+  const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return `hilo-${kind}-${stamp}.json`;
+}
+
+function downloadJson(payload, fileName) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 /* ------------------------------------------------------------------ */
@@ -2254,7 +2458,353 @@ function MonefyImportModal({ existingAccounts, existingCategories, onClose, onCo
   );
 }
 
-function SettingsModal({ onClose, onResetTransactions, onOpenImport, desktop }) {
+/* ------------------------------------------------------------------ */
+/* Sincronizar dispositivos (merge, sin backend)                       */
+/* ------------------------------------------------------------------ */
+
+function SyncModal({ state, onMerge, onClose, desktop }) {
+  const [mode, setMode] = useState('send');
+  const [qrDataUrl, setQrDataUrl] = useState(null);
+  const [payloadBytesLen, setPayloadBytesLen] = useState(null);
+  const [textPayload, setTextPayload] = useState('');
+  const [sharePayload, setSharePayload] = useState(null); // { payload, json }
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [pasted, setPasted] = useState('');
+  const [error, setError] = useState('');
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState('');
+
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const rafRef = useRef(null);
+
+  const canShare = typeof navigator !== 'undefined' && !!navigator.canShare;
+
+  // Prepara el payload de salida (QR + texto) al entrar a "Enviar".
+  useEffect(() => {
+    if (mode !== 'send') return;
+    let cancelled = false;
+    const payload = buildExportPayload(state);
+    const json = JSON.stringify(payload);
+    setSharePayload({ payload, json });
+    (async () => {
+      if (!supportsCompression()) {
+        if (!cancelled) { setQrDataUrl(null); setPayloadBytesLen(null); setTextPayload(''); }
+        return;
+      }
+      try {
+        const bytes = await gzipString(json);
+        if (cancelled) return;
+        setPayloadBytesLen(bytes.length);
+        setTextPayload(EXPORT_TEXT_PREFIX + bytesToBase64(bytes));
+        if (bytes.length <= QR_BYTE_LIMIT) {
+          const url = await QRCode.toDataURL([{ data: bytes, mode: 'byte' }], {
+            errorCorrectionLevel: 'L', margin: 2, width: 320,
+          });
+          if (!cancelled) setQrDataUrl(url);
+        } else {
+          setQrDataUrl(null);
+        }
+      } catch (e) {
+        if (!cancelled) { setQrDataUrl(null); setTextPayload(''); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [mode, state]);
+
+  function stopScan() {
+    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
+    setScanning(false);
+  }
+
+  useEffect(() => stopScan, []); // limpieza al desmontar
+
+  async function applyIncoming(promise) {
+    setError('');
+    setBusy(true);
+    try {
+      const incoming = await promise;
+      onMerge(incoming);
+      onClose();
+    } catch (e) {
+      setError(e.message || 'No se pudo leer el archivo.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleFile(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => applyIncoming(parseExportText(String(reader.result || '')));
+    reader.onerror = () => setError('No se pudo leer el archivo.');
+    reader.readAsText(file);
+  }
+
+  function handleDownload() {
+    if (sharePayload) downloadJson(sharePayload.payload, exportFileName('sync'));
+  }
+
+  async function handleCopy() {
+    if (!textPayload) return;
+    try {
+      await navigator.clipboard.writeText(textPayload);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch (e) {
+      setError('El navegador no dejó copiar. Usa el archivo.');
+    }
+  }
+
+  async function handleShare() {
+    if (!sharePayload) return;
+    try {
+      const file = new File([JSON.stringify(sharePayload.payload, null, 2)], exportFileName('sync'), { type: 'application/json' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'Datos de Hilo' });
+      } else {
+        await navigator.share({ title: 'Datos de Hilo', text: textPayload });
+      }
+    } catch (e) {
+      if (e && e.name !== 'AbortError') setError('No se pudo compartir.');
+    }
+  }
+
+  async function startScan() {
+    setScanError('');
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setScanError('Este navegador no permite usar la cámara. Usa archivo o texto.');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      streamRef.current = stream;
+      setScanning(true);
+      const video = videoRef.current;
+      video.srcObject = stream;
+      await video.play();
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      const tick = () => {
+        if (!streamRef.current) return;
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const hit = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+          if (hit && hit.binaryData && hit.binaryData.length) {
+            stopScan();
+            applyIncoming(parseExportBytes(new Uint8Array(hit.binaryData)));
+            return;
+          }
+        }
+        rafRef.current = requestAnimationFrame(tick);
+      };
+      rafRef.current = requestAnimationFrame(tick);
+    } catch (e) {
+      const msg = e && e.name === 'NotAllowedError' ? 'Permiso de cámara denegado.'
+        : e && e.name === 'NotFoundError' ? 'No se encontró una cámara.'
+        : 'No se pudo abrir la cámara.';
+      setScanError(msg + ' Usa archivo o texto.');
+      stopScan();
+    }
+  }
+
+  const kb = payloadBytesLen != null ? Math.max(1, Math.round(payloadBytesLen / 1024)) : null;
+
+  return (
+    <SheetOverlay onClose={onClose} desktop={desktop}>
+      <div className="px-5 pt-4 pb-1 flex items-center justify-between">
+        <p className="text-lg font-semibold font-display" style={{ color: COLORS.text }}>Sincronizar dispositivos</p>
+        <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: COLORS.surfaceAlt }}>
+          <X size={15} style={{ color: COLORS.textMuted }} />
+        </button>
+      </div>
+      <div className="px-5 mt-3 pb-6">
+        <p className="text-xs leading-relaxed mb-3" style={{ color: COLORS.textMuted }}>
+          Pasa tus datos de un dispositivo a otro sin servidor. Al recibir, se <span style={{ color: COLORS.text }}>combinan</span> con lo que ya tengas (no se borra nada que no hayas borrado tú).
+        </p>
+
+        <div className="flex gap-1 p-1 rounded-xl mb-4" style={{ backgroundColor: COLORS.surfaceAlt }}>
+          {[['send', 'Enviar'], ['receive', 'Recibir']].map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => { stopScan(); setError(''); setMode(id); }}
+              className="flex-1 py-2 rounded-lg text-sm font-semibold"
+              style={{ backgroundColor: mode === id ? COLORS.accent : 'transparent', color: mode === id ? COLORS.bg : COLORS.textMuted }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {mode === 'send' && (
+          <div>
+            {qrDataUrl ? (
+              <div className="rounded-xl p-4 mb-3 flex flex-col items-center" style={{ backgroundColor: '#FFFFFF' }}>
+                <img src={qrDataUrl} alt="Código QR con tus datos" className="w-56 h-56" />
+              </div>
+            ) : (
+              <div className="rounded-xl p-3 mb-3 flex items-start gap-2" style={{ backgroundColor: COLORS.surfaceAlt }}>
+                <QrCode size={16} style={{ color: COLORS.textFaint, marginTop: 2 }} />
+                <p className="text-xs leading-relaxed" style={{ color: COLORS.textMuted }}>
+                  {supportsCompression()
+                    ? `Tu historial${kb ? ` (${kb} KB)` : ''} es muy grande para un QR. Usa el archivo o el texto.`
+                    : 'Este navegador no puede comprimir; usa el archivo.'}
+                </p>
+              </div>
+            )}
+            <button onClick={handleDownload} className="w-full py-3 rounded-xl text-sm font-semibold mb-2 flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
+              <Download size={15} /> Descargar archivo
+            </button>
+            {textPayload && (
+              <button onClick={handleCopy} className="w-full py-3 rounded-xl text-sm font-semibold mb-2 flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
+                <Copy size={15} /> {copied ? 'Copiado' : 'Copiar texto'}
+              </button>
+            )}
+            {canShare && (
+              <button onClick={handleShare} className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
+                <Share2 size={15} /> Compartir
+              </button>
+            )}
+          </div>
+        )}
+
+        {mode === 'receive' && (
+          <div>
+            {scanning ? (
+              <div className="rounded-xl overflow-hidden mb-2" style={{ backgroundColor: '#000' }}>
+                <video ref={videoRef} playsInline muted className="w-full" style={{ maxHeight: 260, objectFit: 'cover' }} />
+                <button onClick={stopScan} className="w-full py-2 text-xs font-semibold" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.textMuted }}>Cancelar escaneo</button>
+              </div>
+            ) : (
+              <button onClick={startScan} className="w-full py-3 rounded-xl text-sm font-semibold mb-2 flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
+                <Camera size={15} /> Escanear QR
+              </button>
+            )}
+            {scanError && <p className="text-xs mb-2" style={{ color: COLORS.expense }}>{scanError}</p>}
+
+            <label className="w-full py-3 rounded-xl text-sm font-semibold mb-2 flex items-center justify-center gap-2 cursor-pointer" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
+              <Upload size={15} /> Subir archivo
+              <input type="file" accept=".json,application/json" className="hidden" onChange={handleFile} />
+            </label>
+
+            <textarea
+              value={pasted}
+              onChange={(e) => setPasted(e.target.value)}
+              placeholder="…o pega aquí el texto que copiaste"
+              rows={3}
+              className="w-full rounded-xl p-3 text-xs mb-2 resize-none"
+              style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }}
+            />
+            <button
+              onClick={() => applyIncoming(parseExportText(pasted))}
+              disabled={busy || !pasted.trim()}
+              className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
+              style={{ backgroundColor: COLORS.accent, color: COLORS.bg, opacity: busy || !pasted.trim() ? 0.5 : 1 }}
+            >
+              <RefreshCw size={15} /> Combinar
+            </button>
+          </div>
+        )}
+
+        {error && <p className="text-xs mt-3" style={{ color: COLORS.expense }}>{error}</p>}
+      </div>
+    </SheetOverlay>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Respaldo de datos (exportar / restaurar reemplazando todo)          */
+/* ------------------------------------------------------------------ */
+
+function BackupModal({ state, onRestore, onClose, desktop }) {
+  const [pendingRestore, setPendingRestore] = useState(null); // colecciones normalizadas
+  const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  function handleBackup() {
+    downloadJson(buildExportPayload(state), exportFileName('respaldo'));
+  }
+
+  async function handleCopy() {
+    try {
+      const json = JSON.stringify(buildExportPayload(state));
+      const text = supportsCompression()
+        ? EXPORT_TEXT_PREFIX + bytesToBase64(await gzipString(json))
+        : json;
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch (e) {
+      setError('No se pudo copiar.');
+    }
+  }
+
+  function handleFile(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setError('');
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        setPendingRestore(await parseExportText(String(reader.result || '')));
+      } catch (err) {
+        setError(err.message || 'No se pudo leer el archivo.');
+      }
+    };
+    reader.onerror = () => setError('No se pudo leer el archivo.');
+    reader.readAsText(file);
+  }
+
+  return (
+    <SheetOverlay onClose={onClose} desktop={desktop}>
+      <div className="px-5 pt-4 pb-1 flex items-center justify-between">
+        <p className="text-lg font-semibold font-display" style={{ color: COLORS.text }}>Respaldo de datos</p>
+        <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: COLORS.surfaceAlt }}>
+          <X size={15} style={{ color: COLORS.textMuted }} />
+        </button>
+      </div>
+      <div className="px-5 mt-3 pb-6">
+        <p className="text-xs leading-relaxed mb-3" style={{ color: COLORS.textMuted }}>
+          Un respaldo es una copia completa de tus datos para guardar por si algo falla. Restaurar <span style={{ color: COLORS.text }}>reemplaza todo</span> lo que tengas ahora en este dispositivo.
+        </p>
+
+        <button onClick={handleBackup} className="w-full py-3 rounded-xl text-sm font-semibold mb-2 flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
+          <DatabaseBackup size={15} /> Respaldar ahora
+        </button>
+        <button onClick={handleCopy} className="w-full py-3 rounded-xl text-sm font-semibold mb-4 flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
+          <Copy size={15} /> {copied ? 'Copiado' : 'Copiar texto'}
+        </button>
+
+        {!pendingRestore ? (
+          <label className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer" style={{ backgroundColor: COLORS.expenseSoft, color: COLORS.expense }}>
+            <Upload size={15} /> Restaurar desde archivo
+            <input type="file" accept=".json,application/json" className="hidden" onChange={handleFile} />
+          </label>
+        ) : (
+          <div className="rounded-xl p-3" style={{ backgroundColor: COLORS.expenseSoft }}>
+            <p className="text-sm font-medium mb-2" style={{ color: COLORS.expense }}>
+              Se reemplazarán tus {state.transactions.length} movimientos y {state.accounts.length} cuentas actuales por los del respaldo ({pendingRestore.transactions.length} movimientos, {pendingRestore.accounts.length} cuentas). ¿Seguro?
+            </p>
+            <div className="flex gap-2">
+              <button onClick={() => setPendingRestore(null)} className="flex-1 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>Cancelar</button>
+              <button onClick={() => { onRestore(pendingRestore); onClose(); }} className="flex-1 py-2 rounded-lg text-sm font-semibold" style={{ backgroundColor: COLORS.expense, color: COLORS.bg }}>Sí, restaurar</button>
+            </div>
+          </div>
+        )}
+
+        {error && <p className="text-xs mt-3" style={{ color: COLORS.expense }}>{error}</p>}
+      </div>
+    </SheetOverlay>
+  );
+}
+
+function SettingsModal({ onClose, onResetTransactions, onOpenImport, onOpenSync, onOpenBackup, desktop }) {
   const [confirmingReset, setConfirmingReset] = useState(false);
   return (
     <SheetOverlay onClose={onClose} desktop={desktop}>
@@ -2273,6 +2823,12 @@ function SettingsModal({ onClose, onResetTransactions, onOpenImport, desktop }) 
           <p className="text-sm font-medium mb-1" style={{ color: COLORS.text }}>Sobre la trazabilidad</p>
           <p className="text-xs leading-relaxed" style={{ color: COLORS.textMuted }}>Cuando marcas una transferencia como gasto, el monto cuenta en tus reportes por categoría, pero no resta de tu saldo total: el dinero sigue siendo tuyo hasta que de verdad pagas la tarjeta de crédito.</p>
         </div>
+        <button onClick={onOpenSync} className="w-full py-3 rounded-xl text-sm font-semibold mb-3 flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
+          <RefreshCw size={15} /> Sincronizar dispositivos
+        </button>
+        <button onClick={onOpenBackup} className="w-full py-3 rounded-xl text-sm font-semibold mb-3 flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
+          <DatabaseBackup size={15} /> Respaldo de datos
+        </button>
         <button onClick={onOpenImport} className="w-full py-3 rounded-xl text-sm font-semibold mb-3" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>Importar desde Monefy</button>
         {!confirmingReset ? (
           <button onClick={() => setConfirmingReset(true)} className="w-full py-3 rounded-xl text-sm font-semibold" style={{ backgroundColor: COLORS.expenseSoft, color: COLORS.expense }}>Borrar todos los movimientos</button>
@@ -2315,6 +2871,8 @@ function DesktopShell(props) {
     msiModalOpen, editingPlan, msiPayments, onCloseMsiModal, onSavePlan, onDeletePlan,
     settingsOpen, onCloseSettings, onResetTransactions,
     importModalOpen, onOpenImport, onCloseImportModal, onConfirmImport,
+    syncModalOpen, backupModalOpen, onOpenSync, onOpenBackup, onCloseSyncModal, onCloseBackupModal, onMergeSync, onRestoreBackup,
+    syncState,
     toast,
   } = props;
 
@@ -2442,7 +3000,7 @@ function DesktopShell(props) {
       )}
 
       {settingsOpen && (
-        <SettingsModal onClose={onCloseSettings} onResetTransactions={onResetTransactions} onOpenImport={onOpenImport} desktop />
+        <SettingsModal onClose={onCloseSettings} onResetTransactions={onResetTransactions} onOpenImport={onOpenImport} onOpenSync={onOpenSync} onOpenBackup={onOpenBackup} desktop />
       )}
 
       {importModalOpen && (
@@ -2453,6 +3011,14 @@ function DesktopShell(props) {
           onConfirm={onConfirmImport}
           desktop
         />
+      )}
+
+      {syncModalOpen && (
+        <SyncModal state={syncState} onMerge={onMergeSync} onClose={onCloseSyncModal} desktop />
+      )}
+
+      {backupModalOpen && (
+        <BackupModal state={syncState} onRestore={onRestoreBackup} onClose={onCloseBackupModal} desktop />
       )}
     </div>
   );
@@ -2468,6 +3034,7 @@ export default function App() {
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [transactions, setTransactions] = useState(() => buildDefaultTransactions());
   const [installmentPlans, setInstallmentPlans] = useState(() => buildDefaultInstallmentPlans());
+  const [tombstones, setTombstones] = useState([]);
 
   const [activeTab, setActiveTab] = useState('home');
   const [monthCursor, setMonthCursor] = useState(() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d; });
@@ -2487,6 +3054,8 @@ export default function App() {
   const [editingPlan, setEditingPlan] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [syncModalOpen, setSyncModalOpen] = useState(false);
+  const [backupModalOpen, setBackupModalOpen] = useState(false);
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
@@ -2499,6 +3068,7 @@ export default function App() {
           if (data.categories) setCategories(data.categories);
           if (data.transactions) setTransactions(data.transactions);
           if (data.installmentPlans) setInstallmentPlans(data.installmentPlans);
+          if (data.tombstones) setTombstones(data.tombstones);
         }
       } catch (e) {
         // sin datos previos: nos quedamos con los valores de ejemplo
@@ -2513,12 +3083,12 @@ export default function App() {
     if (!loaded) return;
     (async () => {
       try {
-        await saveState({ accounts, categories, transactions, installmentPlans });
+        await saveState({ accounts, categories, transactions, installmentPlans, tombstones });
       } catch (e) {
         setToast('No se pudo guardar el cambio localmente');
       }
     })();
-  }, [accounts, categories, transactions, installmentPlans, loaded]);
+  }, [accounts, categories, transactions, installmentPlans, tombstones, loaded]);
 
   useEffect(() => {
     if (!toast) return;
@@ -2644,10 +3214,10 @@ export default function App() {
     }
 
     if (editingId) {
-      setTransactions(prev => prev.map(t => t.id === editingId ? { ...t, ...txn } : t));
+      setTransactions(prev => prev.map(t => t.id === editingId ? { ...t, ...txn, updatedAt: Date.now() } : t));
       setToast('Movimiento actualizado');
     } else {
-      setTransactions(prev => [...prev, { ...txn, id: uid('txn'), createdAt: Date.now() }]);
+      setTransactions(prev => [...prev, { ...txn, id: uid('txn'), createdAt: Date.now(), updatedAt: Date.now() }]);
       setToast('Movimiento agregado');
     }
     closeSheet();
@@ -2655,6 +3225,7 @@ export default function App() {
 
   function handleDeleteTransaction(id) {
     setTransactions(prev => prev.filter(t => t.id !== id));
+    setTombstones(prev => [...prev, { id, deletedAt: Date.now() }]);
     setToast('Movimiento eliminado');
     closeSheet();
   }
@@ -2665,10 +3236,10 @@ export default function App() {
 
   function handleSaveAccount(payload) {
     if (payload.id) {
-      setAccounts(prev => prev.map(a => a.id === payload.id ? { ...a, ...payload } : a));
+      setAccounts(prev => prev.map(a => a.id === payload.id ? { ...a, ...payload, updatedAt: Date.now() } : a));
       setToast('Cuenta actualizada');
     } else {
-      setAccounts(prev => [...prev, { ...payload, id: uid('acc') }]);
+      setAccounts(prev => [...prev, { ...payload, id: uid('acc'), createdAt: Date.now(), updatedAt: Date.now() }]);
       setToast('Cuenta creada');
     }
     setAccountModalOpen(false);
@@ -2677,6 +3248,7 @@ export default function App() {
 
   function handleDeleteAccount(id) {
     setAccounts(prev => prev.filter(a => a.id !== id));
+    setTombstones(prev => [...prev, { id, deletedAt: Date.now() }]);
     setAccountModalOpen(false);
     setEditingAccount(null);
     setToast('Cuenta eliminada');
@@ -2690,6 +3262,8 @@ export default function App() {
   }
 
   function handleResetTransactions() {
+    const now = Date.now();
+    setTombstones(prev => [...prev, ...transactions.map(t => ({ id: t.id, deletedAt: now }))]);
     setTransactions([]);
     setToast('Movimientos borrados');
   }
@@ -2699,30 +3273,63 @@ export default function App() {
     setImportModalOpen(true);
   }
 
+  function openSyncModal() {
+    setSettingsOpen(false);
+    setSyncModalOpen(true);
+  }
+
+  function openBackupModal() {
+    setSettingsOpen(false);
+    setBackupModalOpen(true);
+  }
+
+  function handleMergeSync(incoming) {
+    const merged = mergeDataState({ accounts, categories, transactions, installmentPlans, tombstones }, incoming);
+    setAccounts(merged.accounts);
+    setCategories(merged.categories);
+    setTransactions(merged.transactions);
+    setInstallmentPlans(merged.installmentPlans);
+    setTombstones(merged.tombstones);
+    const { added, updated, removed } = merged.stats;
+    setToast(`Sincronizado: ${added} nuevos, ${updated} actualizados, ${removed} borrados`);
+  }
+
+  function handleRestoreBackup(incoming) {
+    const s = replaceDataState(incoming);
+    setAccounts(s.accounts);
+    setCategories(s.categories);
+    setTransactions(s.transactions);
+    setInstallmentPlans(s.installmentPlans);
+    setTombstones(s.tombstones);
+    setToast('Respaldo restaurado');
+  }
+
   function handleImportMonefy(plan) {
-    if (plan.accountsToAdd.length) setAccounts(prev => [...prev, ...plan.accountsToAdd]);
-    if (plan.categoriesToAdd.length) setCategories(prev => [...prev, ...plan.categoriesToAdd]);
-    if (plan.installmentPlansToAdd && plan.installmentPlansToAdd.length) setInstallmentPlans(prev => [...prev, ...plan.installmentPlansToAdd]);
-    setTransactions(prev => [...prev, ...plan.transactions]);
+    const now = Date.now();
+    const stamp = (r) => ({ ...r, updatedAt: now });
+    if (plan.accountsToAdd.length) setAccounts(prev => [...prev, ...plan.accountsToAdd.map(stamp)]);
+    if (plan.categoriesToAdd.length) setCategories(prev => [...prev, ...plan.categoriesToAdd.map(stamp)]);
+    if (plan.installmentPlansToAdd && plan.installmentPlansToAdd.length) setInstallmentPlans(prev => [...prev, ...plan.installmentPlansToAdd.map(stamp)]);
+    setTransactions(prev => [...prev, ...plan.transactions.map(stamp)]);
     setToast(`Se importaron ${plan.transactions.length} movimientos de Monefy`);
   }
 
   function handleCreateCategory(cat) {
-    setCategories(prev => [...prev, cat]);
+    setCategories(prev => [...prev, { ...cat, updatedAt: Date.now() }]);
     setToast('Categoría creada');
   }
 
   function handleCreatePlan(plan) {
-    setInstallmentPlans(prev => [...prev, plan]);
+    setInstallmentPlans(prev => [...prev, { ...plan, updatedAt: Date.now() }]);
     setToast('Plan de MSI creado');
   }
 
   function handleSavePlan(payload) {
     if (payload.id) {
-      setInstallmentPlans(prev => prev.map(p => p.id === payload.id ? { ...p, ...payload } : p));
+      setInstallmentPlans(prev => prev.map(p => p.id === payload.id ? { ...p, ...payload, updatedAt: Date.now() } : p));
       setToast('Plan actualizado');
     } else {
-      setInstallmentPlans(prev => [...prev, { ...payload, id: uid('msi'), createdAt: Date.now() }]);
+      setInstallmentPlans(prev => [...prev, { ...payload, id: uid('msi'), createdAt: Date.now(), updatedAt: Date.now() }]);
       setToast('Plan creado');
     }
     setMsiModalOpen(false);
@@ -2731,6 +3338,7 @@ export default function App() {
 
   function handleDeletePlan(id) {
     setInstallmentPlans(prev => prev.filter(p => p.id !== id));
+    setTombstones(prev => [...prev, { id, deletedAt: Date.now() }]);
     setMsiModalOpen(false);
     setEditingPlan(null);
     setToast('Plan eliminado');
@@ -2810,6 +3418,15 @@ export default function App() {
         onOpenImport={openImportModal}
         onCloseImportModal={() => setImportModalOpen(false)}
         onConfirmImport={handleImportMonefy}
+        syncModalOpen={syncModalOpen}
+        backupModalOpen={backupModalOpen}
+        onOpenSync={openSyncModal}
+        onOpenBackup={openBackupModal}
+        onCloseSyncModal={() => setSyncModalOpen(false)}
+        onCloseBackupModal={() => setBackupModalOpen(false)}
+        onMergeSync={handleMergeSync}
+        onRestoreBackup={handleRestoreBackup}
+        syncState={{ accounts, categories, transactions, installmentPlans, tombstones }}
         toast={toast}
       />
     );
@@ -2948,7 +3565,7 @@ export default function App() {
         )}
 
         {settingsOpen && (
-          <SettingsModal onClose={() => setSettingsOpen(false)} onResetTransactions={handleResetTransactions} onOpenImport={openImportModal} />
+          <SettingsModal onClose={() => setSettingsOpen(false)} onResetTransactions={handleResetTransactions} onOpenImport={openImportModal} onOpenSync={openSyncModal} onOpenBackup={openBackupModal} />
         )}
 
         {importModalOpen && (
@@ -2957,6 +3574,22 @@ export default function App() {
             existingCategories={categories}
             onClose={() => setImportModalOpen(false)}
             onConfirm={handleImportMonefy}
+          />
+        )}
+
+        {syncModalOpen && (
+          <SyncModal
+            state={{ accounts, categories, transactions, installmentPlans, tombstones }}
+            onMerge={handleMergeSync}
+            onClose={() => setSyncModalOpen(false)}
+          />
+        )}
+
+        {backupModalOpen && (
+          <BackupModal
+            state={{ accounts, categories, transactions, installmentPlans, tombstones }}
+            onRestore={handleRestoreBackup}
+            onClose={() => setBackupModalOpen(false)}
           />
         )}
 

@@ -28,8 +28,8 @@ La app está publicada como sitio estático en GitHub Pages: **https://oscaredua
 
 El deploy es automático: [.github/workflows/deploy-pages.yml](.github/workflows/deploy-pages.yml) corre `npm run build` y publica `dist/` en cada push a `master`. El `base` de Vite ([vite.config.js](vite.config.js)) está fijado a `/hilo-finanzas/` para que coincida con la ruta del *project page*; si el repo cambia de nombre, hay que actualizar ese valor.
 
-## Nota sobre el guardado de datos
+## Guardado de datos
 
-Por ahora, `hilo-finanzas.jsx` guarda los datos usando `window.storage` (la API del host de Claude Artifacts), que **no existe** al correr la app con este servidor local — vas a ver un aviso de "tus cambios no se están guardando" y los datos se reinician al recargar la página. La idea del proyecto es que sea una SPA sin backend que guarde todo localmente en el navegador (por ejemplo con IndexedDB), pero ese mecanismo todavía no está implementado. Más contexto en [CLAUDE.md](CLAUDE.md).
+`hilo-finanzas.jsx` guarda todo **localmente en el navegador** con IndexedDB (base `hilo_finanzas`, ver `openDb`/`loadState`/`saveState`). Los datos persisten al recargar, tanto en escritorio como en móvil. No hay backend ni sincronización automática.
 
-Si quieres ver la app con el guardado funcionando mientras tanto, publica `hilo-finanzas.jsx` como un Claude Artifact.
+Para pasar datos de un dispositivo a otro hay un traspaso manual (Ajustes → **Sincronizar dispositivos**): archivo `.json`, texto comprimido, o QR, y el destino los combina por `id`. Para copias de seguridad está Ajustes → **Respaldo de datos** (exporta todo y restaura reemplazando). Más contexto en [CLAUDE.md](CLAUDE.md) y [tasks/desktop-mobile-sync.md](tasks/desktop-mobile-sync.md).
