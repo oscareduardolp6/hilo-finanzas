@@ -19,6 +19,7 @@ Ideas y funcionalidades que queremos agregar a Hilo, una por archivo. No es un b
 | [Agregar testing](testing.md) | 8 | Pendiente |
 | [Buscador de cuentas](buscador-de-cuentas.md) | 9 | Pendiente |
 | [Caso especial para gastos de gasolina](gasolina-tracking.md) | 15 | Pendiente |
+| [Ocultar / mostrar saldos](ocultar-saldos.md) | 16 | Pendiente |
 | [Refactorizar hacia una arquitectura en capas](layered-architecture.md) | 20 | Pendiente |
 
 ## Formato
