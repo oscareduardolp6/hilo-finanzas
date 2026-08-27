@@ -3184,6 +3184,13 @@ export default function App() {
     setForm(null);
     setEditingId(null);
   }
+  function switchFormType(type) {
+    setFormType(type);
+    setForm(f => {
+      const fresh = initialFormState(type, accounts, categories);
+      return f ? { ...fresh, amount: f.amount } : fresh;
+    });
+  }
 
   function handleSaveTransaction(payload) {
     const amount = parseFloat(payload.amount);
@@ -3396,7 +3403,7 @@ export default function App() {
         onCloseSheet={closeSheet}
         onSaveTransaction={handleSaveTransaction}
         onDeleteTransaction={handleDeleteTransaction}
-        onSwitchFormType={(t) => { setFormType(t); setForm(initialFormState(t, accounts, categories)); }}
+        onSwitchFormType={switchFormType}
         onCreateCategory={handleCreateCategory}
         onCreatePlan={handleCreatePlan}
         accountModalOpen={accountModalOpen}
@@ -3534,7 +3541,7 @@ export default function App() {
             onClose={closeSheet}
             onSave={handleSaveTransaction}
             onDelete={handleDeleteTransaction}
-            onSwitchType={(t) => { setFormType(t); setForm(initialFormState(t, accounts, categories)); }}
+            onSwitchType={switchFormType}
             onCreateCategory={handleCreateCategory}
             onCreatePlan={handleCreatePlan}
           />
