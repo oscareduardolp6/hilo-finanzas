@@ -1,5 +1,5 @@
 ---
-status: pendiente
+status: implementada
 priority: 5
 ---
 
@@ -15,8 +15,10 @@ Una transferencia marcada como gasto cuenta para los totales por categoría y ap
 
 Cuando `taggedAsExpense` está activo en una transferencia, `AddTransactionSheet` debería mostrar el mismo bloque de campos de producto que muestra para un `expense`, y esos valores deberían persistirse en el objeto `transfer` y considerarse en cualquier lugar que ya lea `size`/`brand`/`quantity` de los expenses (detalle del movimiento, edición, y lo que aplique en reportes).
 
-## Dudas abiertas
+## Cómo quedó (implementada)
 
-- Confirmar en el modelo de `transfer` qué campos habría que agregar y si conviene reutilizar los mismos nombres (`size`/`brand`/`quantity`) para que el código que los consume no tenga que ramificar por tipo.
-- ¿Mostrar el bloque solo cuando `taggedAsExpense` está prendido, u ocultarlo/limpiarlo al apagarlo?
-- Revisar la importación de Monefy con "Convención de Oscar": si un movimiento con campos separados por guion cae como transferencia-gasto, hoy probablemente se pierden esos campos.
+Ver [agents/plans/campos-producto-en-transferencia-gasto.md](../agents/plans/campos-producto-en-transferencia-gasto.md). En resumen:
+
+- Se reutilizan los mismos nombres `size` / `brand` / `quantity` en el objeto `transfer`, así que el único consumidor (la propia hoja al editar, que ya lee `form.size` sin ramificar por tipo) no cambió.
+- El bloque "Tamaño / Marca / Cantidad" se muestra siempre que `taggedAsExpense` esté activo, **incluyendo el sub-modo "Pago de MSI"** (decisión del usuario; el campo Comercio sigue siendo solo de "Gasto único"). Al apagar el tag, el bloque se oculta y al guardar los tres campos quedan en `null`.
+- **Monefy no necesitó cambios:** los movimientos con campos separados por guion siempre se importan como `type: 'expense'` (que ya soporta esos campos); la rama de transferencias del import fija `taggedAsExpense: false` y no toca `oscarParsed`, así que el camino "guion → transferencia-gasto" no existe hoy.

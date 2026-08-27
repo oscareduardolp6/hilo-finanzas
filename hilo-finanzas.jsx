@@ -235,7 +235,7 @@ function initialFormState(type, accounts, categories) {
     return { ...base, accountId: accounts[0] ? accounts[0].id : '', categoryId: incomeCats[0] ? incomeCats[0].id : '' };
   }
   const secondAccount = accounts[1] ? accounts[1].id : (accounts[0] ? accounts[0].id : '');
-  return { ...base, fromAccountId: accounts[0] ? accounts[0].id : '', toAccountId: secondAccount, taggedAsExpense: false, categoryId: '', installmentPlanId: null };
+  return { ...base, fromAccountId: accounts[0] ? accounts[0].id : '', toAccountId: secondAccount, taggedAsExpense: false, categoryId: '', installmentPlanId: null, size: '', brand: '', quantity: '' };
 }
 
 function buildDefaultTransactions() {
@@ -2043,7 +2043,7 @@ function AddTransactionSheet({ formType, editingId, form, setForm, accounts, cat
         {(formType === 'expense' || (formType === 'transfer' && form.taggedAsExpense && expenseMode !== 'msi')) && (
           <StoreInput value={form.store || ''} onChange={(v) => setForm(f => ({ ...f, store: v }))} knownStores={knownStores} />
         )}
-        {formType === 'expense' && (
+        {(formType === 'expense' || (formType === 'transfer' && form.taggedAsExpense)) && (
           <div className="grid grid-cols-3 gap-2">
             <div>
               <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Tamaño</p>
@@ -3217,6 +3217,9 @@ export default function App() {
         categoryId: payload.taggedAsExpense ? payload.categoryId : null,
         installmentPlanId: isMsi ? payload.installmentPlanId : null,
         store: (payload.taggedAsExpense && !isMsi) ? ((payload.store || '').trim() || null) : null,
+        size: payload.taggedAsExpense ? ((payload.size || '').trim() || null) : null,
+        brand: payload.taggedAsExpense ? ((payload.brand || '').trim() || null) : null,
+        quantity: payload.taggedAsExpense ? ((payload.quantity || '').trim() || null) : null,
       };
     }
 
