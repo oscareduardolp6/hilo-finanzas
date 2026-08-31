@@ -5,7 +5,7 @@ import {
   Film, Shirt, GraduationCap, PawPrint, Gift, ShoppingBag, MoreHorizontal, Briefcase,
   RotateCcw, ChevronLeft, ChevronRight, Settings, Receipt, LayoutGrid, Link2, Trash2,
   Check, Banknote, Music, Plane, Coffee, Dumbbell, Book, Wrench, Smartphone, Baby,
-  Star, Umbrella, Fuel, Ticket, Layers,
+  Star, Umbrella, Fuel, Ticket, Layers, Search,
   QrCode, Camera, Download, Upload, Copy, Share2, RefreshCw, DatabaseBackup, ScanLine,
 } from 'lucide-react';
 import QRCode from 'qrcode';
@@ -95,6 +95,10 @@ const DEFAULT_ACCOUNTS = [
 ];
 
 const STORAGE_KEY = 'hilo_finanzas_data_v1';
+
+/* A partir de este número de cuentas, los selectores de cuenta (chips) muestran
+   un buscador por nombre para no scrollear la fila a ciegas. Ver AccountChipSearch. */
+const ACCOUNT_SEARCH_THRESHOLD = 5;
 
 /* Config del escaneo de tickets (API key + modelo). Vive en el mismo object
    store de IndexedDB que el estado, pero bajo su propia clave: NUNCA entra al
@@ -263,6 +267,17 @@ function formatMoney(n) {
   const num = Number(n) || 0;
   const sign = num < 0 ? '-' : '';
   return sign + '$' + Math.abs(num).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/* Coincidencia de texto para el buscador de cuentas: sin distinción de
+   mayúsculas ni acentos ("nomina" encuentra "Nómina"). Query vacío = todo pasa. */
+const DIACRITICS_RE = new RegExp('[\\u0300-\\u036f]', 'g');
+function normalizeForSearch(s) {
+  return (s || '').toLowerCase().normalize('NFD').replace(DIACRITICS_RE, '');
+}
+function accountNameMatches(name, query) {
+  const q = normalizeForSearch(query).trim();
+  return !q || normalizeForSearch(name).includes(q);
 }
 
 function computeAccountBalance(account, transactions) {
@@ -1335,6 +1350,52 @@ function StoreInput({ value, onChange, knownStores }) {
   );
 }
 
+/* Input de búsqueda por nombre para las filas de chips de cuenta. Presentacional:
+   cada call site decide cuándo renderlo (ver ACCOUNT_SEARCH_THRESHOLD) y sobre
+   qué lista aplica accountNameMatches. */
+function AccountChipSearch({ value, onChange }) {
+  return (
+    <div className="relative mb-2">
+      <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: COLORS.textFaint }} />
+      <input
+        type="text"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder="Buscar cuenta"
+        className="w-full pl-8 pr-7 py-1.5 rounded-lg text-xs outline-none"
+        style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }}
+      />
+      {value && (
+        <button type="button" onClick={() => onChange('')} className="absolute right-2 top-1/2 -translate-y-1/2" style={{ color: COLORS.textFaint }}>
+          <X size={12} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* Fila de chips para elegir una cuenta, con buscador cuando hay muchas.
+   Se usa en ReceiptScanModal (cuenta principal / de origen). */
+function AccountChips({ accounts, value, onSelect }) {
+  const [q, setQ] = useState('');
+  const list = accounts.filter(a => accountNameMatches(a.name, q));
+  return (
+    <div>
+      {accounts.length > ACCOUNT_SEARCH_THRESHOLD && <AccountChipSearch value={q} onChange={setQ} />}
+      <div className="flex gap-2 overflow-x-auto hilo-scroll pb-1">
+        {list.map(a => {
+          const isSel = value === a.id;
+          return (
+            <button key={a.id} type="button" onClick={() => onSelect(a.id)} className="shrink-0 px-3 py-2 rounded-xl border text-sm font-medium" style={{ borderColor: isSel ? a.color : COLORS.border, backgroundColor: isSel ? a.color + '22' : 'transparent', color: COLORS.text }}>
+              {a.name}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function InstallmentPlanPicker({ plans, progress, selectedId, onSelect, onCreate, categories, knownStores, onCreateCategory }) {
   const [creating, setCreating] = useState(false);
   const [description, setDescription] = useState('');
@@ -2095,6 +2156,8 @@ function MsiViewDesktop({ plans, progress, categories, onAdd, onOpenPlan }) {
 
 function AddTransactionSheet({ formType, editingId, form, setForm, accounts, categories, plans, planProgress, knownStores, onClose, onSave, onDelete, onSwitchType, onCreateCategory, onCreatePlan, desktop }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [fromAccQuery, setFromAccQuery] = useState('');
+  const [toAccQuery, setToAccQuery] = useState('');
   const [expenseMode, setExpenseMode] = useState(form && form.installmentPlanId ? 'msi' : 'single');
   useEffect(() => {
     setExpenseMode(form && form.installmentPlanId ? 'msi' : 'single');
@@ -2187,8 +2250,9 @@ function AddTransactionSheet({ formType, editingId, form, setForm, accounts, cat
 
       <div className="px-5 mt-4">
         <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>{formType === 'transfer' ? 'Desde' : 'Cuenta'}</p>
+        {accounts.length > ACCOUNT_SEARCH_THRESHOLD && <AccountChipSearch value={fromAccQuery} onChange={setFromAccQuery} />}
         <div className="flex gap-2 overflow-x-auto hilo-scroll pb-1">
-          {accounts.map(a => {
+          {accounts.filter(a => accountNameMatches(a.name, fromAccQuery)).map(a => {
             const selId = formType === 'transfer' ? form.fromAccountId : form.accountId;
             const isSel = selId === a.id;
             return (
@@ -2214,16 +2278,19 @@ function AddTransactionSheet({ formType, editingId, form, setForm, accounts, cat
           {toOptions.length === 0 ? (
             <p className="text-xs" style={{ color: COLORS.textFaint }}>Necesitas al menos otra cuenta para transferir. Agrega una en la pestaña Cuentas.</p>
           ) : (
-            <div className="flex gap-2 overflow-x-auto hilo-scroll pb-1">
-              {toOptions.map(a => {
-                const isSel = form.toAccountId === a.id;
-                return (
-                  <button key={a.id} onClick={() => setForm(f => ({ ...f, toAccountId: a.id }))} className="shrink-0 px-3 py-2 rounded-xl border text-sm font-medium" style={{ borderColor: isSel ? a.color : COLORS.border, backgroundColor: isSel ? a.color + '22' : 'transparent', color: COLORS.text }}>
-                    {a.name}
-                  </button>
-                );
-              })}
-            </div>
+            <>
+              {toOptions.length > ACCOUNT_SEARCH_THRESHOLD && <AccountChipSearch value={toAccQuery} onChange={setToAccQuery} />}
+              <div className="flex gap-2 overflow-x-auto hilo-scroll pb-1">
+                {toOptions.filter(a => accountNameMatches(a.name, toAccQuery)).map(a => {
+                  const isSel = form.toAccountId === a.id;
+                  return (
+                    <button key={a.id} onClick={() => setForm(f => ({ ...f, toAccountId: a.id }))} className="shrink-0 px-3 py-2 rounded-xl border text-sm font-medium" style={{ borderColor: isSel ? a.color : COLORS.border, backgroundColor: isSel ? a.color + '22' : 'transparent', color: COLORS.text }}>
+                      {a.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       )}
@@ -2823,19 +2890,6 @@ function ReceiptScanModal({ accounts, categories, apiKey, model, onClose, onConf
     onClose();
   }
 
-  const AccountChips = ({ value, onSelect }) => (
-    <div className="flex gap-2 overflow-x-auto hilo-scroll pb-1">
-      {accounts.map(a => {
-        const isSel = value === a.id;
-        return (
-          <button key={a.id} onClick={() => onSelect(a.id)} className="shrink-0 px-3 py-2 rounded-xl border text-sm font-medium" style={{ borderColor: isSel ? a.color : COLORS.border, backgroundColor: isSel ? a.color + '22' : 'transparent', color: COLORS.text }}>
-            {a.name}
-          </button>
-        );
-      })}
-    </div>
-  );
-
   return (
     <SheetOverlay onClose={onClose} desktop={desktop}>
       <div className="px-5 pt-4 pb-1 flex items-center justify-between">
@@ -2896,7 +2950,7 @@ function ReceiptScanModal({ accounts, categories, apiKey, model, onClose, onConf
           </div>
 
           <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Cuenta principal</p>
-          <div className="mb-4"><AccountChips value={primaryAccountId} onSelect={setPrimaryAccountId} /></div>
+          <div className="mb-4"><AccountChips accounts={accounts} value={primaryAccountId} onSelect={setPrimaryAccountId} /></div>
 
           <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Artículos ({includedRows.length})</p>
           <div className="space-y-2 mb-4">
@@ -2959,7 +3013,7 @@ function ReceiptScanModal({ accounts, categories, apiKey, model, onClose, onConf
           {anyTransfer && (
             <div className="mb-4">
               <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Cuenta de origen</p>
-              <AccountChips value={originAccountId} onSelect={setOriginAccountId} />
+              <AccountChips accounts={accounts} value={originAccountId} onSelect={setOriginAccountId} />
               <p className="text-xs mt-1 px-1" style={{ color: COLORS.textFaint }}>De aquí sale el dinero de las transferencias marcadas como gasto.</p>
             </div>
           )}

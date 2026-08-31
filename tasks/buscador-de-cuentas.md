@@ -1,5 +1,5 @@
 ---
-status: pendiente
+status: implementada
 priority: 9
 ---
 
@@ -20,3 +20,10 @@ Un input de búsqueda que filtre las cuentas por nombre (y quizá por tipo) conf
 - ¿Mostrar el buscador siempre, o solo cuando hay más de N cuentas?
 - ¿Filtrar solo por nombre o también por `type`?
 - En los selectores de la hoja de captura, ¿basta con filtrar la lista o conviene un combobox con búsqueda?
+
+## Resuelto (ver [agents/plans/buscador-de-cuentas.md](../agents/plans/buscador-de-cuentas.md))
+
+- **Alcance:** solo los selectores de cuenta de `AddTransactionSheet` (Desde / Cuenta / Hacia) y `ReceiptScanModal` (Cuenta principal / de origen). La vista de Cuentas queda para otra iteración.
+- **Visibilidad:** el buscador aparece solo cuando la lista tiene más de 5 cuentas (`ACCOUNT_SEARCH_THRESHOLD`).
+- **Campos:** solo por nombre, sin distinción de mayúsculas ni acentos.
+- **Selectores:** se filtran los chips en línea con un input arriba de la fila; no se usó combobox.
