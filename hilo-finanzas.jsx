@@ -104,6 +104,14 @@ const OCR_SETTINGS_STORAGE_KEY = 'hilo_receipt_ocr_settings';
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const RECEIPT_MODEL_DEFAULT = 'claude-haiku-4-5';
 
+/* Estado de sincronización de ESTE dispositivo (id propio + hasta dónde ha
+   intercambiado datos con cada otro dispositivo). Igual que la config de OCR:
+   clave propia en el mismo object store, fuera del blob `STORAGE_KEY`, así que
+   nunca viaja en sync / QR / respaldo — cada dispositivo tiene el suyo. Ver
+   agents/plans/sync-incremental.md. */
+const SYNC_STATE_STORAGE_KEY = 'hilo_sync_state_v1';
+const PEER_TTL_MS = 365 * 864e5; // peers sin intercambio en un año se podan
+
 const DB_NAME = 'hilo_finanzas';
 const DB_VERSION = 1;
 const STORE_NAME = 'state';
@@ -153,6 +161,39 @@ async function saveOcrSettings(next) {
     const store = tx.objectStore(STORE_NAME);
     if (next && (next.apiKey || next.model)) store.put({ apiKey: next.apiKey || '', model: next.model || '' }, OCR_SETTINGS_STORAGE_KEY);
     else store.delete(OCR_SETTINGS_STORAGE_KEY);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/* Sync state local: { deviceId, deviceName, peers: { [peerId]: { name, lastSentAt, lastReceivedAt } } }.
+   `lastSentAt`  — hasta aquí YO le mandé mis datos a ese peer (gobierna el delta que le envío; avanza manual).
+   `lastReceivedAt` — hasta aquí incorporé lo suyo (informativo; avanza solo al recibir). */
+function makeSyncState() {
+  const id = uid('dev');
+  return { deviceId: id, deviceName: 'Equipo-' + id.slice(-4), peers: {} };
+}
+
+async function loadSyncState() {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(SYNC_STATE_STORAGE_KEY);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveSyncState(next) {
+  const cutoff = Date.now() - PEER_TTL_MS;
+  const peers = {};
+  for (const [id, p] of Object.entries((next && next.peers) || {})) {
+    if (Math.max(p.lastSentAt || 0, p.lastReceivedAt || 0) >= cutoff) peers[id] = p;
+  }
+  const clean = { deviceId: next.deviceId, deviceName: next.deviceName || '', peers };
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put(clean, SYNC_STATE_STORAGE_KEY);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
@@ -302,20 +343,36 @@ const EXPORT_SCHEMA = 1;
 const EXPORT_TEXT_PREFIX = 'hilo1:';
 const QR_BYTE_LIMIT = 2900;          // capacidad práctica de un QR byte-mode (v40, ECC L)
 const TOMBSTONE_TTL_MS = 180 * 864e5; // 180 días — después de eso se olvida el borrado
+const SYNC_SKEW_MARGIN_MS = 5 * 60 * 1000; // margen anti-desfase de reloj al calcular un delta
 
 const SYNC_COLLECTIONS = ['accounts', 'categories', 'transactions', 'installmentPlans'];
 
-function buildExportPayload(state) {
+const recordStamp = (r) => r.updatedAt ?? r.createdAt ?? 0;
+
+/* Un payload de export. Sin opts es la foto completa (sync completo / respaldo).
+   Con `since` (epoch) es un DELTA: solo registros y tombstones tocados después de
+   ese punto — el merge del receptor los funde por `id` igual (un registro ausente
+   no es un borrado). `device` identifica al emisor para que el receptor lleve el
+   registro de hasta dónde recibió de él. Ver agents/plans/sync-incremental.md. */
+function buildExportPayload(state, { device, since } = {}) {
+  const partial = Number.isFinite(since);
+  const cutoff = partial ? since - SYNC_SKEW_MARGIN_MS : -Infinity;
+  const pick = (list) => (partial ? (list || []).filter((r) => recordStamp(r) > cutoff) : (list || []));
   return {
     app: EXPORT_APP_ID,
     schema: EXPORT_SCHEMA,
     exportedAt: new Date().toISOString(),
+    device: device || null,
+    partial,
+    since: partial ? since : null,
     data: {
-      accounts: state.accounts || [],
-      categories: state.categories || [],
-      transactions: state.transactions || [],
-      installmentPlans: state.installmentPlans || [],
-      tombstones: state.tombstones || [],
+      accounts: pick(state.accounts),
+      categories: pick(state.categories),
+      transactions: pick(state.transactions),
+      installmentPlans: pick(state.installmentPlans),
+      tombstones: partial
+        ? (state.tombstones || []).filter((t) => (t.deletedAt || 0) > cutoff)
+        : (state.tombstones || []),
     },
   };
 }
@@ -349,8 +406,11 @@ function base64ToBytes(b64) {
   return out;
 }
 
-/* Valida un objeto ya parseado y devuelve las 5 colecciones normalizadas.
-   Lanza Error con mensaje legible si no parece un export de Hilo. */
+/* Valida un objeto ya parseado y devuelve las 5 colecciones normalizadas más los
+   metadatos del envelope (`exportedAt`, `device`, `partial`, `since`). Los tres
+   últimos faltan en exports viejos / respaldos → se normalizan a null/false, y ni
+   `mergeDataState` ni `replaceDataState` los miran. Lanza Error legible si no
+   parece un export de Hilo. */
 function normalizeExportPayload(obj) {
   if (!obj || obj.app !== EXPORT_APP_ID || !obj.data) {
     throw new Error('Esto no parece un export de Hilo.');
@@ -359,12 +419,19 @@ function normalizeExportPayload(obj) {
   for (const key of SYNC_COLLECTIONS) {
     if (!Array.isArray(d[key])) throw new Error('El export de Hilo está incompleto o dañado.');
   }
+  const dev = obj.device && typeof obj.device.id === 'string'
+    ? { id: obj.device.id, name: typeof obj.device.name === 'string' ? obj.device.name : '' }
+    : null;
   return {
     accounts: d.accounts,
     categories: d.categories,
     transactions: d.transactions,
     installmentPlans: d.installmentPlans,
     tombstones: Array.isArray(d.tombstones) ? d.tombstones : [],
+    exportedAt: typeof obj.exportedAt === 'string' ? obj.exportedAt : null,
+    device: dev,
+    partial: !!obj.partial,
+    since: Number.isFinite(obj.since) ? obj.since : null,
   };
 }
 
@@ -401,8 +468,6 @@ async function parseExportBytes(bytes) {
   }
   return normalizeExportPayload(JSON.parse(json));
 }
-
-const recordStamp = (r) => r.updatedAt ?? r.createdAt ?? 0;
 
 /* Funde dos listas por `id` (gana el `recordStamp` mayor; empate → entrante),
    luego descarta los registros con un tombstone posterior a su última edición. */
@@ -2954,18 +3019,29 @@ function ReceiptScanModal({ accounts, categories, apiKey, model, onClose, onConf
 /* Sincronizar dispositivos (merge, sin backend)                       */
 /* ------------------------------------------------------------------ */
 
-function SyncModal({ state, onMerge, onClose, desktop }) {
+function SyncModal({ state, syncState, onMerge, onRenameDevice, onResetPeer, onMarkSent, onClose, desktop }) {
+  const sync = syncState || { deviceId: '', deviceName: '', peers: {} };
+  const peerEntries = Object.entries(sync.peers || {});
+  const peerKey = peerEntries.map(([id]) => id).sort().join(',');
+  const stampOf = (p) => Math.max(p.lastSentAt || 0, p.lastReceivedAt || 0);
+  const fmtStamp = (ms) => (ms ? new Date(ms).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }) : 'nunca');
+
   const [mode, setMode] = useState('send');
   const [qrDataUrl, setQrDataUrl] = useState(null);
   const [payloadBytesLen, setPayloadBytesLen] = useState(null);
   const [textPayload, setTextPayload] = useState('');
-  const [sharePayload, setSharePayload] = useState(null); // { payload, json }
+  const [sharePayload, setSharePayload] = useState(null); // { payload, json, count, since }
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pasted, setPasted] = useState('');
   const [error, setError] = useState('');
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState('');
+  const [peerId, setPeerId] = useState('');
+  const [sendAll, setSendAll] = useState(false);
+  const [markSentConfirm, setMarkSentConfirm] = useState(false);
+  const [resetPeerId, setResetPeerId] = useState('');
+  const [nameDraft, setNameDraft] = useState(sync.deviceName);
 
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -2973,13 +3049,29 @@ function SyncModal({ state, onMerge, onClose, desktop }) {
 
   const canShare = typeof navigator !== 'undefined' && !!navigator.canShare;
 
+  // Autoselecciona el peer con intercambio más reciente cuando cambia el conjunto.
+  useEffect(() => {
+    const best = peerEntries.slice().sort((a, b) => stampOf(b[1]) - stampOf(a[1]))[0];
+    setPeerId(best ? best[0] : '');
+    setMarkSentConfirm(false);
+  }, [peerKey]);
+
+  useEffect(() => { setNameDraft(sync.deviceName); }, [sync.deviceName]);
+  useEffect(() => { setMarkSentConfirm(false); }, [peerId, sendAll, mode]);
+
+  const selectedPeer = (peerId && sync.peers[peerId]) || null;
+  const canDelta = !!(selectedPeer && selectedPeer.lastSentAt);
+  const deltaSince = canDelta && !sendAll ? selectedPeer.lastSentAt : undefined;
+
   // Prepara el payload de salida (QR + texto) al entrar a "Enviar".
   useEffect(() => {
     if (mode !== 'send') return;
     let cancelled = false;
-    const payload = buildExportPayload(state);
+    const device = sync.deviceId ? { id: sync.deviceId, name: sync.deviceName } : undefined;
+    const payload = buildExportPayload(state, { device, since: deltaSince });
     const json = JSON.stringify(payload);
-    setSharePayload({ payload, json });
+    const count = SYNC_COLLECTIONS.reduce((n, k) => n + payload.data[k].length, 0) + payload.data.tombstones.length;
+    setSharePayload({ payload, json, count, since: payload.since });
     (async () => {
       if (!supportsCompression()) {
         if (!cancelled) { setQrDataUrl(null); setPayloadBytesLen(null); setTextPayload(''); }
@@ -3003,7 +3095,7 @@ function SyncModal({ state, onMerge, onClose, desktop }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [mode, state]);
+  }, [mode, state, deltaSince, sync.deviceId, sync.deviceName]);
 
   function stopScan() {
     if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
@@ -3122,11 +3214,11 @@ function SyncModal({ state, onMerge, onClose, desktop }) {
         </p>
 
         <div className="flex gap-1 p-1 rounded-xl mb-4" style={{ backgroundColor: COLORS.surfaceAlt }}>
-          {[['send', 'Enviar'], ['receive', 'Recibir']].map(([id, label]) => (
+          {[['send', 'Enviar'], ['receive', 'Recibir'], ['devices', 'Dispositivos']].map(([id, label]) => (
             <button
               key={id}
               onClick={() => { stopScan(); setError(''); setMode(id); }}
-              className="flex-1 py-2 rounded-lg text-sm font-semibold"
+              className="flex-1 py-2 rounded-lg text-xs font-semibold"
               style={{ backgroundColor: mode === id ? COLORS.accent : 'transparent', color: mode === id ? COLORS.bg : COLORS.textMuted }}
             >
               {label}
@@ -3136,6 +3228,36 @@ function SyncModal({ state, onMerge, onClose, desktop }) {
 
         {mode === 'send' && (
           <div>
+            {peerEntries.length > 0 && (
+              <div className="mb-3">
+                <label className="text-[11px] font-semibold block mb-1" style={{ color: COLORS.textMuted }}>Enviar a</label>
+                <select
+                  value={peerId}
+                  onChange={(e) => { setPeerId(e.target.value); setSendAll(false); }}
+                  className="w-full rounded-xl p-2.5 text-sm mb-2"
+                  style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }}
+                >
+                  {peerEntries.map(([id, p]) => (
+                    <option key={id} value={id}>{p.name || 'Dispositivo sin nombre'}</option>
+                  ))}
+                  <option value="">Otro / primera vez</option>
+                </select>
+                {canDelta && (
+                  <div className="flex gap-1 p-1 rounded-lg" style={{ backgroundColor: COLORS.surfaceAlt }}>
+                    {[[false, 'Solo cambios recientes'], [true, 'Todo']].map(([val, label]) => (
+                      <button
+                        key={String(val)}
+                        onClick={() => setSendAll(val)}
+                        className="flex-1 py-1.5 rounded-md text-[11px] font-semibold"
+                        style={{ backgroundColor: sendAll === val ? COLORS.accent : 'transparent', color: sendAll === val ? COLORS.bg : COLORS.textMuted }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             {qrDataUrl ? (
               <div className="rounded-xl p-4 mb-3 flex flex-col items-center" style={{ backgroundColor: '#FFFFFF' }}>
                 <img src={qrDataUrl} alt="Código QR con tus datos" className="w-56 h-56" />
@@ -3144,11 +3266,18 @@ function SyncModal({ state, onMerge, onClose, desktop }) {
               <div className="rounded-xl p-3 mb-3 flex items-start gap-2" style={{ backgroundColor: COLORS.surfaceAlt }}>
                 <QrCode size={16} style={{ color: COLORS.textFaint, marginTop: 2 }} />
                 <p className="text-xs leading-relaxed" style={{ color: COLORS.textMuted }}>
-                  {supportsCompression()
-                    ? `Tu historial${kb ? ` (${kb} KB)` : ''} es muy grande para un QR. Usa el archivo o el texto.`
-                    : 'Este navegador no puede comprimir; usa el archivo.'}
+                  {!supportsCompression()
+                    ? 'Este navegador no puede comprimir; usa el archivo.'
+                    : sharePayload && sharePayload.since != null
+                      ? `Aún con solo los cambios recientes${kb ? ` (${kb} KB)` : ''} no cabe en un QR. Usa el archivo o el texto.`
+                      : `Tu historial${kb ? ` (${kb} KB)` : ''} es muy grande para un QR. Usa el archivo o el texto.`}
                 </p>
               </div>
+            )}
+            {sharePayload && sharePayload.since != null && (
+              <p className="text-[11px] mb-2" style={{ color: COLORS.textMuted }}>
+                Solo lo nuevo desde {fmtStamp(sharePayload.since)} · {sharePayload.count} {sharePayload.count === 1 ? 'registro' : 'registros'}
+              </p>
             )}
             <button onClick={handleDownload} className="w-full py-3 rounded-xl text-sm font-semibold mb-2 flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
               <Download size={15} /> Descargar archivo
@@ -3162,6 +3291,27 @@ function SyncModal({ state, onMerge, onClose, desktop }) {
               <button onClick={handleShare} className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
                 <Share2 size={15} /> Compartir
               </button>
+            )}
+            {peerId && (
+              markSentConfirm ? (
+                <div className="rounded-xl p-3 mt-2" style={{ backgroundColor: COLORS.surfaceAlt }}>
+                  <p className="text-xs leading-relaxed mb-2" style={{ color: COLORS.textMuted }}>
+                    ¿El otro dispositivo ya escaneó o importó estos datos? Se marcará el punto de sincronización con <span style={{ color: COLORS.text }}>{selectedPeer && selectedPeer.name ? selectedPeer.name : 'ese dispositivo'}</span>; los próximos envíos solo llevarán lo nuevo.
+                  </p>
+                  <div className="flex gap-2">
+                    <button onClick={() => setMarkSentConfirm(false)} className="flex-1 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: COLORS.bg, color: COLORS.text }}>Cancelar</button>
+                    <button
+                      onClick={() => { onMarkSent(peerId, sharePayload ? (Date.parse(sharePayload.payload.exportedAt) || Date.now()) : Date.now()); setMarkSentConfirm(false); }}
+                      className="flex-1 py-2 rounded-lg text-sm font-semibold"
+                      style={{ backgroundColor: COLORS.accent, color: COLORS.bg }}
+                    >Sí, marcar</button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => setMarkSentConfirm(true)} className="w-full py-3 rounded-xl text-sm font-semibold mt-2 flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
+                  <Check size={15} /> Marcar como enviado{selectedPeer && selectedPeer.name ? ` a ${selectedPeer.name}` : ''}
+                </button>
+              )
             )}
           </div>
         )}
@@ -3201,6 +3351,57 @@ function SyncModal({ state, onMerge, onClose, desktop }) {
             >
               <RefreshCw size={15} /> Combinar
             </button>
+          </div>
+        )}
+
+        {mode === 'devices' && (
+          <div>
+            <p className="text-xs leading-relaxed mb-3" style={{ color: COLORS.textMuted }}>
+              El <span style={{ color: COLORS.text }}>punto de sincronización</span> con cada dispositivo permite mandar solo lo nuevo por QR. Márcalo tú tras una sincronización completa; al recibir se guarda solo.
+            </p>
+
+            <label className="text-[11px] font-semibold block mb-1" style={{ color: COLORS.textMuted }}>Nombre de este dispositivo</label>
+            <div className="flex gap-2 mb-4">
+              <input
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                className="flex-1 rounded-xl p-2.5 text-sm"
+                style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }}
+              />
+              <button
+                onClick={() => onRenameDevice(nameDraft)}
+                disabled={!nameDraft.trim() || nameDraft.trim() === sync.deviceName}
+                className="px-4 rounded-xl text-sm font-semibold"
+                style={{ backgroundColor: COLORS.accent, color: COLORS.bg, opacity: !nameDraft.trim() || nameDraft.trim() === sync.deviceName ? 0.5 : 1 }}
+              >
+                Guardar
+              </button>
+            </div>
+
+            {peerEntries.length === 0 ? (
+              <div className="rounded-xl p-3 flex items-start gap-2" style={{ backgroundColor: COLORS.surfaceAlt }}>
+                <Smartphone size={16} style={{ color: COLORS.textFaint, marginTop: 2 }} />
+                <p className="text-xs leading-relaxed" style={{ color: COLORS.textMuted }}>Aún no has recibido de otro dispositivo.</p>
+              </div>
+            ) : (
+              peerEntries.map(([id, p]) => (
+                <div key={id} className="rounded-xl p-3 mb-2" style={{ backgroundColor: COLORS.surfaceAlt }}>
+                  <p className="text-sm font-semibold mb-1" style={{ color: COLORS.text }}>{p.name || 'Dispositivo sin nombre'}</p>
+                  <p className="text-[11px]" style={{ color: COLORS.textMuted }}>Enviado hasta: {fmtStamp(p.lastSentAt)}</p>
+                  <p className="text-[11px] mb-2" style={{ color: COLORS.textMuted }}>Recibido hasta: {fmtStamp(p.lastReceivedAt)}</p>
+                  {resetPeerId === id ? (
+                    <div className="flex gap-2">
+                      <button onClick={() => setResetPeerId('')} className="flex-1 py-1.5 rounded-lg text-xs font-medium" style={{ backgroundColor: COLORS.bg, color: COLORS.text }}>Cancelar</button>
+                      <button onClick={() => { onResetPeer(id); setResetPeerId(''); }} className="flex-1 py-1.5 rounded-lg text-xs font-semibold" style={{ backgroundColor: COLORS.expense, color: COLORS.bg }}>Reiniciar</button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setResetPeerId(id)} className="text-xs font-semibold flex items-center gap-1" style={{ color: COLORS.expense }}>
+                      <Trash2 size={13} /> Reiniciar punto
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
           </div>
         )}
 
@@ -3402,7 +3603,7 @@ function DesktopShell(props) {
     settingsOpen, onCloseSettings, onResetTransactions,
     importModalOpen, onOpenImport, onCloseImportModal, onConfirmImport,
     syncModalOpen, backupModalOpen, onOpenSync, onOpenBackup, onCloseSyncModal, onCloseBackupModal, onMergeSync, onRestoreBackup,
-    syncState,
+    syncData, syncState, onRenameDevice, onResetPeer, onMarkSent,
     receiptModalOpen, onOpenReceipt, onCloseReceiptModal, onConfirmReceipt, ocrSettings, onSaveOcrSettings,
     toast,
   } = props;
@@ -3558,11 +3759,20 @@ function DesktopShell(props) {
       )}
 
       {syncModalOpen && (
-        <SyncModal state={syncState} onMerge={onMergeSync} onClose={onCloseSyncModal} desktop />
+        <SyncModal
+          state={syncData}
+          syncState={syncState}
+          onMerge={onMergeSync}
+          onRenameDevice={onRenameDevice}
+          onResetPeer={onResetPeer}
+          onMarkSent={onMarkSent}
+          onClose={onCloseSyncModal}
+          desktop
+        />
       )}
 
       {backupModalOpen && (
-        <BackupModal state={syncState} onRestore={onRestoreBackup} onClose={onCloseBackupModal} desktop />
+        <BackupModal state={syncData} onRestore={onRestoreBackup} onClose={onCloseBackupModal} desktop />
       )}
     </div>
   );
@@ -3602,6 +3812,7 @@ export default function App() {
   const [backupModalOpen, setBackupModalOpen] = useState(false);
   const [receiptModalOpen, setReceiptModalOpen] = useState(false);
   const [ocrSettings, setOcrSettings] = useState({ apiKey: '', model: '' });
+  const [syncState, setSyncState] = useState(null); // { deviceId, deviceName, peers } — local, ver SYNC_STATE_STORAGE_KEY
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
@@ -3623,6 +3834,12 @@ export default function App() {
       }
     })();
     loadOcrSettings().then(s => { if (mounted && s) setOcrSettings({ apiKey: s.apiKey || '', model: s.model || '' }); }).catch(() => {});
+    loadSyncState()
+      .then(s => {
+        if (!mounted) return;
+        setSyncState(s && s.deviceId ? { peers: {}, ...s } : makeSyncState());
+      })
+      .catch(() => { if (mounted) setSyncState(makeSyncState()); });
     return () => { mounted = false; };
   }, []);
 
@@ -3636,6 +3853,10 @@ export default function App() {
       }
     })();
   }, [accounts, categories, transactions, installmentPlans, tombstones, loaded]);
+
+  useEffect(() => {
+    if (syncState) saveSyncState(syncState).catch(() => {});
+  }, [syncState]);
 
   useEffect(() => {
     if (!toast) return;
@@ -3905,7 +4126,56 @@ export default function App() {
     setInstallmentPlans(merged.installmentPlans);
     setTombstones(merged.tombstones);
     const { added, updated, removed } = merged.stats;
-    setToast(`Sincronizado: ${added} nuevos, ${updated} actualizados, ${removed} borrados`);
+
+    // Recibir de un peer avanza SU `lastReceivedAt` (acabo de incorporar lo suyo
+    // hasta `exportedAt`). No toca `lastSentAt` — recibir no prueba nada sobre lo
+    // que el peer tiene de lo mío.
+    let peerName = '';
+    const dev = incoming.device;
+    if (dev && dev.id && syncState && dev.id !== syncState.deviceId) {
+      const at = Date.parse(incoming.exportedAt) || Date.now();
+      setSyncState(s => {
+        const prev = (s.peers && s.peers[dev.id]) || {};
+        return { ...s, peers: { ...s.peers, [dev.id]: {
+          name: dev.name || prev.name || '',
+          lastSentAt: prev.lastSentAt ?? null,
+          lastReceivedAt: at,
+        } } };
+      });
+      peerName = dev.name || '';
+    }
+
+    const who = peerName ? ` con ${peerName}` : '';
+    const tail = incoming.partial ? ' (parcial)' : '';
+    setToast(`Sincronizado${who}: ${added} nuevos, ${updated} actualizados, ${removed} borrados${tail}`);
+  }
+
+  function handleRenameDevice(name) {
+    setSyncState(s => (s ? { ...s, deviceName: (name || '').trim() || s.deviceName } : s));
+  }
+
+  function handleResetPeer(peerId) {
+    setSyncState(s => {
+      if (!s || !s.peers[peerId]) return s;
+      const peers = { ...s.peers };
+      delete peers[peerId];
+      return { ...s, peers };
+    });
+  }
+
+  function handleMarkSent(peerId, at) {
+    if (!peerId) return;
+    setSyncState(s => {
+      if (!s) return s;
+      const prev = s.peers[peerId] || {};
+      return { ...s, peers: { ...s.peers, [peerId]: {
+        name: prev.name || '',
+        lastReceivedAt: prev.lastReceivedAt ?? null,
+        lastSentAt: at,
+      } } };
+    });
+    const nm = (syncState && syncState.peers[peerId] && syncState.peers[peerId].name) || 'el otro dispositivo';
+    setToast(`Punto marcado con ${nm}`);
   }
 
   function handleRestoreBackup(incoming) {
@@ -4040,7 +4310,11 @@ export default function App() {
         onCloseBackupModal={() => setBackupModalOpen(false)}
         onMergeSync={handleMergeSync}
         onRestoreBackup={handleRestoreBackup}
-        syncState={{ accounts, categories, transactions, installmentPlans, tombstones }}
+        syncData={{ accounts, categories, transactions, installmentPlans, tombstones }}
+        syncState={syncState}
+        onRenameDevice={handleRenameDevice}
+        onResetPeer={handleResetPeer}
+        onMarkSent={handleMarkSent}
         receiptModalOpen={receiptModalOpen}
         onOpenReceipt={() => setReceiptModalOpen(true)}
         onCloseReceiptModal={() => setReceiptModalOpen(false)}
@@ -4221,7 +4495,11 @@ export default function App() {
         {syncModalOpen && (
           <SyncModal
             state={{ accounts, categories, transactions, installmentPlans, tombstones }}
+            syncState={syncState}
             onMerge={handleMergeSync}
+            onRenameDevice={handleRenameDevice}
+            onResetPeer={handleResetPeer}
+            onMarkSent={handleMarkSent}
             onClose={() => setSyncModalOpen(false)}
           />
         )}

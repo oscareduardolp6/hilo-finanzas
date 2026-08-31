@@ -12,6 +12,7 @@ Ideas y funcionalidades que queremos agregar a Hilo, una por archivo. No es un b
 | [Buscador en el historial](buscador-historial.md) | 3 | Pendiente |
 | [Conservar el monto al cambiar entre gasto / ingreso / transferencia](cantidad-persiste-al-cambiar-tipo.md) | 4 | Implementada |
 | [Sincronizar escritorio y móvil](desktop-mobile-sync.md) | 4 | Implementada |
+| [Sincronización incremental (delta) entre dispositivos](sync-incremental.md) | 5 | Implementada |
 | [Campos de producto en transferencias marcadas como gasto](campos-producto-en-transferencia-gasto.md) | 5 | Implementada |
 | [Modo de presupuesto](budget-mode.md) | 5 | Pendiente |
 | [Importar backups de Monefy](monefy-import.md) | 6 | Implementada |
