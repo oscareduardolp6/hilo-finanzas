@@ -310,6 +310,24 @@ function groupByDate(list) {
   return groups;
 }
 
+// Best-effort visual highlight: case-insensitive but accent-sensitive indexOf on the
+// original string (normalize('NFD') would shift indices). If the match only came through
+// accent-insensitivity or a linked MSI plan name, it just renders the plain text.
+function highlightMatch(text, rawQuery) {
+  const str = text == null ? '' : String(text);
+  const q = (rawQuery || '').trim();
+  if (!q) return str;
+  const idx = str.toLowerCase().indexOf(q.toLowerCase());
+  if (idx === -1) return str;
+  return [
+    str.slice(0, idx),
+    <mark key="hl" style={{ backgroundColor: COLORS.accentSoft, color: COLORS.text, borderRadius: 3, padding: '0 1px' }}>
+      {str.slice(idx, idx + q.length)}
+    </mark>,
+    str.slice(idx + q.length),
+  ];
+}
+
 function initialFormState(type, accounts, categories) {
   const expenseCats = categories.filter(c => c.type === 'expense');
   const incomeCats = categories.filter(c => c.type === 'income');
@@ -1526,7 +1544,7 @@ function MsiPlanCard({ plan, progress, categories, onClick, muted }) {
   );
 }
 
-function TransactionRow({ txn, accounts, categories, plans, onClick }) {
+function TransactionRow({ txn, accounts, categories, plans, query, onClick }) {
   const accById = (id) => accounts.find(a => a.id === id);
 
   if (txn.type === 'transfer') {
@@ -1542,7 +1560,7 @@ function TransactionRow({ txn, accounts, categories, plans, onClick }) {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
-            <p className="truncate text-sm font-medium" style={{ color: COLORS.text }}>{txn.description || 'Transferencia'}</p>
+            <p className="truncate text-sm font-medium" style={{ color: COLORS.text }}>{txn.description ? highlightMatch(txn.description, query) : 'Transferencia'}</p>
             <p className="font-mono-custom text-sm font-semibold shrink-0" style={{ color: txn.taggedAsExpense ? COLORS.expense : COLORS.text }}>
               {txn.taggedAsExpense ? '-' : ''}{formatMoney(txn.amount)}
             </p>
@@ -1577,12 +1595,12 @@ function TransactionRow({ txn, accounts, categories, plans, onClick }) {
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
-          <p className="truncate text-sm font-medium" style={{ color: COLORS.text }}>{txn.description || (cat ? cat.name : 'Movimiento')}</p>
+          <p className="truncate text-sm font-medium" style={{ color: COLORS.text }}>{txn.description ? highlightMatch(txn.description, query) : (cat ? cat.name : 'Movimiento')}</p>
           <p className="font-mono-custom text-sm font-semibold shrink-0" style={{ color: isExpense ? COLORS.expense : COLORS.income }}>
             {isExpense ? '-' : '+'}{formatMoney(txn.amount)}
           </p>
         </div>
-        <p className="text-xs mt-0.5 truncate" style={{ color: COLORS.textMuted }}>{cat ? cat.name : ''}{cat && acc ? ' · ' : ''}{acc ? acc.name : ''}{txn.store ? ` · ${txn.store}` : ''}</p>
+        <p className="text-xs mt-0.5 truncate" style={{ color: COLORS.textMuted }}>{cat ? cat.name : ''}{cat && acc ? ' · ' : ''}{acc ? acc.name : ''}{txn.store ? <> · {highlightMatch(txn.store, query)}</> : ''}</p>
         {plan && (
           <div className="flex items-center gap-1.5 mt-1.5 pl-2" style={{ borderLeft: `2px dashed ${COLORS.accent}` }}>
             <Layers size={12} style={{ color: COLORS.accent }} />
@@ -1705,10 +1723,12 @@ function HomeView({ monthCursor, onPrevMonth, onNextMonth, totalBalance, totalIn
   );
 }
 
-function HistoryView({ transactions, accounts, categories, installmentPlans, knownStores, monthCursor, onPrevMonth, onNextMonth, showAllTime, setShowAllTime, filterType, setFilterType, filterCategory, setFilterCategory, filterStore, setFilterStore, onOpenTxn }) {
+function HistoryView({ transactions, accounts, categories, installmentPlans, knownStores, historySuggestions, monthCursor, onPrevMonth, onNextMonth, showAllTime, setShowAllTime, filterType, setFilterType, filterCategory, setFilterCategory, filterStore, setFilterStore, searchQuery, setSearchQuery, onOpenTxn }) {
+  const q = normalizeForSearch((searchQuery || '').trim());
+  const searching = q.length > 0;
   const filtered = useMemo(() => {
     let list = transactions;
-    if (!showAllTime) {
+    if (!showAllTime && !searching) {
       const key = monthKey(monthCursor);
       list = list.filter(t => t.date && t.date.startsWith(key));
     }
@@ -1722,8 +1742,15 @@ function HistoryView({ transactions, accounts, categories, installmentPlans, kno
       );
     }
     if (filterStore !== 'all') list = list.filter(t => t.store === filterStore);
+    if (searching) {
+      list = list.filter(t => {
+        const plan = t.installmentPlanId ? installmentPlans.find(p => p.id === t.installmentPlanId) : null;
+        const hay = [t.description, t.store, plan && plan.description, plan && plan.store].map(normalizeForSearch).join(' ');
+        return hay.includes(q);
+      });
+    }
     return list;
-  }, [transactions, showAllTime, monthCursor, filterType, filterCategory, filterStore]);
+  }, [transactions, installmentPlans, showAllTime, searching, q, monthCursor, filterType, filterCategory, filterStore]);
 
   const groups = groupByDate(filtered);
   const expenseCats = categories.filter(c => c.type === 'expense');
@@ -1738,17 +1765,42 @@ function HistoryView({ transactions, accounts, categories, installmentPlans, kno
   return (
     <div className="pt-2">
       <div className="flex items-center gap-2">
-        <button onClick={onPrevMonth} disabled={showAllTime} className="w-7 h-7 rounded-full flex items-center justify-center disabled:opacity-30" style={{ backgroundColor: COLORS.surfaceAlt }}>
+        <button onClick={onPrevMonth} disabled={showAllTime || searching} className="w-7 h-7 rounded-full flex items-center justify-center disabled:opacity-30" style={{ backgroundColor: COLORS.surfaceAlt }}>
           <ChevronLeft size={14} style={{ color: COLORS.textMuted }} />
         </button>
-        <p className="text-sm font-medium flex-1 text-center" style={{ color: COLORS.text }}>{showAllTime ? 'Todo el tiempo' : monthLabel(monthCursor)}</p>
-        <button onClick={onNextMonth} disabled={showAllTime} className="w-7 h-7 rounded-full flex items-center justify-center disabled:opacity-30" style={{ backgroundColor: COLORS.surfaceAlt }}>
+        <p className="text-sm font-medium flex-1 text-center" style={{ color: COLORS.text }}>{showAllTime || searching ? 'Todo el tiempo' : monthLabel(monthCursor)}</p>
+        <button onClick={onNextMonth} disabled={showAllTime || searching} className="w-7 h-7 rounded-full flex items-center justify-center disabled:opacity-30" style={{ backgroundColor: COLORS.surfaceAlt }}>
           <ChevronRight size={14} style={{ color: COLORS.textMuted }} />
         </button>
       </div>
-      <button onClick={() => setShowAllTime(s => !s)} className="text-xs font-medium mt-2" style={{ color: COLORS.accent }}>
-        {showAllTime ? 'Ver por mes' : 'Ver todo el tiempo'}
-      </button>
+      {searching ? (
+        <p className="text-xs font-medium mt-2" style={{ color: COLORS.textFaint }}>Buscando en todo el tiempo</p>
+      ) : (
+        <button onClick={() => setShowAllTime(s => !s)} className="text-xs font-medium mt-2" style={{ color: COLORS.accent }}>
+          {showAllTime ? 'Ver por mes' : 'Ver todo el tiempo'}
+        </button>
+      )}
+
+      <div className="relative mt-3">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: COLORS.textMuted }} />
+        <input
+          type="search"
+          list="history-search-list"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          placeholder="Buscar en el historial…"
+          className="w-full pl-9 pr-9 py-2 rounded-xl text-sm outline-none"
+          style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }}
+        />
+        {searchQuery && (
+          <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full flex items-center justify-center" style={{ color: COLORS.textMuted }}>
+            <X size={14} />
+          </button>
+        )}
+        <datalist id="history-search-list">
+          {historySuggestions.map(s => <option key={s} value={s} />)}
+        </datalist>
+      </div>
 
       <div className="flex gap-2 mt-3 overflow-x-auto hilo-scroll pb-1">
         {typeFilters.map(f => (
@@ -1771,11 +1823,11 @@ function HistoryView({ transactions, accounts, categories, installmentPlans, kno
 
       <div className="mt-4">
         {groups.length === 0 ? (
-          <EmptyState text="No hay movimientos con estos filtros." />
+          <EmptyState text={searching ? 'No hay movimientos que coincidan.' : 'No hay movimientos con estos filtros.'} />
         ) : groups.map(([label, list]) => (
           <div key={label} className="mt-4 first:mt-0">
             <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: COLORS.textFaint }}>{label}</p>
-            {list.map(t => <TransactionRow key={t.id} txn={t} accounts={accounts} categories={categories} plans={installmentPlans} onClick={() => onOpenTxn(t)} />)}
+            {list.map(t => <TransactionRow key={t.id} txn={t} accounts={accounts} categories={categories} plans={installmentPlans} query={searching ? searchQuery.trim() : undefined} onClick={() => onOpenTxn(t)} />)}
           </div>
         ))}
       </div>
@@ -1998,10 +2050,12 @@ function HomeViewDesktop({ monthCursor, onPrevMonth, onNextMonth, totalBalance, 
   );
 }
 
-function HistoryViewDesktop({ transactions, accounts, categories, installmentPlans, knownStores, monthCursor, onPrevMonth, onNextMonth, showAllTime, setShowAllTime, filterType, setFilterType, filterCategory, setFilterCategory, filterStore, setFilterStore, onOpenTxn }) {
+function HistoryViewDesktop({ transactions, accounts, categories, installmentPlans, knownStores, historySuggestions, monthCursor, onPrevMonth, onNextMonth, showAllTime, setShowAllTime, filterType, setFilterType, filterCategory, setFilterCategory, filterStore, setFilterStore, searchQuery, setSearchQuery, onOpenTxn }) {
+  const q = normalizeForSearch((searchQuery || '').trim());
+  const searching = q.length > 0;
   const filtered = useMemo(() => {
     let list = transactions;
-    if (!showAllTime) {
+    if (!showAllTime && !searching) {
       const key = monthKey(monthCursor);
       list = list.filter(t => t.date && t.date.startsWith(key));
     }
@@ -2015,8 +2069,15 @@ function HistoryViewDesktop({ transactions, accounts, categories, installmentPla
       );
     }
     if (filterStore !== 'all') list = list.filter(t => t.store === filterStore);
+    if (searching) {
+      list = list.filter(t => {
+        const plan = t.installmentPlanId ? installmentPlans.find(p => p.id === t.installmentPlanId) : null;
+        const hay = [t.description, t.store, plan && plan.description, plan && plan.store].map(normalizeForSearch).join(' ');
+        return hay.includes(q);
+      });
+    }
     return list;
-  }, [transactions, showAllTime, monthCursor, filterType, filterCategory, filterStore]);
+  }, [transactions, installmentPlans, showAllTime, searching, q, monthCursor, filterType, filterCategory, filterStore]);
 
   const groups = groupByDate(filtered);
   const expenseCats = categories.filter(c => c.type === 'expense');
@@ -2032,18 +2093,42 @@ function HistoryViewDesktop({ transactions, accounts, categories, installmentPla
     <div className="rounded-2xl p-6" style={{ backgroundColor: COLORS.surface }}>
       <div className="flex items-center gap-4 flex-wrap">
         <div className="flex items-center gap-2">
-          <button onClick={onPrevMonth} disabled={showAllTime} className="w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-30" style={{ backgroundColor: COLORS.surfaceAlt }}>
+          <button onClick={onPrevMonth} disabled={showAllTime || searching} className="w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-30" style={{ backgroundColor: COLORS.surfaceAlt }}>
             <ChevronLeft size={15} style={{ color: COLORS.textMuted }} />
           </button>
-          <p className="text-sm font-medium w-32 text-center" style={{ color: COLORS.text }}>{showAllTime ? 'Todo el tiempo' : monthLabel(monthCursor)}</p>
-          <button onClick={onNextMonth} disabled={showAllTime} className="w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-30" style={{ backgroundColor: COLORS.surfaceAlt }}>
+          <p className="text-sm font-medium w-32 text-center" style={{ color: COLORS.text }}>{showAllTime || searching ? 'Todo el tiempo' : monthLabel(monthCursor)}</p>
+          <button onClick={onNextMonth} disabled={showAllTime || searching} className="w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-30" style={{ backgroundColor: COLORS.surfaceAlt }}>
             <ChevronRight size={15} style={{ color: COLORS.textMuted }} />
           </button>
         </div>
-        <button onClick={() => setShowAllTime(s => !s)} className="text-xs font-medium" style={{ color: COLORS.accent }}>
-          {showAllTime ? 'Ver por mes' : 'Ver todo el tiempo'}
-        </button>
+        {searching ? (
+          <span className="text-xs font-medium" style={{ color: COLORS.textFaint }}>Buscando en todo el tiempo</span>
+        ) : (
+          <button onClick={() => setShowAllTime(s => !s)} className="text-xs font-medium" style={{ color: COLORS.accent }}>
+            {showAllTime ? 'Ver por mes' : 'Ver todo el tiempo'}
+          </button>
+        )}
         <div className="flex-1" />
+        <div className="relative">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: COLORS.textMuted }} />
+          <input
+            type="search"
+            list="history-search-list-desktop"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Buscar en el historial…"
+            className="pl-9 pr-9 py-2 rounded-xl text-sm outline-none w-64"
+            style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }}
+          />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full flex items-center justify-center" style={{ color: COLORS.textMuted }}>
+              <X size={14} />
+            </button>
+          )}
+          <datalist id="history-search-list-desktop">
+            {historySuggestions.map(s => <option key={s} value={s} />)}
+          </datalist>
+        </div>
         <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }}>
           <option value="all">Todas las categorías</option>
           {expenseCats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -2064,11 +2149,11 @@ function HistoryViewDesktop({ transactions, accounts, categories, installmentPla
 
       <div className="mt-5">
         {groups.length === 0 ? (
-          <EmptyState text="No hay movimientos con estos filtros." />
+          <EmptyState text={searching ? 'No hay movimientos que coincidan.' : 'No hay movimientos con estos filtros.'} />
         ) : groups.map(([label, list]) => (
           <div key={label} className="mt-4 first:mt-0">
             <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: COLORS.textFaint }}>{label}</p>
-            {list.map(t => <TransactionRow key={t.id} txn={t} accounts={accounts} categories={categories} plans={installmentPlans} onClick={() => onOpenTxn(t)} />)}
+            {list.map(t => <TransactionRow key={t.id} txn={t} accounts={accounts} categories={categories} plans={installmentPlans} query={searching ? searchQuery.trim() : undefined} onClick={() => onOpenTxn(t)} />)}
           </div>
         ))}
       </div>
@@ -3646,8 +3731,9 @@ function DesktopShell(props) {
     totalBalance, totalIncome, totalExpense, categoryTotals,
     accounts, balances, recentTxns, categories, installmentPlans, planProgress,
     onSliceClick, onOpenMsiPlan, onOpenTxn,
-    transactions, knownStores,
+    transactions, knownStores, historySuggestions,
     showAllTime, setShowAllTime, filterType, setFilterType, filterCategory, setFilterCategory, filterStore, setFilterStore,
+    searchQuery, setSearchQuery,
     onAddAccount, onEditAccount,
     onAddPlan,
     onOpenAddSheet, onOpenSettings,
@@ -3702,6 +3788,7 @@ function DesktopShell(props) {
               categories={categories}
               installmentPlans={installmentPlans}
               knownStores={knownStores}
+              historySuggestions={historySuggestions}
               monthCursor={monthCursor}
               onPrevMonth={onPrevMonth}
               onNextMonth={onNextMonth}
@@ -3713,6 +3800,8 @@ function DesktopShell(props) {
               setFilterCategory={setFilterCategory}
               filterStore={filterStore}
               setFilterStore={setFilterStore}
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
               onOpenTxn={onOpenTxn}
             />
           )}
@@ -3850,6 +3939,7 @@ export default function App() {
   const [filterType, setFilterType] = useState('all');
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterStore, setFilterStore] = useState('all');
+  const [searchQuery, setSearchQuery] = useState(''); // efímero: no se hidrata ni se persiste, igual que los filtros
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [formType, setFormType] = useState('expense');
@@ -3981,6 +4071,21 @@ export default function App() {
     const set = new Set();
     transactions.forEach(t => { if (t.store) set.add(t.store); });
     installmentPlans.forEach(p => { if (p.store) set.add(p.store); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [transactions, installmentPlans]);
+
+  // Sugerencias para el <datalist> del buscador de historial: lugares + descripciones ya
+  // usadas + nombres/lugares de planes MSI. knownStores no sirve porque no trae descripciones.
+  const historySuggestions = useMemo(() => {
+    const set = new Set();
+    transactions.forEach(t => {
+      if (t.store) set.add(t.store);
+      if (t.description) set.add(t.description);
+    });
+    installmentPlans.forEach(p => {
+      if (p.description) set.add(p.description);
+      if (p.store) set.add(p.store);
+    });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [transactions, installmentPlans]);
 
@@ -4313,6 +4418,7 @@ export default function App() {
         onOpenTxn={openEditSheet}
         transactions={transactions}
         knownStores={knownStores}
+        historySuggestions={historySuggestions}
         showAllTime={showAllTime}
         setShowAllTime={setShowAllTime}
         filterType={filterType}
@@ -4321,6 +4427,8 @@ export default function App() {
         setFilterCategory={setFilterCategory}
         filterStore={filterStore}
         setFilterStore={setFilterStore}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
         onAddAccount={() => { setEditingAccount(null); setAccountModalOpen(true); }}
         onEditAccount={(a) => { setEditingAccount(a); setAccountModalOpen(true); }}
         onAddPlan={() => { setEditingPlan(null); setMsiModalOpen(true); }}
@@ -4425,6 +4533,7 @@ export default function App() {
               categories={categories}
               installmentPlans={installmentPlans}
               knownStores={knownStores}
+              historySuggestions={historySuggestions}
               monthCursor={monthCursor}
               onPrevMonth={prevMonth}
               onNextMonth={nextMonth}
@@ -4436,6 +4545,8 @@ export default function App() {
               setFilterCategory={setFilterCategory}
               filterStore={filterStore}
               setFilterStore={setFilterStore}
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
               onOpenTxn={openEditSheet}
             />
           )}

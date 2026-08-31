@@ -1,5 +1,5 @@
 ---
-status: pendiente
+status: implementada
 priority: 3
 ---
 
