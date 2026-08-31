@@ -1286,7 +1286,7 @@ function InstallmentPlanPicker({ plans, progress, selectedId, onSelect, onCreate
     setCategoryId(cat.id);
   }
 
-  const submitValid = description.trim() && parseFloat(totalAmount) > 0 && parseInt(installmentsCount, 10) > 0 && categoryId;
+  const submitValid = description.trim() && parseFloat(totalAmount) > 0 && parseFloat(installmentsCount) > 0 && categoryId;
 
   function submit() {
     if (!submitValid) return;
@@ -1295,7 +1295,7 @@ function InstallmentPlanPicker({ plans, progress, selectedId, onSelect, onCreate
       description: description.trim(),
       store: store.trim(),
       totalAmount: parseFloat(totalAmount),
-      installmentsCount: parseInt(installmentsCount, 10),
+      installmentsCount: parseFloat(installmentsCount),
       categoryId,
       startDate,
       createdAt: Date.now(),
@@ -1349,11 +1349,11 @@ function InstallmentPlanPicker({ plans, progress, selectedId, onSelect, onCreate
             </div>
             <div>
               <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}># de MSI</p>
-              <input type="number" inputMode="numeric" value={installmentsCount} onChange={e => setInstallmentsCount(e.target.value)} placeholder="6" className="w-full px-3 py-2 rounded-lg text-sm outline-none font-mono-custom" style={{ backgroundColor: COLORS.elevated, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
+              <input type="number" inputMode="decimal" step="any" value={installmentsCount} onChange={e => setInstallmentsCount(e.target.value)} placeholder="6" className="w-full px-3 py-2 rounded-lg text-sm outline-none font-mono-custom" style={{ backgroundColor: COLORS.elevated, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
             </div>
           </div>
-          {parseFloat(totalAmount) > 0 && parseInt(installmentsCount, 10) > 0 && (
-            <p className="text-xs" style={{ color: COLORS.textFaint }}>≈ {formatMoney(parseFloat(totalAmount) / parseInt(installmentsCount, 10))} por pago completo</p>
+          {parseFloat(totalAmount) > 0 && parseFloat(installmentsCount) > 0 && (
+            <p className="text-xs" style={{ color: COLORS.textFaint }}>≈ {formatMoney(parseFloat(totalAmount) / parseFloat(installmentsCount))} por pago completo</p>
           )}
           <div>
             <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Categoría</p>
@@ -2395,7 +2395,7 @@ function MsiPlanModal({ plan, progress, payments, categories, knownStores, onClo
   const [startDate, setStartDate] = useState(plan ? plan.startDate : todayIso());
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const isValid = description.trim().length > 0 && parseFloat(totalAmount) > 0 && parseInt(installmentsCount, 10) > 0 && !!categoryId;
+  const isValid = description.trim().length > 0 && parseFloat(totalAmount) > 0 && parseFloat(installmentsCount) > 0 && !!categoryId;
 
   function handleNewCat(cat) {
     onCreateCategory(cat);
@@ -2439,11 +2439,11 @@ function MsiPlanModal({ plan, progress, payments, categories, knownStores, onClo
           </div>
           <div>
             <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}># de MSI</p>
-            <input type="number" inputMode="numeric" value={installmentsCount} onChange={e => setInstallmentsCount(e.target.value)} className="w-full px-3 py-2 rounded-xl text-sm outline-none font-mono-custom" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
+            <input type="number" inputMode="decimal" step="any" value={installmentsCount} onChange={e => setInstallmentsCount(e.target.value)} className="w-full px-3 py-2 rounded-xl text-sm outline-none font-mono-custom" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
           </div>
         </div>
-        {parseFloat(totalAmount) > 0 && parseInt(installmentsCount, 10) > 0 && (
-          <p className="text-xs -mt-2 mb-3" style={{ color: COLORS.textFaint }}>≈ {formatMoney(parseFloat(totalAmount) / parseInt(installmentsCount, 10))} por pago completo</p>
+        {parseFloat(totalAmount) > 0 && parseFloat(installmentsCount) > 0 && (
+          <p className="text-xs -mt-2 mb-3" style={{ color: COLORS.textFaint }}>≈ {formatMoney(parseFloat(totalAmount) / parseFloat(installmentsCount))} por pago completo</p>
         )}
 
         <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Categoría</p>
@@ -2489,7 +2489,7 @@ function MsiPlanModal({ plan, progress, payments, categories, knownStores, onClo
             )}
             <button
               disabled={!isValid}
-              onClick={() => onSave({ id: plan ? plan.id : undefined, description: description.trim(), store: store.trim(), totalAmount: parseFloat(totalAmount) || 0, installmentsCount: parseInt(installmentsCount, 10) || 1, categoryId, startDate })}
+              onClick={() => onSave({ id: plan ? plan.id : undefined, description: description.trim(), store: store.trim(), totalAmount: parseFloat(totalAmount) || 0, installmentsCount: parseFloat(installmentsCount) || 1, categoryId, startDate })}
               className="flex-1 py-3 rounded-xl font-semibold text-sm disabled:opacity-40"
               style={{ backgroundColor: COLORS.accent, color: COLORS.bg }}
             >
