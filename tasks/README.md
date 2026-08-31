@@ -9,6 +9,7 @@ Ideas y funcionalidades que queremos agregar a Hilo, una por archivo. No es un b
 | [Visualización de escritorio](desktop-view.md) | 1 | Implementada |
 | [Migrar a IndexedDB (o similar) para guardado local](local-storage-migration.md) | 2 | Implementada |
 | [Instalar como PWA](pwa-install.md) | 3 | Implementada |
+| [Buscador en el historial](buscador-historial.md) | 3 | Pendiente |
 | [Conservar el monto al cambiar entre gasto / ingreso / transferencia](cantidad-persiste-al-cambiar-tipo.md) | 4 | Implementada |
 | [Sincronizar escritorio y móvil](desktop-mobile-sync.md) | 4 | Implementada |
 | [Campos de producto en transferencias marcadas como gasto](campos-producto-en-transferencia-gasto.md) | 5 | Implementada |
