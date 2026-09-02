@@ -9,10 +9,13 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.js'],
-    include: ['test/**/*.test.{js,jsx}'],
+    // `test/` es la suite de regresión pre-refactor (no se toca); `src/` lleva
+    // los tests nuevos, colocados junto a la feature que prueban.
+    include: ['test/**/*.test.{js,jsx}', 'src/**/*.test.{js,jsx,ts,tsx}'],
     coverage: {
       provider: 'v8',
-      include: ['hilo-finanzas.jsx'],
+      include: ['src/**/*.{js,jsx,ts,tsx}'],
+      exclude: ['src/test/**', 'src/main.jsx'],
     },
   },
 });
