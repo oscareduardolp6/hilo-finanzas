@@ -22,6 +22,21 @@ npm run build    # build de producción a dist/
 npm run preview  # sirve el build de dist/ para revisarlo localmente
 ```
 
+## Tests
+
+```bash
+npm test          # una pasada (Vitest)
+npm run test:watch
+npm run test:cov  # + cobertura sobre hilo-finanzas.jsx
+```
+
+`test/unit/` prueba la lógica pura y de negocio importada de `hilo-finanzas.jsx`
+(totales, `planProgress`, merge de sincronización, importación de Monefy, OCR…).
+`test/integration/` monta `<App/>` con React Testing Library y `fake-indexeddb` y
+recorre los flujos críticos (alta/edición/borrado de movimientos, MSI, filtros y
+buscador del historial, cuentas, sincronizar/respaldar, importar Monefy, escanear
+ticket). Detalle y decisiones en [agents/plans/testing.md](agents/plans/testing.md).
+
 ## Deploy
 
 La app está publicada como sitio estático en GitHub Pages: **https://oscareduardolp6.github.io/hilo-finanzas/**

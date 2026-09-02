@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-"Hilo" is a personal finance tracker (Mexican Spanish UI, MXN currency), built as a **single React component** ([hilo-finanzas.jsx](hilo-finanzas.jsx)) that exports a default `App` and is styled with Tailwind utility classes and inline style objects. There's no linter or test suite, and no other source files besides the local-dev scaffold described below — all product logic lives in that one `.jsx` file. npm deps are `react`/`react-dom`, `recharts` (charts), `lucide-react` (icons), and `qrcode` + `jsqr` (device-sync QR encode/decode).
+"Hilo" is a personal finance tracker (Mexican Spanish UI, MXN currency), built as a **single React component** ([hilo-finanzas.jsx](hilo-finanzas.jsx)) that exports a default `App` and is styled with Tailwind utility classes and inline style objects. There's no linter, and no other source files besides the local-dev scaffold described below — all product logic lives in that one `.jsx` file. It does export named helpers now (pure calc/format/merge/import functions, and the extracted `useMemo` bodies like `computePlanProgress` / `filterHistoryTransactions`) so the test suite can import them without mounting the app. npm deps are `react`/`react-dom`, `recharts` (charts), `lucide-react` (icons), and `qrcode` + `jsqr` (device-sync QR encode/decode).
+
+There **is** a test suite now: Vitest + React Testing Library + `fake-indexeddb`, run with `npm test` (`test/unit/` for pure logic, `test/integration/` for `<App/>` flows). It exists as the safety net for the eventual [layered-architecture](tasks/layered-architecture.md) refactor — see [tasks/testing.md](tasks/testing.md) / [agents/plans/testing.md](agents/plans/testing.md). When you change product behavior, update or add the matching test; when you change it *deliberately*, the failing test is the checklist of what you're changing.
 
 ### Product direction: local-only SPA, no backend
 

@@ -94,17 +94,17 @@ const DEFAULT_ACCOUNTS = [
   { id: 'acc_mp', name: 'Mercado Pago', type: 'debito', color: '#3F9C8B', initialBalance: 0 },
 ];
 
-const STORAGE_KEY = 'hilo_finanzas_data_v1';
+export const STORAGE_KEY = 'hilo_finanzas_data_v1';
 
 /* A partir de este número de cuentas, los selectores de cuenta (chips) muestran
    un buscador por nombre para no scrollear la fila a ciegas. Ver AccountChipSearch. */
-const ACCOUNT_SEARCH_THRESHOLD = 5;
+export const ACCOUNT_SEARCH_THRESHOLD = 5;
 
 /* Config del escaneo de tickets (API key + modelo). Vive en el mismo object
    store de IndexedDB que el estado, pero bajo su propia clave: NUNCA entra al
    blob `STORAGE_KEY`, así que queda fuera de sync / QR / respaldo por
    construcción (buildExportPayload solo toca las 5 colecciones). */
-const OCR_SETTINGS_STORAGE_KEY = 'hilo_receipt_ocr_settings';
+export const OCR_SETTINGS_STORAGE_KEY = 'hilo_receipt_ocr_settings';
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const RECEIPT_MODEL_DEFAULT = 'claude-haiku-4-5';
 
@@ -113,14 +113,14 @@ const RECEIPT_MODEL_DEFAULT = 'claude-haiku-4-5';
    clave propia en el mismo object store, fuera del blob `STORAGE_KEY`, así que
    nunca viaja en sync / QR / respaldo — cada dispositivo tiene el suyo. Ver
    agents/plans/sync-incremental.md. */
-const SYNC_STATE_STORAGE_KEY = 'hilo_sync_state_v1';
-const PEER_TTL_MS = 365 * 864e5; // peers sin intercambio en un año se podan
+export const SYNC_STATE_STORAGE_KEY = 'hilo_sync_state_v1';
+export const PEER_TTL_MS = 365 * 864e5; // peers sin intercambio en un año se podan
 
 const DB_NAME = 'hilo_finanzas';
 const DB_VERSION = 1;
 const STORE_NAME = 'state';
 
-function openDb() {
+export function openDb() {
   return new Promise((resolve, reject) => {
     if (!('indexedDB' in window)) { reject(new Error('IndexedDB no disponible')); return; }
     const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -130,7 +130,7 @@ function openDb() {
   });
 }
 
-async function loadState() {
+export async function loadState() {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const req = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(STORAGE_KEY);
@@ -139,7 +139,7 @@ async function loadState() {
   });
 }
 
-async function saveState(data) {
+export async function saveState(data) {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -149,7 +149,7 @@ async function saveState(data) {
   });
 }
 
-async function loadOcrSettings() {
+export async function loadOcrSettings() {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const req = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(OCR_SETTINGS_STORAGE_KEY);
@@ -158,7 +158,7 @@ async function loadOcrSettings() {
   });
 }
 
-async function saveOcrSettings(next) {
+export async function saveOcrSettings(next) {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -173,12 +173,12 @@ async function saveOcrSettings(next) {
 /* Sync state local: { deviceId, deviceName, peers: { [peerId]: { name, lastSentAt, lastReceivedAt } } }.
    `lastSentAt`  — hasta aquí YO le mandé mis datos a ese peer (gobierna el delta que le envío; avanza manual).
    `lastReceivedAt` — hasta aquí incorporé lo suyo (informativo; avanza solo al recibir). */
-function makeSyncState() {
+export function makeSyncState() {
   const id = uid('dev');
   return { deviceId: id, deviceName: 'Equipo-' + id.slice(-4), peers: {} };
 }
 
-async function loadSyncState() {
+export async function loadSyncState() {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const req = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(SYNC_STATE_STORAGE_KEY);
@@ -187,7 +187,7 @@ async function loadSyncState() {
   });
 }
 
-async function saveSyncState(next) {
+export async function saveSyncState(next) {
   const cutoff = Date.now() - PEER_TTL_MS;
   const peers = {};
   for (const [id, p] of Object.entries((next && next.peers) || {})) {
@@ -230,25 +230,25 @@ function useIsDesktop() {
   return isDesktop;
 }
 
-function uid(prefix) {
+export function uid(prefix) {
   return `${prefix || 'id'}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function todayIso() {
+export function todayIso() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function monthKey(d) {
+export function monthKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function monthLabel(d) {
+export function monthLabel(d) {
   const label = d.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
-function formatDateLabel(iso) {
+export function formatDateLabel(iso) {
   const parts = iso.split('-').map(Number);
   const d = new Date(parts[0], parts[1] - 1, parts[2]);
   const today = new Date();
@@ -263,7 +263,7 @@ function formatDateLabel(iso) {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
-function formatMoney(n) {
+export function formatMoney(n) {
   const num = Number(n) || 0;
   const sign = num < 0 ? '-' : '';
   return sign + '$' + Math.abs(num).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -272,15 +272,15 @@ function formatMoney(n) {
 /* Coincidencia de texto para el buscador de cuentas: sin distinción de
    mayúsculas ni acentos ("nomina" encuentra "Nómina"). Query vacío = todo pasa. */
 const DIACRITICS_RE = new RegExp('[\\u0300-\\u036f]', 'g');
-function normalizeForSearch(s) {
+export function normalizeForSearch(s) {
   return (s || '').toLowerCase().normalize('NFD').replace(DIACRITICS_RE, '');
 }
-function accountNameMatches(name, query) {
+export function accountNameMatches(name, query) {
   const q = normalizeForSearch(query).trim();
   return !q || normalizeForSearch(name).includes(q);
 }
 
-function computeAccountBalance(account, transactions) {
+export function computeAccountBalance(account, transactions) {
   let bal = Number(account.initialBalance) || 0;
   for (const t of transactions) {
     if (t.type === 'income' && t.accountId === account.id) bal += t.amount;
@@ -293,7 +293,7 @@ function computeAccountBalance(account, transactions) {
   return bal;
 }
 
-function groupByDate(list) {
+export function groupByDate(list) {
   const sorted = [...list].sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || 0) - (a.createdAt || 0));
   const groups = [];
   let currentLabel = null;
@@ -313,7 +313,7 @@ function groupByDate(list) {
 // Best-effort visual highlight: case-insensitive but accent-sensitive indexOf on the
 // original string (normalize('NFD') would shift indices). If the match only came through
 // accent-insensitivity or a linked MSI plan name, it just renders the plain text.
-function highlightMatch(text, rawQuery) {
+export function highlightMatch(text, rawQuery) {
   const str = text == null ? '' : String(text);
   const q = (rawQuery || '').trim();
   if (!q) return str;
@@ -328,7 +328,7 @@ function highlightMatch(text, rawQuery) {
   ];
 }
 
-function initialFormState(type, accounts, categories) {
+export function initialFormState(type, accounts, categories) {
   const expenseCats = categories.filter(c => c.type === 'expense');
   const incomeCats = categories.filter(c => c.type === 'income');
   const base = { date: todayIso(), description: '', amount: '', store: '' };
@@ -363,6 +363,129 @@ function buildDefaultInstallmentPlans() {
 }
 
 /* ------------------------------------------------------------------ */
+/* Cálculos derivados (dominio puro, sin React)                        */
+/* ------------------------------------------------------------------ */
+/* Los `useMemo` de `App` (y el filtro de `HistoryView`) sólo invocan
+   estas funciones. Viven aquí sueltas para poder testearlas sin montar
+   la app y como semilla de la futura capa de dominio. Ver
+   agents/plans/testing.md y tasks/layered-architecture.md. */
+
+export function computeBalances(accounts, transactions) {
+  const map = {};
+  for (const a of accounts) map[a.id] = computeAccountBalance(a, transactions);
+  return map;
+}
+
+export function computeTotalBalance(balances) {
+  return Object.values(balances).reduce((s, v) => s + v, 0);
+}
+
+export function computePeriodTransactions(transactions, periodKey) {
+  return transactions.filter(t => t.date && t.date.startsWith(periodKey));
+}
+
+export function computeTotalIncome(periodTransactions) {
+  return periodTransactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+}
+
+export function computeTotalExpense(periodTransactions) {
+  return periodTransactions.reduce((s, t) => {
+    if (t.type === 'expense') return s + t.amount;
+    if (t.type === 'transfer' && t.taggedAsExpense) return s + t.amount;
+    return s;
+  }, 0);
+}
+
+export function computeCategoryTotals(periodTransactions, categories) {
+  const map = {};
+  for (const t of periodTransactions) {
+    let catId = null;
+    if (t.type === 'expense') catId = t.categoryId;
+    else if (t.type === 'transfer' && t.taggedAsExpense) catId = t.categoryId;
+    if (!catId) continue;
+    map[catId] = (map[catId] || 0) + t.amount;
+  }
+  return Object.entries(map).map(([id, total]) => {
+    const cat = categories.find(c => c.id === id);
+    return { id, total, name: cat ? cat.name : 'Otros', color: cat ? cat.color : COLORS.textMuted, icon: cat ? cat.icon : 'MoreHorizontal' };
+  }).sort((a, b) => b.total - a.total);
+}
+
+export function computeRecentTxns(periodTransactions, limit = 5) {
+  return [...periodTransactions]
+    .sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || 0) - (a.createdAt || 0))
+    .slice(0, limit);
+}
+
+export function computePlanProgress(installmentPlans, transactions) {
+  const map = {};
+  for (const p of installmentPlans) {
+    const paid = transactions
+      .filter(t => (t.type === 'transfer' || t.type === 'expense') && t.installmentPlanId === p.id)
+      .reduce((s, t) => s + t.amount, 0);
+    const per = p.installmentsCount > 0 ? p.totalAmount / p.installmentsCount : 0;
+    const installmentsPaid = per > 0 ? paid / per : 0;
+    const remaining = Math.max(p.totalAmount - paid, 0);
+    const pct = p.totalAmount > 0 ? Math.min(paid / p.totalAmount, 1) : 0;
+    const isPaidOff = p.totalAmount > 0 && paid >= p.totalAmount - 0.005;
+    map[p.id] = { paid, per, installmentsPaid, remaining, pct, isPaidOff };
+  }
+  return map;
+}
+
+export function computeKnownStores(transactions, installmentPlans) {
+  const set = new Set();
+  transactions.forEach(t => { if (t.store) set.add(t.store); });
+  installmentPlans.forEach(p => { if (p.store) set.add(p.store); });
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
+// Sugerencias para el <datalist> del buscador de historial: lugares + descripciones ya
+// usadas + nombres/lugares de planes MSI. computeKnownStores no sirve porque no trae descripciones.
+export function computeHistorySuggestions(transactions, installmentPlans) {
+  const set = new Set();
+  transactions.forEach(t => {
+    if (t.store) set.add(t.store);
+    if (t.description) set.add(t.description);
+  });
+  installmentPlans.forEach(p => {
+    if (p.description) set.add(p.description);
+    if (p.store) set.add(p.store);
+  });
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
+/* Filtro del Historial: mes/todo-el-tiempo, tipo (incluye 'msi'), categoría,
+   tienda y búsqueda de texto (insensible a acentos/mayúsculas contra
+   descripción, tienda y el plan MSI vinculado). Los filtros se componen.
+   Compartido por HistoryView y HistoryViewDesktop. */
+export function filterHistoryTransactions({ transactions, installmentPlans, showAllTime, searching, q, monthCursor, filterType, filterCategory, filterStore }) {
+  let list = transactions;
+  if (!showAllTime && !searching) {
+    const key = monthKey(monthCursor);
+    list = list.filter(t => t.date && t.date.startsWith(key));
+  }
+  if (filterType === 'msi') list = list.filter(t => !!t.installmentPlanId);
+  else if (filterType !== 'all') list = list.filter(t => t.type === filterType);
+  if (filterCategory !== 'all') {
+    list = list.filter(t =>
+      (t.type === 'expense' && t.categoryId === filterCategory) ||
+      (t.type === 'income' && t.categoryId === filterCategory) ||
+      (t.type === 'transfer' && t.taggedAsExpense && t.categoryId === filterCategory)
+    );
+  }
+  if (filterStore !== 'all') list = list.filter(t => t.store === filterStore);
+  if (searching) {
+    list = list.filter(t => {
+      const plan = t.installmentPlanId ? installmentPlans.find(p => p.id === t.installmentPlanId) : null;
+      const hay = [t.description, t.store, plan && plan.description, plan && plan.store].map(normalizeForSearch).join(' ');
+      return hay.includes(q);
+    });
+  }
+  return list;
+}
+
+/* ------------------------------------------------------------------ */
 /* Export / sincronización / respaldo (sin backend)                    */
 /* ------------------------------------------------------------------ */
 /* Un mismo formato de "blob de datos" sirve para tres cosas: pasar los
@@ -371,23 +494,23 @@ function buildDefaultInstallmentPlans() {
    el usuario mueve el archivo/texto/QR a mano. Ver
    agents/plans/desktop-mobile-sync.md. */
 
-const EXPORT_APP_ID = 'hilo-finanzas';
-const EXPORT_SCHEMA = 1;
-const EXPORT_TEXT_PREFIX = 'hilo1:';
-const QR_BYTE_LIMIT = 2900;          // capacidad práctica de un QR byte-mode (v40, ECC L)
-const TOMBSTONE_TTL_MS = 180 * 864e5; // 180 días — después de eso se olvida el borrado
-const SYNC_SKEW_MARGIN_MS = 5 * 60 * 1000; // margen anti-desfase de reloj al calcular un delta
+export const EXPORT_APP_ID = 'hilo-finanzas';
+export const EXPORT_SCHEMA = 1;
+export const EXPORT_TEXT_PREFIX = 'hilo1:';
+export const QR_BYTE_LIMIT = 2900;          // capacidad práctica de un QR byte-mode (v40, ECC L)
+export const TOMBSTONE_TTL_MS = 180 * 864e5; // 180 días — después de eso se olvida el borrado
+export const SYNC_SKEW_MARGIN_MS = 5 * 60 * 1000; // margen anti-desfase de reloj al calcular un delta
 
-const SYNC_COLLECTIONS = ['accounts', 'categories', 'transactions', 'installmentPlans'];
+export const SYNC_COLLECTIONS = ['accounts', 'categories', 'transactions', 'installmentPlans'];
 
-const recordStamp = (r) => r.updatedAt ?? r.createdAt ?? 0;
+export const recordStamp = (r) => r.updatedAt ?? r.createdAt ?? 0;
 
 /* Un payload de export. Sin opts es la foto completa (sync completo / respaldo).
    Con `since` (epoch) es un DELTA: solo registros y tombstones tocados después de
    ese punto — el merge del receptor los funde por `id` igual (un registro ausente
    no es un borrado). `device` identifica al emisor para que el receptor lleve el
    registro de hasta dónde recibió de él. Ver agents/plans/sync-incremental.md. */
-function buildExportPayload(state, { device, since } = {}) {
+export function buildExportPayload(state, { device, since } = {}) {
   const partial = Number.isFinite(since);
   const cutoff = partial ? since - SYNC_SKEW_MARGIN_MS : -Infinity;
   const pick = (list) => (partial ? (list || []).filter((r) => recordStamp(r) > cutoff) : (list || []));
@@ -410,29 +533,29 @@ function buildExportPayload(state, { device, since } = {}) {
   };
 }
 
-function supportsCompression() {
+export function supportsCompression() {
   return typeof CompressionStream === 'function' && typeof DecompressionStream === 'function';
 }
 
-async function gzipString(str) {
+export async function gzipString(str) {
   const stream = new Blob([new TextEncoder().encode(str)]).stream().pipeThrough(new CompressionStream('gzip'));
   const buf = await new Response(stream).arrayBuffer();
   return new Uint8Array(buf);
 }
 
-async function gunzipBytes(bytes) {
+export async function gunzipBytes(bytes) {
   const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
   const buf = await new Response(stream).arrayBuffer();
   return new TextDecoder().decode(buf);
 }
 
-function bytesToBase64(bytes) {
+export function bytesToBase64(bytes) {
   let bin = '';
   for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
   return btoa(bin);
 }
 
-function base64ToBytes(b64) {
+export function base64ToBytes(b64) {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
@@ -444,7 +567,7 @@ function base64ToBytes(b64) {
    últimos faltan en exports viejos / respaldos → se normalizan a null/false, y ni
    `mergeDataState` ni `replaceDataState` los miran. Lanza Error legible si no
    parece un export de Hilo. */
-function normalizeExportPayload(obj) {
+export function normalizeExportPayload(obj) {
   if (!obj || obj.app !== EXPORT_APP_ID || !obj.data) {
     throw new Error('Esto no parece un export de Hilo.');
   }
@@ -470,7 +593,7 @@ function normalizeExportPayload(obj) {
 
 /* Punto de entrada único para texto pegado / contenido de archivo: acepta JSON
    plano o "hilo1:<base64 gzip>". Async porque descomprimir lo es. */
-async function parseExportText(text) {
+export async function parseExportText(text) {
   const trimmed = (text || '').trim();
   if (!trimmed) throw new Error('No hay nada que leer.');
   if (trimmed.startsWith(EXPORT_TEXT_PREFIX)) {
@@ -492,7 +615,7 @@ async function parseExportText(text) {
 }
 
 /* Para el QR: los bytes escaneados son el JSON comprimido con gzip. */
-async function parseExportBytes(bytes) {
+export async function parseExportBytes(bytes) {
   let json;
   try {
     json = await gunzipBytes(bytes);
@@ -504,7 +627,7 @@ async function parseExportBytes(bytes) {
 
 /* Funde dos listas por `id` (gana el `recordStamp` mayor; empate → entrante),
    luego descarta los registros con un tombstone posterior a su última edición. */
-function mergeCollection(currentList, incomingList, tombstoneMap) {
+export function mergeCollection(currentList, incomingList, tombstoneMap) {
   const map = new Map((currentList || []).map((r) => [r.id, r]));
   let added = 0;
   let updated = 0;
@@ -531,7 +654,7 @@ function mergeCollection(currentList, incomingList, tombstoneMap) {
   return { list, added, updated, removed };
 }
 
-function mergeTombstones(a, b) {
+export function mergeTombstones(a, b) {
   const cutoff = Date.now() - TOMBSTONE_TTL_MS;
   const map = new Map();
   for (const t of [...(a || []), ...(b || [])]) {
@@ -544,7 +667,7 @@ function mergeTombstones(a, b) {
 }
 
 /* Merge de sincronización: une tombstones, aplica el mapa a las 4 colecciones. */
-function mergeDataState(current, incoming) {
+export function mergeDataState(current, incoming) {
   const tombstones = mergeTombstones(current.tombstones, incoming.tombstones);
   const tombstoneMap = new Map(tombstones.map((t) => [t.id, t.deletedAt]));
   const out = { tombstones, stats: { added: 0, updated: 0, removed: 0 } };
@@ -559,7 +682,7 @@ function mergeDataState(current, incoming) {
 }
 
 /* Restaurar respaldo: reemplaza todo con la foto del payload. */
-function replaceDataState(incoming) {
+export function replaceDataState(incoming) {
   return {
     accounts: incoming.accounts || [],
     categories: incoming.categories || [],
@@ -569,13 +692,13 @@ function replaceDataState(incoming) {
   };
 }
 
-function exportFileName(kind) {
+export function exportFileName(kind) {
   const d = new Date();
   const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   return `hilo-${kind}-${stamp}.json`;
 }
 
-function downloadJson(payload, fileName) {
+export function downloadJson(payload, fileName) {
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -604,7 +727,7 @@ const MONEFY_FROM_RE = /^From '(.+)'$/;
 const MONEFY_INITIAL_RE = /^Initial balance '(.+)'$/;
 const MONEFY_TRANSFER_CATEGORY = 'Transferencias';
 
-function parseCsv(text) {
+export function parseCsv(text) {
   const rows = [];
   let row = [];
   let field = '';
@@ -629,16 +752,16 @@ function parseCsv(text) {
   return rows;
 }
 
-function parseMonefyDate(ddmmyyyy) {
+export function parseMonefyDate(ddmmyyyy) {
   const [d, m, y] = ddmmyyyy.split('/');
   return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
 }
 
-function parseMonefyAmount(str) {
+export function parseMonefyAmount(str) {
   return parseFloat(String(str).replace(/,/g, '')) || 0;
 }
 
-function classifyMonefyCategory(raw) {
+export function classifyMonefyCategory(raw) {
   const trimmed = (raw || '').trim();
   let m = trimmed.match(MONEFY_TO_RE);
   if (m) return { kind: 'to', otherAccount: m[1].trim() };
@@ -649,7 +772,7 @@ function classifyMonefyCategory(raw) {
   return { kind: 'plain', category: trimmed };
 }
 
-function parseMonefyRows(text) {
+export function parseMonefyRows(text) {
   const table = parseCsv(text.replace(/^﻿/, ''));
   if (!table.length) return null;
   const header = table[0].map(h => h.trim().toLowerCase());
@@ -676,7 +799,7 @@ const MONEFY_ACCOUNT_TYPE_HINTS = [
   { type: 'ahorro', keywords: ['ahorro', 'apartado', 'fondo'] },
 ];
 
-function guessAccountType(name) {
+export function guessAccountType(name) {
   const lower = name.toLowerCase();
   for (const { type, keywords } of MONEFY_ACCOUNT_TYPE_HINTS) {
     if (keywords.some(k => lower.includes(k))) return type;
@@ -708,7 +831,7 @@ const MONEFY_CATEGORY_ICON_HINTS = [
   { icon: 'Smartphone', keywords: ['telefon'] },
 ];
 
-function guessCategoryIcon(name) {
+export function guessCategoryIcon(name) {
   const lower = name.toLowerCase();
   for (const { icon, keywords } of MONEFY_CATEGORY_ICON_HINTS) {
     if (keywords.some(k => lower.includes(k))) return icon;
@@ -724,7 +847,7 @@ function guessCategoryIcon(name) {
    dos casos (con y sin fracción). */
 const OSCAR_FRACTION_RE = /[(\[]\s*([0-9]+(?:\.[0-9]+)?)\s*\/\s*([0-9]+)\s*[)\]]/;
 
-function parseOscarDescription(raw) {
+export function parseOscarDescription(raw) {
   const text = raw || '';
   const m = text.match(OSCAR_FRACTION_RE);
   let base, rest, numerator = null, denominator = null;
@@ -742,7 +865,7 @@ function parseOscarDescription(raw) {
   return { description: base || text.trim(), store: store || '', size: size || '', brand: brand || '', quantity: quantity || '', numerator, denominator };
 }
 
-function buildMonefyImportPreview(rows) {
+export function buildMonefyImportPreview(rows) {
   const accountsByName = new Map();
   function ensureAccount(name, appearsDirectly) {
     let entry = accountsByName.get(name);
@@ -848,7 +971,7 @@ function buildMonefyImportPreview(rows) {
   };
 }
 
-function buildMonefyImportPlan(skeleton, initialBalances, { accountDecisions, existingAccounts, existingCategories, useOscarConvention }) {
+export function buildMonefyImportPlan(skeleton, initialBalances, { accountDecisions, existingAccounts, existingCategories, useOscarConvention }) {
   const accountsToAdd = [];
   const categoriesToAdd = [];
   const newAccountIds = new Map();
@@ -1006,7 +1129,7 @@ const RECEIPT_TOOL = {
   },
 };
 
-function fileToBase64(blob) {
+export function fileToBase64(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -1024,7 +1147,7 @@ function fileToBase64(blob) {
 /* Reescala a JPEG con lado máximo `maxDim` para bajar peso y costo de la API
    y normalizar formatos raros (HEIC/webp). Devuelve el archivo original si ya
    es un JPEG chico o si el navegador no puede decodificar la imagen. */
-function downscaleImage(file, maxDim = 1600) {
+export function downscaleImage(file, maxDim = 1600) {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
@@ -1048,7 +1171,7 @@ function downscaleImage(file, maxDim = 1600) {
   });
 }
 
-async function scanReceipt({ apiKey, model, image, expenseCategories }) {
+export async function scanReceipt({ apiKey, model, image, expenseCategories }) {
   const catLines = expenseCategories.map(c => `${c.id} — ${c.name}`).join('\n');
   const prompt = [
     'Analiza esta foto de un ticket de compra de supermercado (México, montos en pesos MXN).',
@@ -1105,11 +1228,11 @@ async function scanReceipt({ apiKey, model, image, expenseCategories }) {
   return block.input;
 }
 
-function isValidIsoDate(s) {
+export function isValidIsoDate(s) {
   return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
 }
 
-function buildReceiptDraft(scan, { expenseCategories }) {
+export function buildReceiptDraft(scan, { expenseCategories }) {
   const fallbackCat = expenseCategories[0] ? expenseCategories[0].id : '';
   const catIds = new Set(expenseCategories.map(c => c.id));
   const rows = (Array.isArray(scan.lineItems) ? scan.lineItems : []).map(it => ({
@@ -1726,31 +1849,10 @@ function HomeView({ monthCursor, onPrevMonth, onNextMonth, totalBalance, totalIn
 function HistoryView({ transactions, accounts, categories, installmentPlans, knownStores, historySuggestions, monthCursor, onPrevMonth, onNextMonth, showAllTime, setShowAllTime, filterType, setFilterType, filterCategory, setFilterCategory, filterStore, setFilterStore, searchQuery, setSearchQuery, onOpenTxn }) {
   const q = normalizeForSearch((searchQuery || '').trim());
   const searching = q.length > 0;
-  const filtered = useMemo(() => {
-    let list = transactions;
-    if (!showAllTime && !searching) {
-      const key = monthKey(monthCursor);
-      list = list.filter(t => t.date && t.date.startsWith(key));
-    }
-    if (filterType === 'msi') list = list.filter(t => !!t.installmentPlanId);
-    else if (filterType !== 'all') list = list.filter(t => t.type === filterType);
-    if (filterCategory !== 'all') {
-      list = list.filter(t =>
-        (t.type === 'expense' && t.categoryId === filterCategory) ||
-        (t.type === 'income' && t.categoryId === filterCategory) ||
-        (t.type === 'transfer' && t.taggedAsExpense && t.categoryId === filterCategory)
-      );
-    }
-    if (filterStore !== 'all') list = list.filter(t => t.store === filterStore);
-    if (searching) {
-      list = list.filter(t => {
-        const plan = t.installmentPlanId ? installmentPlans.find(p => p.id === t.installmentPlanId) : null;
-        const hay = [t.description, t.store, plan && plan.description, plan && plan.store].map(normalizeForSearch).join(' ');
-        return hay.includes(q);
-      });
-    }
-    return list;
-  }, [transactions, installmentPlans, showAllTime, searching, q, monthCursor, filterType, filterCategory, filterStore]);
+  const filtered = useMemo(
+    () => filterHistoryTransactions({ transactions, installmentPlans, showAllTime, searching, q, monthCursor, filterType, filterCategory, filterStore }),
+    [transactions, installmentPlans, showAllTime, searching, q, monthCursor, filterType, filterCategory, filterStore]
+  );
 
   const groups = groupByDate(filtered);
   const expenseCats = categories.filter(c => c.type === 'expense');
@@ -1765,11 +1867,11 @@ function HistoryView({ transactions, accounts, categories, installmentPlans, kno
   return (
     <div className="pt-2">
       <div className="flex items-center gap-2">
-        <button onClick={onPrevMonth} disabled={showAllTime || searching} className="w-7 h-7 rounded-full flex items-center justify-center disabled:opacity-30" style={{ backgroundColor: COLORS.surfaceAlt }}>
+        <button onClick={onPrevMonth} disabled={showAllTime || searching} aria-label="Mes anterior" className="w-7 h-7 rounded-full flex items-center justify-center disabled:opacity-30" style={{ backgroundColor: COLORS.surfaceAlt }}>
           <ChevronLeft size={14} style={{ color: COLORS.textMuted }} />
         </button>
         <p className="text-sm font-medium flex-1 text-center" style={{ color: COLORS.text }}>{showAllTime || searching ? 'Todo el tiempo' : monthLabel(monthCursor)}</p>
-        <button onClick={onNextMonth} disabled={showAllTime || searching} className="w-7 h-7 rounded-full flex items-center justify-center disabled:opacity-30" style={{ backgroundColor: COLORS.surfaceAlt }}>
+        <button onClick={onNextMonth} disabled={showAllTime || searching} aria-label="Mes siguiente" className="w-7 h-7 rounded-full flex items-center justify-center disabled:opacity-30" style={{ backgroundColor: COLORS.surfaceAlt }}>
           <ChevronRight size={14} style={{ color: COLORS.textMuted }} />
         </button>
       </div>
@@ -1793,7 +1895,7 @@ function HistoryView({ transactions, accounts, categories, installmentPlans, kno
           style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }}
         />
         {searchQuery && (
-          <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full flex items-center justify-center" style={{ color: COLORS.textMuted }}>
+          <button onClick={() => setSearchQuery('')} aria-label="Limpiar búsqueda" className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full flex items-center justify-center" style={{ color: COLORS.textMuted }}>
             <X size={14} />
           </button>
         )}
@@ -2053,31 +2155,10 @@ function HomeViewDesktop({ monthCursor, onPrevMonth, onNextMonth, totalBalance, 
 function HistoryViewDesktop({ transactions, accounts, categories, installmentPlans, knownStores, historySuggestions, monthCursor, onPrevMonth, onNextMonth, showAllTime, setShowAllTime, filterType, setFilterType, filterCategory, setFilterCategory, filterStore, setFilterStore, searchQuery, setSearchQuery, onOpenTxn }) {
   const q = normalizeForSearch((searchQuery || '').trim());
   const searching = q.length > 0;
-  const filtered = useMemo(() => {
-    let list = transactions;
-    if (!showAllTime && !searching) {
-      const key = monthKey(monthCursor);
-      list = list.filter(t => t.date && t.date.startsWith(key));
-    }
-    if (filterType === 'msi') list = list.filter(t => !!t.installmentPlanId);
-    else if (filterType !== 'all') list = list.filter(t => t.type === filterType);
-    if (filterCategory !== 'all') {
-      list = list.filter(t =>
-        (t.type === 'expense' && t.categoryId === filterCategory) ||
-        (t.type === 'income' && t.categoryId === filterCategory) ||
-        (t.type === 'transfer' && t.taggedAsExpense && t.categoryId === filterCategory)
-      );
-    }
-    if (filterStore !== 'all') list = list.filter(t => t.store === filterStore);
-    if (searching) {
-      list = list.filter(t => {
-        const plan = t.installmentPlanId ? installmentPlans.find(p => p.id === t.installmentPlanId) : null;
-        const hay = [t.description, t.store, plan && plan.description, plan && plan.store].map(normalizeForSearch).join(' ');
-        return hay.includes(q);
-      });
-    }
-    return list;
-  }, [transactions, installmentPlans, showAllTime, searching, q, monthCursor, filterType, filterCategory, filterStore]);
+  const filtered = useMemo(
+    () => filterHistoryTransactions({ transactions, installmentPlans, showAllTime, searching, q, monthCursor, filterType, filterCategory, filterStore }),
+    [transactions, installmentPlans, showAllTime, searching, q, monthCursor, filterType, filterCategory, filterStore]
+  );
 
   const groups = groupByDate(filtered);
   const expenseCats = categories.filter(c => c.type === 'expense');
@@ -2507,7 +2588,7 @@ function AddTransactionSheet({ formType, editingId, form, setForm, accounts, cat
         ) : (
           <div className="flex gap-3">
             {editingId && (
-              <button onClick={() => setConfirmDelete(true)} className="px-4 py-3 rounded-xl" style={{ backgroundColor: COLORS.expenseSoft, color: COLORS.expense }}>
+              <button onClick={() => setConfirmDelete(true)} aria-label="Eliminar movimiento" className="px-4 py-3 rounded-xl" style={{ backgroundColor: COLORS.expenseSoft, color: COLORS.expense }}>
                 <Trash2 size={18} />
               </button>
             )}
@@ -2586,7 +2667,7 @@ function AccountFormModal({ account, canDelete, onClose, onSave, onDelete, deskt
         ) : (
           <div className="flex gap-3">
             {account && (
-              <button onClick={() => canDelete && setConfirmDelete(true)} disabled={!canDelete} className="px-4 py-3 rounded-xl disabled:opacity-30" style={{ backgroundColor: COLORS.expenseSoft, color: COLORS.expense }}>
+              <button onClick={() => canDelete && setConfirmDelete(true)} disabled={!canDelete} aria-label="Eliminar cuenta" className="px-4 py-3 rounded-xl disabled:opacity-30" style={{ backgroundColor: COLORS.expenseSoft, color: COLORS.expense }}>
                 <Trash2 size={17} />
               </button>
             )}
@@ -4008,86 +4089,41 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  const balances = useMemo(() => {
-    const map = {};
-    for (const a of accounts) map[a.id] = computeAccountBalance(a, transactions);
-    return map;
-  }, [accounts, transactions]);
+  const balances = useMemo(() => computeBalances(accounts, transactions), [accounts, transactions]);
 
-  const totalBalance = useMemo(() => Object.values(balances).reduce((s, v) => s + v, 0), [balances]);
+  const totalBalance = useMemo(() => computeTotalBalance(balances), [balances]);
 
   const periodKey = monthKey(monthCursor);
   const periodTransactions = useMemo(
-    () => transactions.filter(t => t.date && t.date.startsWith(periodKey)),
+    () => computePeriodTransactions(transactions, periodKey),
     [transactions, periodKey]
   );
 
-  const totalIncome = useMemo(
-    () => periodTransactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0),
-    [periodTransactions]
+  const totalIncome = useMemo(() => computeTotalIncome(periodTransactions), [periodTransactions]);
+
+  const totalExpense = useMemo(() => computeTotalExpense(periodTransactions), [periodTransactions]);
+
+  const categoryTotals = useMemo(
+    () => computeCategoryTotals(periodTransactions, categories),
+    [periodTransactions, categories]
   );
 
-  const totalExpense = useMemo(() => periodTransactions.reduce((s, t) => {
-    if (t.type === 'expense') return s + t.amount;
-    if (t.type === 'transfer' && t.taggedAsExpense) return s + t.amount;
-    return s;
-  }, 0), [periodTransactions]);
+  const recentTxns = useMemo(() => computeRecentTxns(periodTransactions, 5), [periodTransactions]);
 
-  const categoryTotals = useMemo(() => {
-    const map = {};
-    for (const t of periodTransactions) {
-      let catId = null;
-      if (t.type === 'expense') catId = t.categoryId;
-      else if (t.type === 'transfer' && t.taggedAsExpense) catId = t.categoryId;
-      if (!catId) continue;
-      map[catId] = (map[catId] || 0) + t.amount;
-    }
-    return Object.entries(map).map(([id, total]) => {
-      const cat = categories.find(c => c.id === id);
-      return { id, total, name: cat ? cat.name : 'Otros', color: cat ? cat.color : COLORS.textMuted, icon: cat ? cat.icon : 'MoreHorizontal' };
-    }).sort((a, b) => b.total - a.total);
-  }, [periodTransactions, categories]);
-
-  const recentTxns = useMemo(
-    () => [...periodTransactions].sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 5),
-    [periodTransactions]
+  const planProgress = useMemo(
+    () => computePlanProgress(installmentPlans, transactions),
+    [installmentPlans, transactions]
   );
 
-  const planProgress = useMemo(() => {
-    const map = {};
-    for (const p of installmentPlans) {
-      const paid = transactions.filter(t => (t.type === 'transfer' || t.type === 'expense') && t.installmentPlanId === p.id).reduce((s, t) => s + t.amount, 0);
-      const per = p.installmentsCount > 0 ? p.totalAmount / p.installmentsCount : 0;
-      const installmentsPaid = per > 0 ? paid / per : 0;
-      const remaining = Math.max(p.totalAmount - paid, 0);
-      const pct = p.totalAmount > 0 ? Math.min(paid / p.totalAmount, 1) : 0;
-      const isPaidOff = p.totalAmount > 0 && paid >= p.totalAmount - 0.005;
-      map[p.id] = { paid, per, installmentsPaid, remaining, pct, isPaidOff };
-    }
-    return map;
-  }, [installmentPlans, transactions]);
+  const knownStores = useMemo(
+    () => computeKnownStores(transactions, installmentPlans),
+    [transactions, installmentPlans]
+  );
 
-  const knownStores = useMemo(() => {
-    const set = new Set();
-    transactions.forEach(t => { if (t.store) set.add(t.store); });
-    installmentPlans.forEach(p => { if (p.store) set.add(p.store); });
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [transactions, installmentPlans]);
-
-  // Sugerencias para el <datalist> del buscador de historial: lugares + descripciones ya
-  // usadas + nombres/lugares de planes MSI. knownStores no sirve porque no trae descripciones.
-  const historySuggestions = useMemo(() => {
-    const set = new Set();
-    transactions.forEach(t => {
-      if (t.store) set.add(t.store);
-      if (t.description) set.add(t.description);
-    });
-    installmentPlans.forEach(p => {
-      if (p.description) set.add(p.description);
-      if (p.store) set.add(p.store);
-    });
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [transactions, installmentPlans]);
+  const historySuggestions = useMemo(
+    () => computeHistorySuggestions(transactions, installmentPlans),
+    [transactions, installmentPlans]
+  );
 
   const isDesktop = useIsDesktop();
 
@@ -4498,7 +4534,7 @@ export default function App() {
             <h1 className="text-xl font-semibold font-display leading-tight" style={{ color: COLORS.text }}>Hilo</h1>
             <p className="text-xs" style={{ color: COLORS.textMuted }}>Control de gastos</p>
           </div>
-          <button onClick={() => setSettingsOpen(true)} className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: COLORS.surfaceAlt }}>
+          <button onClick={() => setSettingsOpen(true)} aria-label="Abrir ajustes" className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: COLORS.surfaceAlt }}>
             <Settings size={16} style={{ color: COLORS.textMuted }} />
           </button>
         </div>
@@ -4582,6 +4618,7 @@ export default function App() {
 
         <button
           onClick={() => openAddSheet('expense')}
+          aria-label="Agregar movimiento"
           className="absolute right-5 z-20 w-14 h-14 rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform"
           style={{ backgroundColor: COLORS.accent, bottom: 82 }}
         >

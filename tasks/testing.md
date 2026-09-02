@@ -1,9 +1,16 @@
 ---
-status: pendiente
+status: implementada
 priority: 8
 ---
 
 # Agregar testing
+
+> **Implementada.** Vitest + React Testing Library + fake-indexeddb; 190 tests
+> (7 suites unit de lógica pura/negocio + 7 de integración sobre `<App/>`). Ver
+> [agents/plans/testing.md](../agents/plans/testing.md) para el detalle y decisiones.
+> Las dudas abiertas de abajo quedaron resueltas: Vitest confirmado; sí se hicieron
+> tests de UI para los flujos críticos; la lógica pura se extrajo de los `useMemo`
+> de `App` a funciones exportadas (refactor mínimo sin cambio de comportamiento).
 
 Hoy no hay linter ni test suite (ver [CLAUDE.md](../CLAUDE.md)) — toda la confianza en que un cambio no rompe nada viene de probar a mano en `npm run dev`. Eso ya es frágil con un solo componente gigante en [hilo-finanzas.jsx](../hilo-finanzas.jsx); se vuelve insostenible si además se busca refactorizar hacia una arquitectura en capas (ver [layered-architecture.md](layered-architecture.md)) — un refactor grande sin red de seguridad es mucho más riesgoso.
 
