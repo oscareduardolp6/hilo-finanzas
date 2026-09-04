@@ -31,6 +31,15 @@ import { computeBalances, computeTotalBalance } from '../features/accounts/domai
 import { AccountsContainer } from '../features/accounts/ui/containers/AccountsContainer';
 import { AccountFormContainer } from '../features/accounts/ui/containers/AccountFormContainer';
 
+/* Feature `transactions`, paso 4. El legacy consume su dominio; el alta, la
+   edición y el borrado son ahora acciones del store. */
+import { initialFormState } from '../features/transactions/domain/form';
+import {
+  computePeriodTransactions,
+  computeRecentTxns,
+  computeKnownStores,
+} from '../features/transactions/domain/queries';
+
 /* El estado dejó de vivir en `App`: ahora está en el store de zustand, que se
    crea por montaje. Ver src/app/store/ y agents/plans/layered-architecture.md. */
 import { HiloStoreProvider, useHiloStore } from '../app/store-context';
@@ -66,20 +75,6 @@ function useIsDesktop() {
   return isDesktop;
 }
 
-export function initialFormState(type, accounts, categories) {
-  const expenseCats = categories.filter(c => c.type === 'expense');
-  const incomeCats = categories.filter(c => c.type === 'income');
-  const base = { date: todayIso(), description: '', amount: '', store: '' };
-  if (type === 'expense') {
-    return { ...base, accountId: accounts[0] ? accounts[0].id : '', categoryId: expenseCats[0] ? expenseCats[0].id : '', installmentPlanId: null, size: '', brand: '', quantity: '' };
-  }
-  if (type === 'income') {
-    return { ...base, accountId: accounts[0] ? accounts[0].id : '', categoryId: incomeCats[0] ? incomeCats[0].id : '' };
-  }
-  const secondAccount = accounts[1] ? accounts[1].id : (accounts[0] ? accounts[0].id : '');
-  return { ...base, fromAccountId: accounts[0] ? accounts[0].id : '', toAccountId: secondAccount, taggedAsExpense: false, categoryId: '', installmentPlanId: null, size: '', brand: '', quantity: '' };
-}
-
 /* ------------------------------------------------------------------ */
 /* Cálculos derivados (dominio puro, sin React)                        */
 /* ------------------------------------------------------------------ */
@@ -87,10 +82,6 @@ export function initialFormState(type, accounts, categories) {
    estas funciones. Viven aquí sueltas para poder testearlas sin montar
    la app y como semilla de la futura capa de dominio. Ver
    agents/plans/testing.md y tasks/layered-architecture.md. */
-
-export function computePeriodTransactions(transactions, periodKey) {
-  return transactions.filter(t => t.date && t.date.startsWith(periodKey));
-}
 
 export function computeTotalIncome(periodTransactions) {
   return periodTransactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
@@ -119,12 +110,6 @@ export function computeCategoryTotals(periodTransactions, categories) {
   }).sort((a, b) => b.total - a.total);
 }
 
-export function computeRecentTxns(periodTransactions, limit = 5) {
-  return [...periodTransactions]
-    .sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || 0) - (a.createdAt || 0))
-    .slice(0, limit);
-}
-
 export function computePlanProgress(installmentPlans, transactions) {
   const map = {};
   for (const p of installmentPlans) {
@@ -139,13 +124,6 @@ export function computePlanProgress(installmentPlans, transactions) {
     map[p.id] = { paid, per, installmentsPaid, remaining, pct, isPaidOff };
   }
   return map;
-}
-
-export function computeKnownStores(transactions, installmentPlans) {
-  const set = new Set();
-  transactions.forEach(t => { if (t.store) set.add(t.store); });
-  installmentPlans.forEach(p => { if (p.store) set.add(p.store); });
-  return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
 // Sugerencias para el <datalist> del buscador de historial: lugares + descripciones ya
@@ -3547,8 +3525,10 @@ function AppBody() {
     setActiveTab, setMonthCursor, setShowAllTime, setFilterType, setFilterCategory,
     setFilterStore, setSearchQuery,
 
-    sheetOpen, formType, editingId, form,
-    setSheetOpen, setFormType, setEditingId, setForm,
+    sheetOpen, formType, editingId, form, setForm,
+    /* Acciones del slice de `transactions` (paso 4). */
+    openAddSheet, openEditSheet, closeSheet, switchFormType,
+    saveTransaction, deleteTransaction, resetTransactions,
 
     msiModalOpen, editingPlan, settingsOpen,
     importModalOpen, syncModalOpen, backupModalOpen, receiptModalOpen,
@@ -3604,94 +3584,15 @@ function AppBody() {
   function prevMonth() { setMonthCursor(d => { const nd = new Date(d); nd.setMonth(nd.getMonth() - 1); return nd; }); }
   function nextMonth() { setMonthCursor(d => { const nd = new Date(d); nd.setMonth(nd.getMonth() + 1); return nd; }); }
 
-  function openAddSheet(type) {
-    setEditingId(null);
-    setFormType(type);
-    setForm(initialFormState(type, accounts, categories));
-    setSheetOpen(true);
-  }
-  function openEditSheet(txn) {
-    setEditingId(txn.id);
-    setFormType(txn.type);
-    setForm({ ...txn, amount: String(txn.amount) });
-    setSheetOpen(true);
-  }
-  function closeSheet() {
-    setSheetOpen(false);
-    setForm(null);
-    setEditingId(null);
-  }
-  function switchFormType(type) {
-    setFormType(type);
-    setForm(f => {
-      const fresh = initialFormState(type, accounts, categories);
-      return f ? { ...fresh, amount: f.amount } : fresh;
-    });
-  }
-
-  function handleSaveTransaction(payload) {
-    const amount = parseFloat(payload.amount);
-    const base = { date: payload.date || todayIso(), description: (payload.description || '').trim(), amount };
-    let txn;
-    if (formType === 'expense') {
-      txn = {
-        ...base, type: 'expense', accountId: payload.accountId, categoryId: payload.categoryId, store: (payload.store || '').trim() || null,
-        installmentPlanId: payload.installmentPlanId || null,
-        size: (payload.size || '').trim() || null,
-        brand: (payload.brand || '').trim() || null,
-        quantity: (payload.quantity || '').trim() || null,
-      };
-    } else if (formType === 'income') {
-      txn = { ...base, type: 'income', accountId: payload.accountId, categoryId: payload.categoryId };
-    } else {
-      const isMsi = !!(payload.taggedAsExpense && payload.installmentPlanId);
-      txn = {
-        ...base,
-        type: 'transfer',
-        fromAccountId: payload.fromAccountId,
-        toAccountId: payload.toAccountId,
-        taggedAsExpense: !!payload.taggedAsExpense,
-        categoryId: payload.taggedAsExpense ? payload.categoryId : null,
-        installmentPlanId: isMsi ? payload.installmentPlanId : null,
-        store: (payload.taggedAsExpense && !isMsi) ? ((payload.store || '').trim() || null) : null,
-        size: payload.taggedAsExpense ? ((payload.size || '').trim() || null) : null,
-        brand: payload.taggedAsExpense ? ((payload.brand || '').trim() || null) : null,
-        quantity: payload.taggedAsExpense ? ((payload.quantity || '').trim() || null) : null,
-      };
-    }
-
-    if (editingId) {
-      setTransactions(prev => prev.map(t => t.id === editingId ? { ...t, ...txn, updatedAt: Date.now() } : t));
-      setToast('Movimiento actualizado');
-    } else {
-      setTransactions(prev => [...prev, { ...txn, id: uid('txn'), createdAt: Date.now(), updatedAt: Date.now() }]);
-      setToast('Movimiento agregado');
-    }
-    closeSheet();
-  }
-
-  function handleDeleteTransaction(id) {
-    setTransactions(prev => prev.filter(t => t.id !== id));
-    setTombstones(prev => [...prev, { id, deletedAt: Date.now() }]);
-    setToast('Movimiento eliminado');
-    closeSheet();
-  }
-
-  /* El alta, la edición y el borrado de cuentas ya no viven aquí: son los casos
-     de uso de `features/accounts/application/`, que corre su slice. */
+  /* Los movimientos y las cuentas ya no se manejan aquí: sus altas, ediciones y
+     borrados son casos de uso en `features/<f>/application/`, que corren sus
+     slices. Lo que queda abajo es lo que todavía no se migra. */
 
   function handleSliceClick(categoryId) {
     setFilterCategory(categoryId);
     setFilterType('all');
     setShowAllTime(false);
     setActiveTab('history');
-  }
-
-  function handleResetTransactions() {
-    const now = Date.now();
-    setTombstones(prev => [...prev, ...transactions.map(t => ({ id: t.id, deletedAt: now }))]);
-    setTransactions([]);
-    setToast('Movimientos borrados');
   }
 
   function openImportModal() {
@@ -3927,8 +3828,8 @@ function AppBody() {
         form={form}
         setForm={setForm}
         onCloseSheet={closeSheet}
-        onSaveTransaction={handleSaveTransaction}
-        onDeleteTransaction={handleDeleteTransaction}
+        onSaveTransaction={saveTransaction}
+        onDeleteTransaction={deleteTransaction}
         onSwitchFormType={switchFormType}
         onCreateCategory={handleCreateCategory}
         onCreatePlan={handleCreatePlan}
@@ -3940,7 +3841,7 @@ function AppBody() {
         onDeletePlan={() => editingPlan && handleDeletePlan(editingPlan.id)}
         settingsOpen={settingsOpen}
         onCloseSettings={() => setSettingsOpen(false)}
-        onResetTransactions={handleResetTransactions}
+        onResetTransactions={resetTransactions}
         importModalOpen={importModalOpen}
         onOpenImport={openImportModal}
         onCloseImportModal={() => setImportModalOpen(false)}
@@ -4075,8 +3976,8 @@ function AppBody() {
             planProgress={planProgress}
             knownStores={knownStores}
             onClose={closeSheet}
-            onSave={handleSaveTransaction}
-            onDelete={handleDeleteTransaction}
+            onSave={saveTransaction}
+            onDelete={deleteTransaction}
             onSwitchType={switchFormType}
             onCreateCategory={handleCreateCategory}
             onCreatePlan={handleCreatePlan}
@@ -4100,7 +4001,7 @@ function AppBody() {
         )}
 
         {settingsOpen && (
-          <SettingsModal onClose={() => setSettingsOpen(false)} onResetTransactions={handleResetTransactions} onOpenImport={openImportModal} onOpenSync={openSyncModal} onOpenBackup={openBackupModal} ocrSettings={ocrSettings} onSaveOcrSettings={handleSaveOcrSettings} />
+          <SettingsModal onClose={() => setSettingsOpen(false)} onResetTransactions={resetTransactions} onOpenImport={openImportModal} onOpenSync={openSyncModal} onOpenBackup={openBackupModal} ocrSettings={ocrSettings} onSaveOcrSettings={handleSaveOcrSettings} />
         )}
 
         {importModalOpen && (

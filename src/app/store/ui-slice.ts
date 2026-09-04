@@ -2,14 +2,15 @@
    Nada de esto se hidrata ni se persiste — igual que antes del refactor. */
 
 import type { StateCreator } from 'zustand';
-import type { Account } from '../../shared/domain/types';
+import type { TransactionFormDraft } from '../../features/transactions/domain/form';
+import type { Account, TransactionType } from '../../shared/domain/types';
 import { makeSetter } from './setter';
 import type { Setter } from './setter';
 import type { HiloStore } from './index';
 
 /** El formulario de movimiento es un borrador libre (los inputs son strings),
  *  no un `Transaction`; se convierte a movimiento al guardar. */
-export type TransactionForm = Record<string, unknown> | null;
+export type TransactionForm = TransactionFormDraft | null;
 
 export type UiSlice = {
   activeTab: string;
@@ -22,7 +23,7 @@ export type UiSlice = {
   searchQuery: string;
 
   sheetOpen: boolean;
-  formType: string;
+  formType: TransactionType;
   editingId: string | null;
   form: TransactionForm;
 
@@ -50,7 +51,7 @@ export type UiSlice = {
   setSearchQuery: Setter<string>;
 
   setSheetOpen: Setter<boolean>;
-  setFormType: Setter<string>;
+  setFormType: Setter<TransactionType>;
   setEditingId: Setter<string | null>;
   setForm: Setter<TransactionForm>;
 

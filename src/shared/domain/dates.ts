@@ -1,10 +1,17 @@
 /* Fechas en español de México. Las fechas del dominio son strings ISO
    `YYYY-MM-DD` (no `Date`) porque las vistas por mes filtran con prefix match. */
 
-/** Hoy en ISO local — ojo: local, no UTC, para que "hoy" sea el del usuario. */
-export function todayIso(): string {
-  const d = new Date();
+/** Un instante en ISO local — ojo: local, no UTC, para que el día sea el del
+ *  usuario. Existe aparte de `todayIso` para que un caso de uso pueda derivar
+ *  "hoy" del reloj inyectado (`deps.clock()`) y ser determinista en test. */
+export function isoFromEpoch(ms: number): string {
+  const d = new Date(ms);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Hoy en ISO local. */
+export function todayIso(): string {
+  return isoFromEpoch(Date.now());
 }
 
 /** `YYYY-MM`: la clave con la que se filtra un mes. */

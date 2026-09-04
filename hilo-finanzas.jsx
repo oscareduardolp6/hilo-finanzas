@@ -53,13 +53,13 @@ export {
   computeTotalBalance,
 } from './src/features/accounts/domain/balance';
 
-/* → src/features/transactions/ */
+/* ── migrado (paso 4): feature `transactions` ── */
+export { initialFormState } from './src/features/transactions/domain/form';
 export {
-  initialFormState,
   computePeriodTransactions,
   computeRecentTxns,
   computeKnownStores,
-} from './src/legacy/hilo-legacy.jsx';
+} from './src/features/transactions/domain/queries';
 
 /* Datos semilla: migrados en el paso 2 porque el store los necesita como
    estado inicial (importarlos del legacy haría ciclo). */
