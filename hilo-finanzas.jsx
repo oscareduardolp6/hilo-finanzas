@@ -46,12 +46,12 @@ export {
   saveSyncState,
 } from './src/shared/infrastructure/indexed-db';
 
-/* → src/features/accounts/ */
+/* ── migrado (paso 3): feature `accounts` ── */
 export {
   computeAccountBalance,
   computeBalances,
   computeTotalBalance,
-} from './src/legacy/hilo-legacy.jsx';
+} from './src/features/accounts/domain/balance';
 
 /* → src/features/transactions/ */
 export {

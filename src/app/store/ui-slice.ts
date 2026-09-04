@@ -2,6 +2,7 @@
    Nada de esto se hidrata ni se persiste — igual que antes del refactor. */
 
 import type { StateCreator } from 'zustand';
+import type { Account } from '../../shared/domain/types';
 import { makeSetter } from './setter';
 import type { Setter } from './setter';
 import type { HiloStore } from './index';
@@ -26,7 +27,10 @@ export type UiSlice = {
   form: TransactionForm;
 
   accountModalOpen: boolean;
-  editingAccount: unknown;
+  /** La cuenta que se está editando, o `null` si el formulario es un alta.
+   *  Ya tipada porque `accounts` es la primera feature migrada; las demás
+   *  seguirán en `unknown` hasta que les toque. */
+  editingAccount: Account | null;
   msiModalOpen: boolean;
   editingPlan: unknown;
   settingsOpen: boolean;
@@ -51,7 +55,7 @@ export type UiSlice = {
   setForm: Setter<TransactionForm>;
 
   setAccountModalOpen: Setter<boolean>;
-  setEditingAccount: Setter<unknown>;
+  setEditingAccount: Setter<Account | null>;
   setMsiModalOpen: Setter<boolean>;
   setEditingPlan: Setter<unknown>;
   setSettingsOpen: Setter<boolean>;

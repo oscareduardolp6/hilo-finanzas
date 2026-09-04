@@ -184,14 +184,14 @@ Reglas:
 
 ## Registro de avance
 
-Cada paso es un commit que deja **`npm test` en verde con los 190 tests**, `npm run typecheck` limpio y `npm run build` funcionando. **Actualiza este registro en el mismo commit que migra el módulo.**
+Cada paso es un commit que deja **`npm test` en verde sin haber editado nada bajo `test/`**, `npm run typecheck` limpio y `npm run build` funcionando. Los **190 tests de regresión** son intocables; el total sube porque cada paso suma los suyos. **Actualiza este registro en el mismo commit que migra el módulo.**
 
 | # | Paso | Estado |
 |---|---|---|
 | 0 | Mover el archivo tal cual a `src/legacy/hilo-legacy.jsx`; `hilo-finanzas.jsx` pasa a barrel | **hecho** |
 | 1 | Cimientos: `tsconfig`, deps, `shared/fp`, `shared/domain`, `shared/design`, `shared/infrastructure` (repos IndexedDB + in-memory), `HiloError`, `Deps` | **hecho** |
 | 2 | Store: slices, `createStore` + Provider, persistencia por `subscribe`. Los 29 `useState` y los 4 `useEffect` salen de `App`; el `App` legacy pasa a leer del store y sigue bajando props | **hecho** |
-| 3 | Feature `accounts` (la más chica: valida el patrón completo de punta a punta) | pendiente |
+| 3 | Feature `accounts` (la más chica: valida el patrón completo de punta a punta) | **hecho** |
 | 4 | Feature `transactions` | pendiente |
 | 5 | Feature `installments` (MSI) | pendiente |
 | 6 | Feature `dashboard` (Home + donut + totales) | pendiente |
@@ -265,6 +265,32 @@ Decisiones que vale la pena conocer:
 12 tests nuevos en `src/app/store/store.test.ts`, sin React: cubren los tres detalles del efecto original que es fácil perder al volverlo suscripción — que no guarda antes de hidratar, que **sí** guarda en el instante en que `loaded` pasa a `true` (lo que persiste la semilla en un perfil nuevo), y que un fallo se vuelve toast. Total: **208 tests**.
 
 > **Trampa del entorno.** Tras mover módulos, el preview puede fallar con `does not provide an export named X` o `Invalid hook call` aunque test, typecheck y build estén en verde: es el **service worker de la PWA** sirviendo el grafo de módulos anterior. Borrar `node_modules/.vite` no basta — hay que desregistrar el SW y limpiar `caches` desde la consola del navegador, y comprobar en una pestaña nueva (el búfer de consola de la vieja conserva los errores previos).
+
+### Detalle del paso 3 (hecho)
+
+La primera feature completa, y por tanto **la plantilla de los pasos 4–12**: es la vertical entera, de `domain/` a `ui/containers/`, en la feature más chica que la ejercita toda.
+
+| Módulo | Contenido |
+|---|---|
+| `features/accounts/domain/balance.ts` | `computeAccountBalance`, `computeBalances`, `computeTotalBalance` y `accountHasTransactions` |
+| `features/accounts/application/{save,delete}-account.ts` | Los dos casos de uso, ambos `ReaderIO` (necesitan reloj, y el alta un id) |
+| `features/accounts/store/accounts-slice.ts` | Las 4 acciones. **Único lugar de la feature que llama `runRIO`** |
+| `features/accounts/store/selectors.ts` | `selectAccounts`, `selectBalances`, `selectEditingAccountCanDelete`… |
+| `features/accounts/ui/components/` | `AccountsView`, `AccountsViewDesktop`, `AccountFormModal` — props → JSX |
+| `features/accounts/ui/containers/` | `AccountsContainer`, `AccountFormContainer` — leen el store, ligan acciones |
+| `shared/ui/sheet-overlay.tsx` | `SheetOverlay`, movido aquí porque lo usan los 9 modales |
+| `test/render-feature.tsx` | Monta UN container con repos en memoria y reloj/ids fijos. **Nunca `<App/>`** |
+
+Decisiones y hallazgos:
+
+- **El prop drilling de cuentas desapareció**: `DesktopShell` perdió 8 props (`onAddAccount`, `onEditAccount`, `accountModalOpen`, `editingAccount`, `onCloseAccountModal`, `onSaveAccount`, `onDeleteAccount`, `accountCanDelete`) y `App` sus dos handlers. Los dos árboles montan `<AccountsContainer />` y `<AccountFormContainer />`, que se sirven solos. Es la prueba en pequeño de lo que el paso 12 hará con los ~60 props restantes.
+- **El `accountModalOpen && <Modal/>` se lo tragó el container.** Estaba duplicado en el árbol móvil y en el de escritorio; ahora `AccountFormContainer` devuelve `null` si está cerrado, lo que conserva lo que importa: al abrirse, el modal se monta de cero y sus `useState` toman los valores de la cuenta editada.
+- **Los campos siguen donde estaban** (`accounts`/`tombstones` en `data-slice`, `accountModalOpen`/`editingAccount` en `ui-slice`); la slice de la feature solo aporta acciones. `editingAccount` sí se estrechó de `unknown` a `Account | null`.
+- **Cuatro `set` se volvieron uno.** El handler legacy llamaba `setAccounts`, `setToast`, `setAccountModalOpen` y `setEditingAccount` por separado; la acción hace un solo `set`, así que la suscripción de persistencia guarda una vez en vez de varias. React ya los batcheaba dentro del handler, así que de cara al usuario no cambia nada.
+- **`computeBalances` va en `useMemo`, no en un selector**: devuelve un objeto nuevo y zustand v5 compara por identidad, así que pasarlo a `useHiloStore` sería un bucle de renders. Los selectores que devuelven un escalar (`selectEditingAccountCanDelete`) sí van directos. Queda anotado en `selectors.ts` porque es la trampa que se repetirá en cada feature.
+- `accountHasTransactions` mira los tres campos de cuenta sin ramificar por `type`, igual que el original: un registro viejo puede traer combinaciones que la unión de tipos ya no admite, y perder una referencia ahí dejaría borrar una cuenta que sí tiene movimientos.
+
+19 tests nuevos: 6 de casos de uso (uno comprueba que **construir el caso de uso no toca el reloj** — solo correrlo), 3 de dominio y 10 de UI por los containers. Total: **227 tests**, con los 190 de regresión intactos.
 
 ### Tests nuevos por feature
 

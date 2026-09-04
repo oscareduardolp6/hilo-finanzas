@@ -21,7 +21,15 @@ import { formatMoney } from '../shared/domain/money';
 import { normalizeForSearch, accountNameMatches } from '../shared/domain/search';
 import { groupByDate } from '../shared/domain/grouping';
 import { highlightMatch } from '../shared/ui/highlight';
+import { SheetOverlay } from '../shared/ui/sheet-overlay';
 import { saveOcrSettings } from '../shared/infrastructure/indexed-db';
+
+/* Feature `accounts`, migrada en el paso 3. El legacy solo consume su dominio
+   (los saldos los siguen necesitando Inicio y sus totales) y monta sus dos
+   containers, que ya no reciben props: se sirven del store. */
+import { computeBalances, computeTotalBalance } from '../features/accounts/domain/balance';
+import { AccountsContainer } from '../features/accounts/ui/containers/AccountsContainer';
+import { AccountFormContainer } from '../features/accounts/ui/containers/AccountFormContainer';
 
 /* El estado dejó de vivir en `App`: ahora está en el store de zustand, que se
    crea por montaje. Ver src/app/store/ y agents/plans/layered-architecture.md. */
@@ -58,19 +66,6 @@ function useIsDesktop() {
   return isDesktop;
 }
 
-export function computeAccountBalance(account, transactions) {
-  let bal = Number(account.initialBalance) || 0;
-  for (const t of transactions) {
-    if (t.type === 'income' && t.accountId === account.id) bal += t.amount;
-    else if (t.type === 'expense' && t.accountId === account.id) bal -= t.amount;
-    else if (t.type === 'transfer') {
-      if (t.fromAccountId === account.id) bal -= t.amount;
-      if (t.toAccountId === account.id) bal += t.amount;
-    }
-  }
-  return bal;
-}
-
 export function initialFormState(type, accounts, categories) {
   const expenseCats = categories.filter(c => c.type === 'expense');
   const incomeCats = categories.filter(c => c.type === 'income');
@@ -92,16 +87,6 @@ export function initialFormState(type, accounts, categories) {
    estas funciones. Viven aquí sueltas para poder testearlas sin montar
    la app y como semilla de la futura capa de dominio. Ver
    agents/plans/testing.md y tasks/layered-architecture.md. */
-
-export function computeBalances(accounts, transactions) {
-  const map = {};
-  for (const a of accounts) map[a.id] = computeAccountBalance(a, transactions);
-  return map;
-}
-
-export function computeTotalBalance(balances) {
-  return Object.values(balances).reduce((s, v) => s + v, 0);
-}
 
 export function computePeriodTransactions(transactions, periodKey) {
   return transactions.filter(t => t.date && t.date.startsWith(periodKey));
@@ -1010,25 +995,6 @@ function GlobalStyles() {
   );
 }
 
-function SheetOverlay({ onClose, children, desktop }) {
-  if (desktop) {
-    return (
-      <div className="fixed inset-0 z-30 flex items-center justify-center hilo-overlay p-6" style={{ backgroundColor: 'rgba(0,0,0,0.55)' }} onClick={onClose}>
-        <div className="hilo-sheet rounded-3xl overflow-y-auto hilo-scroll w-full max-w-lg" style={{ backgroundColor: COLORS.surface, maxHeight: '88vh' }} onClick={e => e.stopPropagation()}>
-          {children}
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="absolute inset-0 z-30 flex flex-col justify-end hilo-overlay" style={{ backgroundColor: 'rgba(0,0,0,0.55)' }} onClick={onClose}>
-      <div className="hilo-sheet rounded-t-3xl overflow-y-auto hilo-scroll" style={{ backgroundColor: COLORS.surface, maxHeight: '88%' }} onClick={e => e.stopPropagation()}>
-        {children}
-      </div>
-    </div>
-  );
-}
-
 function Toast({ message, desktop }) {
   const className = desktop
     ? 'fixed z-50 rounded-xl px-4 py-3 shadow-lg flex items-center gap-2'
@@ -1660,43 +1626,6 @@ function HistoryView({ transactions, accounts, categories, installmentPlans, kno
   );
 }
 
-function AccountsView({ accounts, balances, onAdd, onEdit }) {
-  const total = Object.values(balances).reduce((s, v) => s + v, 0);
-  return (
-    <div className="pt-2">
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-sm font-semibold font-display" style={{ color: COLORS.text }}>Tus cuentas</p>
-        <button onClick={onAdd} className="flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-full" style={{ backgroundColor: COLORS.accentSoft, color: COLORS.accent }}>
-          <Plus size={13} /> Agregar
-        </button>
-      </div>
-      <div className="space-y-2">
-        {accounts.map(a => {
-          const typeInfo = ACCOUNT_TYPES.find(t => t.id === a.type) || ACCOUNT_TYPES[ACCOUNT_TYPES.length - 1];
-          const TypeIcon = typeInfo.icon;
-          const bal = balances[a.id] || 0;
-          return (
-            <button key={a.id} onClick={() => onEdit(a)} className="w-full flex items-center gap-3 p-3 rounded-xl text-left" style={{ backgroundColor: COLORS.surface }}>
-              <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: a.color + '26' }}>
-                <TypeIcon size={17} style={{ color: a.color }} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium" style={{ color: COLORS.text }}>{a.name}</p>
-                <p className="text-xs" style={{ color: COLORS.textMuted }}>{typeInfo.label}</p>
-              </div>
-              <p className="font-mono-custom text-sm font-semibold" style={{ color: bal < 0 ? COLORS.expense : COLORS.text }}>{formatMoney(bal)}</p>
-            </button>
-          );
-        })}
-      </div>
-      <div className="mt-4 rounded-xl p-3" style={{ backgroundColor: COLORS.surfaceAlt }}>
-        <p className="text-xs" style={{ color: COLORS.textMuted }}>Saldo total</p>
-        <p className="font-mono-custom font-semibold text-lg mt-0.5" style={{ color: COLORS.text }}>{formatMoney(total)}</p>
-      </div>
-    </div>
-  );
-}
-
 function MsiView({ plans, progress, categories, onAdd, onOpenPlan }) {
   const active = plans.filter(p => !(progress[p.id] && progress[p.id].isPaidOff)).sort((a, b) => b.createdAt - a.createdAt);
   const completed = plans.filter(p => progress[p.id] && progress[p.id].isPaidOff).sort((a, b) => b.createdAt - a.createdAt);
@@ -1960,41 +1889,6 @@ function HistoryViewDesktop({ transactions, accounts, categories, installmentPla
             {list.map(t => <TransactionRow key={t.id} txn={t} accounts={accounts} categories={categories} plans={installmentPlans} query={searching ? searchQuery.trim() : undefined} onClick={() => onOpenTxn(t)} />)}
           </div>
         ))}
-      </div>
-    </div>
-  );
-}
-
-function AccountsViewDesktop({ accounts, balances, onAdd, onEdit }) {
-  const total = Object.values(balances).reduce((s, v) => s + v, 0);
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-sm font-semibold font-display" style={{ color: COLORS.text }}>Tus cuentas</p>
-        <button onClick={onAdd} className="flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-full" style={{ backgroundColor: COLORS.accentSoft, color: COLORS.accent }}>
-          <Plus size={13} /> Agregar
-        </button>
-      </div>
-      <div className="grid grid-cols-3 gap-4">
-        {accounts.map(a => {
-          const typeInfo = ACCOUNT_TYPES.find(t => t.id === a.type) || ACCOUNT_TYPES[ACCOUNT_TYPES.length - 1];
-          const TypeIcon = typeInfo.icon;
-          const bal = balances[a.id] || 0;
-          return (
-            <button key={a.id} onClick={() => onEdit(a)} className="text-left p-5 rounded-2xl" style={{ backgroundColor: COLORS.surface }}>
-              <div className="w-11 h-11 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: a.color + '26' }}>
-                <TypeIcon size={19} style={{ color: a.color }} />
-              </div>
-              <p className="text-sm font-medium" style={{ color: COLORS.text }}>{a.name}</p>
-              <p className="text-xs mt-0.5" style={{ color: COLORS.textMuted }}>{typeInfo.label}</p>
-              <p className="font-mono-custom text-lg font-semibold mt-3" style={{ color: bal < 0 ? COLORS.expense : COLORS.text }}>{formatMoney(bal)}</p>
-            </button>
-          );
-        })}
-      </div>
-      <div className="mt-6 rounded-xl p-4 inline-block" style={{ backgroundColor: COLORS.surfaceAlt }}>
-        <p className="text-xs" style={{ color: COLORS.textMuted }}>Saldo total</p>
-        <p className="font-mono-custom font-semibold text-lg mt-0.5" style={{ color: COLORS.text }}>{formatMoney(total)}</p>
       </div>
     </div>
   );
@@ -2319,88 +2213,6 @@ function AddTransactionSheet({ formType, editingId, form, setForm, accounts, cat
               {editingId ? 'Guardar cambios' : 'Agregar'}
             </button>
           </div>
-        )}
-      </div>
-    </SheetOverlay>
-  );
-}
-
-function AccountFormModal({ account, canDelete, onClose, onSave, onDelete, desktop }) {
-  const [name, setName] = useState(account ? account.name : '');
-  const [type, setType] = useState(account ? account.type : 'debito');
-  const [color, setColor] = useState(account ? account.color : CATEGORY_PALETTE[0]);
-  const [initialBalance, setInitialBalance] = useState(account ? String(account.initialBalance) : '0');
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  const isValid = name.trim().length > 0;
-
-  return (
-    <SheetOverlay onClose={onClose} desktop={desktop}>
-      <div className="px-5 pt-4 pb-1 flex items-center justify-between">
-        <p className="text-lg font-semibold font-display" style={{ color: COLORS.text }}>{account ? 'Editar cuenta' : 'Nueva cuenta'}</p>
-        <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: COLORS.surfaceAlt }}>
-          <X size={15} style={{ color: COLORS.textMuted }} />
-        </button>
-      </div>
-
-      <div className="px-5 mt-3">
-        <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Nombre</p>
-        <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Ej. NU, Mercado Pago, Efectivo" className="w-full px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
-      </div>
-
-      <div className="px-5 mt-4">
-        <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Tipo de cuenta</p>
-        <div className="grid grid-cols-3 gap-2">
-          {ACCOUNT_TYPES.map(t => {
-            const Icon = t.icon;
-            const isSel = type === t.id;
-            return (
-              <button key={t.id} onClick={() => setType(t.id)} className="flex flex-col items-center gap-1 py-2 rounded-xl border" style={{ borderColor: isSel ? color : COLORS.border, backgroundColor: isSel ? color + '22' : 'transparent' }}>
-                <Icon size={16} style={{ color: isSel ? color : COLORS.textMuted }} />
-                <span className="text-xs text-center leading-tight" style={{ color: COLORS.text }}>{t.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="px-5 mt-4">
-        <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Color</p>
-        <div className="flex gap-2 flex-wrap">
-          {CATEGORY_PALETTE.map(c => (
-            <button key={c} onClick={() => setColor(c)} className="w-7 h-7 rounded-full" style={{ backgroundColor: c, boxShadow: color === c ? `0 0 0 2px ${COLORS.bg}, 0 0 0 4px ${c}` : 'none' }} />
-          ))}
-        </div>
-      </div>
-
-      <div className="px-5 mt-4">
-        <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Saldo inicial</p>
-        <input type="number" inputMode="decimal" value={initialBalance} onChange={e => setInitialBalance(e.target.value)} className="w-full px-3 py-2 rounded-xl text-sm outline-none font-mono-custom" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
-      </div>
-
-      <div className="px-5 mt-6 mb-6">
-        {confirmDelete ? (
-          <div className="rounded-xl p-3" style={{ backgroundColor: COLORS.expenseSoft }}>
-            <p className="text-sm font-medium mb-2" style={{ color: COLORS.expense }}>¿Eliminar esta cuenta?</p>
-            <div className="flex gap-2">
-              <button onClick={() => setConfirmDelete(false)} className="flex-1 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>Cancelar</button>
-              <button onClick={onDelete} className="flex-1 py-2 rounded-lg text-sm font-semibold" style={{ backgroundColor: COLORS.expense, color: COLORS.bg }}>Eliminar</button>
-            </div>
-          </div>
-        ) : (
-          <div className="flex gap-3">
-            {account && (
-              <button onClick={() => canDelete && setConfirmDelete(true)} disabled={!canDelete} aria-label="Eliminar cuenta" className="px-4 py-3 rounded-xl disabled:opacity-30" style={{ backgroundColor: COLORS.expenseSoft, color: COLORS.expense }}>
-                <Trash2 size={17} />
-              </button>
-            )}
-            <button disabled={!isValid} onClick={() => onSave({ id: account ? account.id : undefined, name: name.trim(), type, color, initialBalance: parseFloat(initialBalance) || 0 })} className="flex-1 py-3 rounded-xl font-semibold text-sm disabled:opacity-40" style={{ backgroundColor: COLORS.accent, color: COLORS.bg }}>
-              {account ? 'Guardar cambios' : 'Crear cuenta'}
-            </button>
-          </div>
-        )}
-        {!canDelete && account && !confirmDelete && (
-          <p className="mt-2 text-xs" style={{ color: COLORS.textFaint }}>Esta cuenta tiene movimientos registrados, así que no se puede eliminar.</p>
         )}
       </div>
     </SheetOverlay>
@@ -3538,11 +3350,9 @@ function DesktopShell(props) {
     transactions, knownStores, historySuggestions,
     showAllTime, setShowAllTime, filterType, setFilterType, filterCategory, setFilterCategory, filterStore, setFilterStore,
     searchQuery, setSearchQuery,
-    onAddAccount, onEditAccount,
     onAddPlan,
     onOpenAddSheet, onOpenSettings,
     sheetOpen, formType, editingId, form, setForm, onCloseSheet, onSaveTransaction, onDeleteTransaction, onSwitchFormType, onCreateCategory, onCreatePlan,
-    accountModalOpen, editingAccount, onCloseAccountModal, onSaveAccount, onDeleteAccount, accountCanDelete,
     msiModalOpen, editingPlan, msiPayments, onCloseMsiModal, onSavePlan, onDeletePlan,
     settingsOpen, onCloseSettings, onResetTransactions,
     importModalOpen, onOpenImport, onCloseImportModal, onConfirmImport,
@@ -3618,14 +3428,7 @@ function DesktopShell(props) {
               onOpenPlan={onOpenMsiPlan}
             />
           )}
-          {activeTab === 'accounts' && (
-            <AccountsViewDesktop
-              accounts={accounts}
-              balances={balances}
-              onAdd={onAddAccount}
-              onEdit={onEditAccount}
-            />
-          )}
+          {activeTab === 'accounts' && <AccountsContainer desktop />}
         </div>
 
         {toast && <Toast message={toast} desktop />}
@@ -3652,16 +3455,7 @@ function DesktopShell(props) {
         />
       )}
 
-      {accountModalOpen && (
-        <AccountFormModal
-          account={editingAccount}
-          canDelete={accountCanDelete}
-          onClose={onCloseAccountModal}
-          onSave={onSaveAccount}
-          onDelete={onDeleteAccount}
-          desktop
-        />
-      )}
+      <AccountFormContainer desktop />
 
       {msiModalOpen && (
         <MsiPlanModal
@@ -3756,9 +3550,9 @@ function AppBody() {
     sheetOpen, formType, editingId, form,
     setSheetOpen, setFormType, setEditingId, setForm,
 
-    accountModalOpen, editingAccount, msiModalOpen, editingPlan, settingsOpen,
+    msiModalOpen, editingPlan, settingsOpen,
     importModalOpen, syncModalOpen, backupModalOpen, receiptModalOpen,
-    setAccountModalOpen, setEditingAccount, setMsiModalOpen, setEditingPlan, setSettingsOpen,
+    setMsiModalOpen, setEditingPlan, setSettingsOpen,
     setImportModalOpen, setSyncModalOpen, setBackupModalOpen, setReceiptModalOpen,
 
     ocrSettings, setOcrSettings, syncState, setSyncState, toast, setToast,
@@ -3883,29 +3677,8 @@ function AppBody() {
     closeSheet();
   }
 
-  function accountHasTransactions(id) {
-    return transactions.some(t => t.accountId === id || t.fromAccountId === id || t.toAccountId === id);
-  }
-
-  function handleSaveAccount(payload) {
-    if (payload.id) {
-      setAccounts(prev => prev.map(a => a.id === payload.id ? { ...a, ...payload, updatedAt: Date.now() } : a));
-      setToast('Cuenta actualizada');
-    } else {
-      setAccounts(prev => [...prev, { ...payload, id: uid('acc'), createdAt: Date.now(), updatedAt: Date.now() }]);
-      setToast('Cuenta creada');
-    }
-    setAccountModalOpen(false);
-    setEditingAccount(null);
-  }
-
-  function handleDeleteAccount(id) {
-    setAccounts(prev => prev.filter(a => a.id !== id));
-    setTombstones(prev => [...prev, { id, deletedAt: Date.now() }]);
-    setAccountModalOpen(false);
-    setEditingAccount(null);
-    setToast('Cuenta eliminada');
-  }
+  /* El alta, la edición y el borrado de cuentas ya no viven aquí: son los casos
+     de uso de `features/accounts/application/`, que corre su slice. */
 
   function handleSliceClick(categoryId) {
     setFilterCategory(categoryId);
@@ -4145,8 +3918,6 @@ function AppBody() {
         setFilterStore={setFilterStore}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
-        onAddAccount={() => { setEditingAccount(null); setAccountModalOpen(true); }}
-        onEditAccount={(a) => { setEditingAccount(a); setAccountModalOpen(true); }}
         onAddPlan={() => { setEditingPlan(null); setMsiModalOpen(true); }}
         onOpenAddSheet={openAddSheet}
         onOpenSettings={() => setSettingsOpen(true)}
@@ -4161,12 +3932,6 @@ function AppBody() {
         onSwitchFormType={switchFormType}
         onCreateCategory={handleCreateCategory}
         onCreatePlan={handleCreatePlan}
-        accountModalOpen={accountModalOpen}
-        editingAccount={editingAccount}
-        onCloseAccountModal={() => { setAccountModalOpen(false); setEditingAccount(null); }}
-        onSaveAccount={handleSaveAccount}
-        onDeleteAccount={() => editingAccount && handleDeleteAccount(editingAccount.id)}
-        accountCanDelete={editingAccount ? !accountHasTransactions(editingAccount.id) : false}
         msiModalOpen={msiModalOpen}
         editingPlan={editingPlan}
         msiPayments={editingPlan ? transactions.filter(t => t.installmentPlanId === editingPlan.id).sort((a, b) => b.date.localeCompare(a.date)) : []}
@@ -4275,14 +4040,7 @@ function AppBody() {
               onOpenPlan={(p) => { setEditingPlan(p); setMsiModalOpen(true); }}
             />
           )}
-          {activeTab === 'accounts' && (
-            <AccountsView
-              accounts={accounts}
-              balances={balances}
-              onAdd={() => { setEditingAccount(null); setAccountModalOpen(true); }}
-              onEdit={(a) => { setEditingAccount(a); setAccountModalOpen(true); }}
-            />
-          )}
+          {activeTab === 'accounts' && <AccountsContainer />}
         </div>
 
         <BottomNav active={activeTab} onChange={setActiveTab} />
@@ -4325,15 +4083,7 @@ function AppBody() {
           />
         )}
 
-        {accountModalOpen && (
-          <AccountFormModal
-            account={editingAccount}
-            canDelete={editingAccount ? !accountHasTransactions(editingAccount.id) : false}
-            onClose={() => { setAccountModalOpen(false); setEditingAccount(null); }}
-            onSave={handleSaveAccount}
-            onDelete={() => editingAccount && handleDeleteAccount(editingAccount.id)}
-          />
-        )}
+        <AccountFormContainer />
 
         {msiModalOpen && (
           <MsiPlanModal

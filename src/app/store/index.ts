@@ -10,6 +10,8 @@
 
 import { createStore } from 'zustand/vanilla';
 import { subscribeWithSelector } from 'zustand/middleware';
+import { createAccountsSlice } from '../../features/accounts/store/accounts-slice';
+import type { AccountsSlice } from '../../features/accounts/store/accounts-slice';
 import type { Deps } from '../dependencies';
 import { createDataSlice } from './data-slice';
 import type { DataSlice } from './data-slice';
@@ -18,7 +20,10 @@ import type { SettingsSlice } from './settings-slice';
 import { createUiSlice } from './ui-slice';
 import type { UiSlice } from './ui-slice';
 
-export type HiloStore = DataSlice & UiSlice & SettingsSlice;
+/* Las slices de `app/store/` aportan CAMPOS, agrupados por ciclo de vida
+   (persistido / efímero / config). Las de `features/<f>/store/` aportan solo
+   ACCIONES sobre esos campos — así una feature se migra sin mover estado. */
+export type HiloStore = DataSlice & UiSlice & SettingsSlice & AccountsSlice;
 
 export type HiloStoreApi = ReturnType<typeof createHiloStore>;
 
@@ -28,8 +33,9 @@ export const createHiloStore = (deps: Deps) =>
       ...createDataSlice(deps)(...args),
       ...createUiSlice(...args),
       ...createSettingsSlice(...args),
+      ...createAccountsSlice(deps)(...args),
     })),
   );
 
 export { selectDataState } from './data-slice';
-export type { DataSlice, UiSlice, SettingsSlice };
+export type { DataSlice, UiSlice, SettingsSlice, AccountsSlice };
