@@ -4,13 +4,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-"Hilo" is a personal finance tracker (Mexican Spanish UI, MXN currency), built as a **single React component** ([hilo-finanzas.jsx](hilo-finanzas.jsx)) that exports a default `App` and is styled with Tailwind utility classes and inline style objects. There's no linter, and no other source files besides the local-dev scaffold described below — all product logic lives in that one `.jsx` file. It does export named helpers now (pure calc/format/merge/import functions, and the extracted `useMemo` bodies like `computePlanProgress` / `filterHistoryTransactions`) so the test suite can import them without mounting the app. npm deps are `react`/`react-dom`, `recharts` (charts), `lucide-react` (icons), and `qrcode` + `jsqr` (device-sync QR encode/decode).
+"Hilo" is a personal finance tracker (Mexican Spanish UI, MXN currency), styled with Tailwind utility classes and inline style objects. There's no linter. npm deps are `react`/`react-dom`, `recharts` (charts), `lucide-react` (icons), `qrcode` + `jsqr` (device-sync QR encode/decode), plus `fp-ts` and `zustand` (see the architecture section).
 
-There **is** a test suite now: Vitest + React Testing Library + `fake-indexeddb`, run with `npm test` (`test/unit/` for pure logic, `test/integration/` for `<App/>` flows). It exists as the safety net for the eventual [layered-architecture](tasks/layered-architecture.md) refactor — see [tasks/testing.md](tasks/testing.md) / [agents/plans/testing.md](agents/plans/testing.md). When you change product behavior, update or add the matching test; when you change it *deliberately*, the failing test is the checklist of what you're changing.
+> ### ⚠️ Refactor en curso — lee esto antes de tocar código
+>
+> Hilo **era** un solo componente React de 4721 líneas. Se está migrando a una arquitectura en capas feature-first: ver [tasks/layered-architecture.md](tasks/layered-architecture.md) y, sobre todo, el **registro de avance** en [agents/plans/layered-architecture.md](agents/plans/layered-architecture.md), que dice exactamente qué módulos ya se movieron y cuáles siguen en el legacy. **Ese registro es la fuente de verdad**; esta sección describe el objetivo.
+>
+> Mientras dure el refactor conviven dos mundos:
+> - `src/legacy/hilo-legacy.jsx` — lo que todavía no se migra. Se vacía commit a commit.
+> - `src/shared/` y `src/features/` — el código ya migrado, en TypeScript.
+> - [hilo-finanzas.jsx](hilo-finanzas.jsx) — **barrel**: solo re-exports, sin lógica. Existe para que `src/main.jsx` y los tests importen desde una ruta estable. Cuando migres un símbolo, cambia el origen de su línea aquí; nunca uses `export *`.
+
+There **is** a test suite: Vitest + React Testing Library + `fake-indexeddb`, run with `npm test`. Está en dos lugares:
+
+- `test/unit/` y `test/integration/` — la suite de regresión pre-refactor (190 tests). **No se toca durante el refactor**: es la prueba de que mover código no cambió comportamiento. Si uno falla, es un cambio de comportamiento real, no un test desactualizado.
+- `src/**/*.test.{ts,tsx}` — los tests nuevos, junto a la feature que prueban: casos de uso corridos con dependencias en memoria, y componentes de feature como punto de entrada (sin montar `<App/>`).
+
+Además de `npm test`, corre `npm run typecheck` (TypeScript 7, `tsc --noEmit`). When you change product behavior, update or add the matching test; when you change it *deliberately*, the failing test is the checklist of what you're changing.
 
 ### Product direction: local-only SPA, no backend
 
-The intent, at least for now, is for Hilo to stay a **client-only single-page app with no backend**. There is no server and no API — everything a user enters is stored **locally in their own browser**, via IndexedDB (native `indexedDB` API, no wrapper library — see `openDb`/`loadState`/`saveState` in [hilo-finanzas.jsx](hilo-finanzas.jsx)). This is what makes the app work as a real local tool in a normal browser (dev build or eventually a deployed static build), independent of any host. Cross-device sync is **manual and backend-free**: `SyncModal` exports the state blob as a file / compressed-text string / QR and merges an incoming one by `id`; `BackupModal` exports the same blob and restores it by full replace. See [tasks/desktop-mobile-sync.md](tasks/desktop-mobile-sync.md) and [agents/plans/desktop-mobile-sync.md](agents/plans/desktop-mobile-sync.md).
+The intent, at least for now, is for Hilo to stay a **client-only single-page app with no backend**. There is no server and no API — everything a user enters is stored **locally in their own browser**, via IndexedDB (native `indexedDB` API, no wrapper library — see `openDb`/`loadState`/`saveState` in [src/shared/infrastructure/indexed-db.ts](src/shared/infrastructure/indexed-db.ts), y los puertos que las envuelven en [repositories.ts](src/shared/infrastructure/repositories.ts)). This is what makes the app work as a real local tool in a normal browser (dev build or eventually a deployed static build), independent of any host. Cross-device sync is **manual and backend-free**: `SyncModal` exports the state blob as a file / compressed-text string / QR and merges an incoming one by `id`; `BackupModal` exports the same blob and restores it by full replace. See [tasks/desktop-mobile-sync.md](tasks/desktop-mobile-sync.md) and [agents/plans/desktop-mobile-sync.md](agents/plans/desktop-mobile-sync.md).
 
 The **one exception** is receipt scanning (`ReceiptScanModal`, see [tasks/receipt-ocr.md](tasks/receipt-ocr.md) / [agents/plans/receipt-ocr.md](agents/plans/receipt-ocr.md)): it calls the Anthropic vision API **directly from the browser** with an API key + model the user pastes in `SettingsModal`. There is still no project server, but it's no longer true that nothing leaves the browser — the ticket photo is sent to Anthropic. The key/model live under their own IndexedDB key (`OCR_SETTINGS_STORAGE_KEY`, via `loadOcrSettings`/`saveOcrSettings`), never inside the `STORAGE_KEY` blob, so they're excluded from sync / QR / backup by construction.
 
@@ -18,14 +32,36 @@ The app is no longer designed to run as a Claude Artifact — that mode was only
 
 ### Running it
 
-The app runs via the **local dev toolchain** (this repo has a minimal Vite scaffold for it) — see [README.md](README.md) for setup. This is a real local toolchain (`package.json`, Vite, Tailwind build) that mounts `App` from `hilo-finanzas.jsx` into `src/main.jsx`; it's plumbing only, not part of the app's own architecture. Data persists across reloads via IndexedDB, in both desktop and mobile browsers.
+The app runs via the **local dev toolchain** (this repo has a minimal Vite scaffold for it) — see [README.md](README.md) for setup. This is a real local toolchain (`package.json`, Vite, Tailwind build) that mounts `App` (vía el barrel `hilo-finanzas.jsx`) into `src/main.jsx`; it's plumbing only, not part of the app's own architecture. Data persists across reloads via IndexedDB, in both desktop and mobile browsers.
 
 ## Architecture
 
-Everything lives in [hilo-finanzas.jsx](hilo-finanzas.jsx), organized top-to-bottom as:
+### Arquitectura objetivo (a la que se está migrando)
 
-1. **Design tokens & static data** — `COLORS`, `CATEGORY_PALETTE`, `ACCOUNT_TYPES`, `ICONS`/`ICON_CHOICES`, `DEFAULT_EXPENSE_CATEGORIES`/`DEFAULT_INCOME_CATEGORIES`/`DEFAULT_CATEGORIES`, `DEFAULT_ACCOUNTS`, and demo seed data (`buildDefaultTransactions`, `buildDefaultInstallmentPlans`) used on first load.
-2. **Helpers** — pure functions: `uid`, date formatting (`todayIso`, `monthKey`, `monthLabel`, `formatDateLabel`), `formatMoney`, `computeAccountBalance`, `groupByDate`, `initialFormState`.
+Feature-first: la funcionalidad es el primer nivel, y dentro de cada una van las capas.
+
+```
+src/app/          App, store de zustand, Provider, dependencies (composition root), run
+src/shared/       fp/ · domain/ · design/ · infrastructure/ · ui/    ← lo importa cualquiera
+src/features/<f>/ domain/ · application/ · infrastructure/ · store/ · ui/{components,containers}
+src/legacy/       lo que todavía no se migra
+```
+
+Cuatro reglas que gobiernan el código nuevo:
+
+1. **Dirección de dependencias:** `ui → store → application → domain`. Una feature puede importar el `domain/` y los `store/selectors` de otra, **nunca su `ui/`**. `shared/` no importa nada de `features/`.
+2. **Casos de uso = funciones que devuelven un valor,** con las mónadas de fp-ts: `Reader<Deps, A>` si es determinista, `ReaderIO<Deps, A>` si necesita id o reloj, `ReaderTaskEither<Deps, HiloError, A>` si es asíncrono y falible. Un caso de uso **no ejecuta nada** al invocarlo.
+3. **Un solo punto de run:** la acción del slice de zustand. Es el único lugar que llama `runRIO`/`runRTE` (de `src/app/run.ts`) y el único que hace `match` del `Either`. **Ningún componente ve una mónada.** Si un componente corriera una, tendríamos dos modelos de efectos compitiendo — es lo único que hay que vigilar en review.
+4. **Funciones, no clases.** Los repositorios son records de funciones con dos implementaciones: la real sobre IndexedDB y una en memoria para test.
+
+Componentes de **renderizado** (`ui/components/`) reciben props y devuelven JSX, sin store ni casos de uso. Componentes de **lógica** (`ui/containers/`) leen el store, ligan acciones y componen a los primeros.
+
+### Lo que todavía vive en el legacy
+
+[src/legacy/hilo-legacy.jsx](src/legacy/hilo-legacy.jsx) — consulta el registro de avance del plan para saber qué queda. Organizado top-to-bottom como:
+
+1. **Static data** — `DEFAULT_EXPENSE_CATEGORIES`/`DEFAULT_INCOME_CATEGORIES`/`DEFAULT_CATEGORIES`, `DEFAULT_ACCOUNTS`, and demo seed data (`buildDefaultTransactions`, `buildDefaultInstallmentPlans`) used on first load. *(Los tokens de diseño y el catálogo de iconos ya migraron a `src/shared/design/`.)*
+2. **Helpers** — pure functions: `computeAccountBalance`, `initialFormState`. *(`uid`, las fechas, `formatMoney`, la búsqueda y `groupByDate` ya migraron a `src/shared/domain/`; `highlightMatch` a `src/shared/ui/`.)*
 3. **Shared pieces** — `GlobalStyles` (fonts, scrollbar hiding, sheet animations), `SheetOverlay` (bottom-sheet modal shell), `Toast`, `EmptyState`, `ExpenseDonut` (+ `DonutTooltip`), `CategoryPicker`, `StoreInput`, `InstallmentPlanPicker`, `MsiPlanCard`, `TransactionRow`, `BottomNav`.
 4. **Views** (one per bottom-nav tab) — `HomeView`, `HistoryView`, `AccountsView`, `MsiView`.
 5. **Modals/sheets** — `AddTransactionSheet` (create/edit expense, income, or transfer), `AccountFormModal`, `MsiPlanModal`, `SettingsModal`, `MonefyImportModal`, `ReceiptScanModal` (photo → Anthropic vision API → review sheet → many transactions), `SyncModal` (manual cross-device merge; tabs *Enviar* / *Recibir* / *Dispositivos*, the last managing this device's name and the per-peer sync points that drive delta sends), `BackupModal` (export / restore-by-replace).

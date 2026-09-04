@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noFallthroughCasesInSwitch": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+
+    // El código migrado es .ts/.tsx y sí se typechequea. `src/legacy/hilo-legacy.jsx`,
+    // el barrel y los 190 tests siguen siendo JS: se resuelven pero no se chequean,
+    // así el refactor puede avanzar módulo a módulo sin exigir tipar el legacy.
+    "allowJs": true,
+    "checkJs": false,
+
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "forceConsistentCasingInFileNames": true,
+
+    // TypeScript 7 quitó `baseUrl`: los paths van relativos al tsconfig.
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
+}

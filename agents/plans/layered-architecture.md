@@ -189,7 +189,7 @@ Cada paso es un commit que deja **`npm test` en verde con los 190 tests**, `npm 
 | # | Paso | Estado |
 |---|---|---|
 | 0 | Mover el archivo tal cual a `src/legacy/hilo-legacy.jsx`; `hilo-finanzas.jsx` pasa a barrel | **hecho** |
-| 1 | Cimientos: `tsconfig`, deps, `shared/fp`, `shared/domain`, `shared/design`, `shared/infrastructure` (repos IndexedDB + in-memory), `HiloError`, `Deps` | pendiente |
+| 1 | Cimientos: `tsconfig`, deps, `shared/fp`, `shared/domain`, `shared/design`, `shared/infrastructure` (repos IndexedDB + in-memory), `HiloError`, `Deps` | **hecho** |
 | 2 | Store: slices, `createStore` + Provider, persistencia por `subscribe`. Los 29 `useState` y los 4 `useEffect` salen de `App`; el `App` legacy pasa a leer del store y sigue bajando props | pendiente |
 | 3 | Feature `accounts` (la más chica: valida el patrón completo de punta a punta) | pendiente |
 | 4 | Feature `transactions` | pendiente |
@@ -212,6 +212,33 @@ Cada paso de feature (3–12) hace lo mismo: dominio → casos de uso → slice 
 - `vite.config.js`: `test.include` ensanchado a `['test/**/*.test.{js,jsx}', 'src/**/*.test.{js,jsx,ts,tsx}']` para poder colocar los tests nuevos junto a su feature; `coverage.include` de `['hilo-finanzas.jsx']` a `['src/**/*.{js,jsx,ts,tsx}']` con `exclude` de `src/test/**` y `src/main.jsx`.
 - `tailwind.config.js`: `content` ampliado a `ts,tsx`.
 - `src/main.jsx` no se tocó: sigue importando del barrel.
+
+### Detalle del paso 1 (hecho)
+
+Módulos creados, todos en TypeScript estricto:
+
+| Módulo | Contenido |
+|---|---|
+| `src/shared/fp/index.ts` | Único punto de entrada de fp-ts + `runReader`/`runReaderIO`/`runReaderTaskEither`, genéricos sobre el entorno para que `shared/` no dependa de `Deps` |
+| `src/shared/domain/types.ts` | El modelo: `Account`, `Category`, `Transaction` (unión de los 3 tipos), `InstallmentPlan`, `Tombstone`, `DataState`, `OcrSettings`, `SyncState`. Todo campo posterior al primer release va opcional, por la regla de compatibilidad con datos ya guardados |
+| `src/shared/domain/errors.ts` | `HiloError` (unión etiquetada), sus constructores y `messageFor` |
+| `src/shared/domain/ports.ts` | `StateRepository`, `OcrSettingsRepository`, `SyncStateRepository`, `Clock`, `IdGenerator` |
+| `src/shared/domain/{ids,dates,money,search,grouping}.ts` | Los helpers puros, trasladados verbatim |
+| `src/shared/design/{tokens,icons}.ts` | `COLORS`, `CATEGORY_PALETTE`, `ACCOUNT_SEARCH_THRESHOLD`, `DESKTOP_BREAKPOINT`, `ICONS`, `ICON_CHOICES`, `IconFor`, `ACCOUNT_TYPES` |
+| `src/shared/ui/highlight.tsx` | `highlightMatch`, fuera de dominio por devolver JSX (fuga §9 resuelta) |
+| `src/shared/infrastructure/indexed-db.ts` | La capa física, con la API de Promises intacta (es la que importan los tests) |
+| `src/shared/infrastructure/repositories.ts` | Los puertos reales: envuelven esas Promises en `TaskEither` |
+| `src/shared/infrastructure/in-memory.ts` | Su contraparte en memoria, con `failWith` para ejercitar la rama `Left` |
+| `src/app/dependencies.ts` | `Deps` + `productionDeps` + `createDeps(overrides)` |
+| `src/app/run.ts` | `runR`/`runRIO`/`runRTE` ligados a `Deps`/`HiloError`. **Solo puede importarse desde un slice de zustand** |
+
+Notas de implementación:
+
+- **TypeScript 7** (compilador nativo). Quitó `baseUrl`, así que el alias va como `"paths": { "@/*": ["./src/*"] }` relativo al tsconfig, espejado en `resolve.alias` de Vite. `allowJs: true` + `checkJs: false`: el legacy, el barrel y los 190 tests se resuelven pero no se chequean.
+- `@types/react` se fijó a `^18` — npm instaló v19 por defecto, que no corresponde con React 18.3 y rompía el typecheck.
+- `loadState`/`saveState`/etc. **siguen devolviendo Promises**, no `TaskEither`. Son la API pública histórica y los 9 tests de `test/unit/persistence.test.js` las llaman así; el canal monádico se añade encima, en `repositories.ts`.
+- El legacy dejó de declarar lo migrado y ahora lo importa. Se recortó su import de `lucide-react` a los iconos que sigue usando directamente.
+- 6 tests nuevos en `src/shared/infrastructure/in-memory.test.ts`: corren un caso de uso de ejemplo con `Deps` inyectadas, verifican que el fallo de persistencia llega como `Left` con el texto de toast correcto, y que el repositorio de OCR borra al guardar vacío. Total: **196 tests**.
 
 ### Tests nuevos por feature
 

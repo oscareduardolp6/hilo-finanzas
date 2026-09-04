@@ -1,61 +1,31 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Plus, X, ArrowUpRight, ArrowDownRight, ArrowRightLeft, Wallet, Landmark, CreditCard,
-  PiggyBank, TrendingUp, Coins, UtensilsCrossed, Car, Home, Zap, HeartPulse, Sparkles,
-  Film, Shirt, GraduationCap, PawPrint, Gift, ShoppingBag, MoreHorizontal, Briefcase,
-  RotateCcw, ChevronLeft, ChevronRight, Settings, Receipt, LayoutGrid, Link2, Trash2,
-  Check, Banknote, Music, Plane, Coffee, Dumbbell, Book, Wrench, Smartphone, Baby,
-  Star, Umbrella, Fuel, Ticket, Layers, Search,
+  Plus, X, ArrowUpRight, ArrowDownRight, ArrowRightLeft, Landmark,
+  TrendingUp, MoreHorizontal,
+  ChevronLeft, ChevronRight, Settings, Receipt, LayoutGrid, Link2, Trash2,
+  Check, Layers, Search, Smartphone,
   QrCode, Camera, Download, Upload, Copy, Share2, RefreshCw, DatabaseBackup, ScanLine,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import jsQR from 'jsqr';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
-/* ------------------------------------------------------------------ */
-/* Design tokens                                                       */
-/* ------------------------------------------------------------------ */
-
-const COLORS = {
-  bg: '#0F1A17',
-  surface: '#16221D',
-  surfaceAlt: '#1D2C25',
-  elevated: '#24352C',
-  border: 'rgba(243,241,234,0.09)',
-  borderStrong: 'rgba(243,241,234,0.16)',
-  text: '#F3F1EA',
-  textMuted: '#96A69D',
-  textFaint: '#69796F',
-  accent: '#C9A24B',
-  accentSoft: 'rgba(201,162,75,0.16)',
-  income: '#5FD9A5',
-  incomeSoft: 'rgba(95,217,165,0.14)',
-  expense: '#FF7A6E',
-  expenseSoft: 'rgba(255,122,110,0.14)',
-};
-
-const CATEGORY_PALETTE = ['#E0793F', '#4A7FC4', '#8D6E63', '#C9A24B', '#C4574F', '#C97FB0', '#7B6FB0', '#3F9C8B', '#5C8A5C', '#4FA8A0', '#8D5FB0', '#8A9490'];
-
-const ACCOUNT_TYPES = [
-  { id: 'efectivo', label: 'Efectivo', icon: Banknote },
-  { id: 'debito', label: 'Débito / Cuenta', icon: Landmark },
-  { id: 'credito', label: 'Tarjeta de crédito', icon: CreditCard },
-  { id: 'ahorro', label: 'Ahorro', icon: PiggyBank },
-  { id: 'inversion', label: 'Inversión', icon: TrendingUp },
-  { id: 'otro', label: 'Otro', icon: Coins },
-];
-
-const ICONS = {
-  UtensilsCrossed, Car, Home, Zap, HeartPulse, Sparkles, Film, Shirt, GraduationCap,
-  PawPrint, Gift, ShoppingBag, MoreHorizontal, Wallet, Briefcase, TrendingUp, RotateCcw,
-  Music, Plane, Coffee, Dumbbell, Book, Wrench, Smartphone, Baby, Star, Umbrella, Fuel, Ticket,
-};
-
-const ICON_CHOICES = Object.keys(ICONS);
-
-function IconFor(name) {
-  return ICONS[name] || MoreHorizontal;
-}
+/* Migrado a la capa `shared` (paso 1 de agents/plans/layered-architecture.md).
+   Este archivo ya solo los consume; el barrel los re-exporta desde su nuevo
+   hogar, así que los tests no se enteran del movimiento. */
+import { COLORS, CATEGORY_PALETTE, ACCOUNT_SEARCH_THRESHOLD, DESKTOP_BREAKPOINT } from '../shared/design/tokens';
+import { ICONS, ICON_CHOICES, IconFor, ACCOUNT_TYPES } from '../shared/design/icons';
+import { uid } from '../shared/domain/ids';
+import { todayIso, monthKey, monthLabel, formatDateLabel } from '../shared/domain/dates';
+import { formatMoney } from '../shared/domain/money';
+import { normalizeForSearch, accountNameMatches } from '../shared/domain/search';
+import { groupByDate } from '../shared/domain/grouping';
+import { highlightMatch } from '../shared/ui/highlight';
+import {
+  STORAGE_KEY, OCR_SETTINGS_STORAGE_KEY, SYNC_STATE_STORAGE_KEY, PEER_TTL_MS,
+  openDb, loadState, saveState, loadOcrSettings, saveOcrSettings,
+  makeSyncState, loadSyncState, saveSyncState,
+} from '../shared/infrastructure/indexed-db';
 
 const DEFAULT_EXPENSE_CATEGORIES = [
   { id: 'comida', name: 'Comida', icon: 'UtensilsCrossed', color: '#E0793F' },
@@ -94,114 +64,10 @@ const DEFAULT_ACCOUNTS = [
   { id: 'acc_mp', name: 'Mercado Pago', type: 'debito', color: '#3F9C8B', initialBalance: 0 },
 ];
 
-export const STORAGE_KEY = 'hilo_finanzas_data_v1';
-
-/* A partir de este número de cuentas, los selectores de cuenta (chips) muestran
-   un buscador por nombre para no scrollear la fila a ciegas. Ver AccountChipSearch. */
-export const ACCOUNT_SEARCH_THRESHOLD = 5;
-
-/* Config del escaneo de tickets (API key + modelo). Vive en el mismo object
-   store de IndexedDB que el estado, pero bajo su propia clave: NUNCA entra al
-   blob `STORAGE_KEY`, así que queda fuera de sync / QR / respaldo por
-   construcción (buildExportPayload solo toca las 5 colecciones). */
-export const OCR_SETTINGS_STORAGE_KEY = 'hilo_receipt_ocr_settings';
+/* Config del escaneo de tickets. La clave de IndexedDB donde vive
+   (`OCR_SETTINGS_STORAGE_KEY`) está en shared/infrastructure/indexed-db.ts. */
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const RECEIPT_MODEL_DEFAULT = 'claude-haiku-4-5';
-
-/* Estado de sincronización de ESTE dispositivo (id propio + hasta dónde ha
-   intercambiado datos con cada otro dispositivo). Igual que la config de OCR:
-   clave propia en el mismo object store, fuera del blob `STORAGE_KEY`, así que
-   nunca viaja en sync / QR / respaldo — cada dispositivo tiene el suyo. Ver
-   agents/plans/sync-incremental.md. */
-export const SYNC_STATE_STORAGE_KEY = 'hilo_sync_state_v1';
-export const PEER_TTL_MS = 365 * 864e5; // peers sin intercambio en un año se podan
-
-const DB_NAME = 'hilo_finanzas';
-const DB_VERSION = 1;
-const STORE_NAME = 'state';
-
-export function openDb() {
-  return new Promise((resolve, reject) => {
-    if (!('indexedDB' in window)) { reject(new Error('IndexedDB no disponible')); return; }
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => { req.result.createObjectStore(STORE_NAME); };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-export async function loadState() {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const req = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(STORAGE_KEY);
-    req.onsuccess = () => resolve(req.result || null);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-export async function saveState(data) {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).put(data, STORAGE_KEY);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-export async function loadOcrSettings() {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const req = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(OCR_SETTINGS_STORAGE_KEY);
-    req.onsuccess = () => resolve(req.result || null);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-export async function saveOcrSettings(next) {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    if (next && (next.apiKey || next.model)) store.put({ apiKey: next.apiKey || '', model: next.model || '' }, OCR_SETTINGS_STORAGE_KEY);
-    else store.delete(OCR_SETTINGS_STORAGE_KEY);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-/* Sync state local: { deviceId, deviceName, peers: { [peerId]: { name, lastSentAt, lastReceivedAt } } }.
-   `lastSentAt`  — hasta aquí YO le mandé mis datos a ese peer (gobierna el delta que le envío; avanza manual).
-   `lastReceivedAt` — hasta aquí incorporé lo suyo (informativo; avanza solo al recibir). */
-export function makeSyncState() {
-  const id = uid('dev');
-  return { deviceId: id, deviceName: 'Equipo-' + id.slice(-4), peers: {} };
-}
-
-export async function loadSyncState() {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const req = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(SYNC_STATE_STORAGE_KEY);
-    req.onsuccess = () => resolve(req.result || null);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-export async function saveSyncState(next) {
-  const cutoff = Date.now() - PEER_TTL_MS;
-  const peers = {};
-  for (const [id, p] of Object.entries((next && next.peers) || {})) {
-    if (Math.max(p.lastSentAt || 0, p.lastReceivedAt || 0) >= cutoff) peers[id] = p;
-  }
-  const clean = { deviceId: next.deviceId, deviceName: next.deviceName || '', peers };
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).put(clean, SYNC_STATE_STORAGE_KEY);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
 
 const NAV_ITEMS = [
   { id: 'home', label: 'Inicio', icon: LayoutGrid },
@@ -209,8 +75,6 @@ const NAV_ITEMS = [
   { id: 'msi', label: 'MSI', icon: Layers },
   { id: 'accounts', label: 'Cuentas', icon: Landmark },
 ];
-
-const DESKTOP_BREAKPOINT = 1024; // Tailwind `lg` — layout de escritorio (ver DesktopShell)
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                              */
@@ -230,56 +94,6 @@ function useIsDesktop() {
   return isDesktop;
 }
 
-export function uid(prefix) {
-  return `${prefix || 'id'}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-export function todayIso() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-export function monthKey(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
-
-export function monthLabel(d) {
-  const label = d.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
-  return label.charAt(0).toUpperCase() + label.slice(1);
-}
-
-export function formatDateLabel(iso) {
-  const parts = iso.split('-').map(Number);
-  const d = new Date(parts[0], parts[1] - 1, parts[2]);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  if (d.getTime() === today.getTime()) return 'Hoy';
-  if (d.getTime() === yesterday.getTime()) return 'Ayer';
-  const opts = { day: 'numeric', month: 'long' };
-  if (d.getFullYear() !== today.getFullYear()) opts.year = 'numeric';
-  const label = d.toLocaleDateString('es-MX', opts);
-  return label.charAt(0).toUpperCase() + label.slice(1);
-}
-
-export function formatMoney(n) {
-  const num = Number(n) || 0;
-  const sign = num < 0 ? '-' : '';
-  return sign + '$' + Math.abs(num).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-/* Coincidencia de texto para el buscador de cuentas: sin distinción de
-   mayúsculas ni acentos ("nomina" encuentra "Nómina"). Query vacío = todo pasa. */
-const DIACRITICS_RE = new RegExp('[\\u0300-\\u036f]', 'g');
-export function normalizeForSearch(s) {
-  return (s || '').toLowerCase().normalize('NFD').replace(DIACRITICS_RE, '');
-}
-export function accountNameMatches(name, query) {
-  const q = normalizeForSearch(query).trim();
-  return !q || normalizeForSearch(name).includes(q);
-}
-
 export function computeAccountBalance(account, transactions) {
   let bal = Number(account.initialBalance) || 0;
   for (const t of transactions) {
@@ -291,41 +105,6 @@ export function computeAccountBalance(account, transactions) {
     }
   }
   return bal;
-}
-
-export function groupByDate(list) {
-  const sorted = [...list].sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || 0) - (a.createdAt || 0));
-  const groups = [];
-  let currentLabel = null;
-  let currentList = null;
-  for (const t of sorted) {
-    const label = formatDateLabel(t.date);
-    if (label !== currentLabel) {
-      currentLabel = label;
-      currentList = [];
-      groups.push([label, currentList]);
-    }
-    currentList.push(t);
-  }
-  return groups;
-}
-
-// Best-effort visual highlight: case-insensitive but accent-sensitive indexOf on the
-// original string (normalize('NFD') would shift indices). If the match only came through
-// accent-insensitivity or a linked MSI plan name, it just renders the plain text.
-export function highlightMatch(text, rawQuery) {
-  const str = text == null ? '' : String(text);
-  const q = (rawQuery || '').trim();
-  if (!q) return str;
-  const idx = str.toLowerCase().indexOf(q.toLowerCase());
-  if (idx === -1) return str;
-  return [
-    str.slice(0, idx),
-    <mark key="hl" style={{ backgroundColor: COLORS.accentSoft, color: COLORS.text, borderRadius: 3, padding: '0 1px' }}>
-      {str.slice(idx, idx + q.length)}
-    </mark>,
-    str.slice(idx + q.length),
-  ];
 }
 
 export function initialFormState(type, accounts, categories) {

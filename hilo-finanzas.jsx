@@ -19,30 +19,18 @@
 
 export { default } from './src/legacy/hilo-legacy.jsx';
 
-/* → src/shared/design/ */
-export {
-  ACCOUNT_SEARCH_THRESHOLD,
-} from './src/legacy/hilo-legacy.jsx';
+/* ── migrado (paso 1) ── */
+export { ACCOUNT_SEARCH_THRESHOLD } from './src/shared/design/tokens';
 
-/* → src/shared/domain/ (formato, fechas, búsqueda, ids) */
-export {
-  uid,
-  todayIso,
-  monthKey,
-  monthLabel,
-  formatDateLabel,
-  formatMoney,
-  normalizeForSearch,
-  accountNameMatches,
-  groupByDate,
-} from './src/legacy/hilo-legacy.jsx';
+export { uid } from './src/shared/domain/ids';
+export { todayIso, monthKey, monthLabel, formatDateLabel } from './src/shared/domain/dates';
+export { formatMoney } from './src/shared/domain/money';
+export { normalizeForSearch, accountNameMatches } from './src/shared/domain/search';
+export { groupByDate } from './src/shared/domain/grouping';
 
-/* → src/shared/ui/ (devuelve JSX, no es dominio) */
-export {
-  highlightMatch,
-} from './src/legacy/hilo-legacy.jsx';
+/* Devuelve JSX, así que es `shared/ui` y no dominio. */
+export { highlightMatch } from './src/shared/ui/highlight';
 
-/* → src/shared/infrastructure/ (IndexedDB) */
 export {
   STORAGE_KEY,
   OCR_SETTINGS_STORAGE_KEY,
@@ -56,7 +44,7 @@ export {
   makeSyncState,
   loadSyncState,
   saveSyncState,
-} from './src/legacy/hilo-legacy.jsx';
+} from './src/shared/infrastructure/indexed-db';
 
 /* → src/features/accounts/ */
 export {
