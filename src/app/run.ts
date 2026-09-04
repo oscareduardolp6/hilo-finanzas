@@ -6,9 +6,10 @@
    dos modelos de efectos compitiendo en vez de uno. Ningún componente — ni de
    renderizado ni de lógica — debe importar este módulo. */
 
-import { runReader, runReaderIO, runReaderTaskEither } from '../shared/fp';
+import { runReader, runReaderIO, runReaderTask, runReaderTaskEither } from '../shared/fp';
 import type { Reader } from 'fp-ts/Reader';
 import type { ReaderIO } from 'fp-ts/ReaderIO';
+import type { ReaderTask } from 'fp-ts/ReaderTask';
 import type { ReaderTaskEither } from 'fp-ts/ReaderTaskEither';
 import type { Either } from 'fp-ts/Either';
 import type { HiloError } from '../shared/domain/errors';
@@ -19,6 +20,9 @@ export const runR = <A>(reader: Reader<Deps, A>, deps: Deps): A => runReader(rea
 
 /** Caso de uso síncrono con efecto (ids, reloj). */
 export const runRIO = <A>(rio: ReaderIO<Deps, A>, deps: Deps): A => runReaderIO(rio, deps);
+
+/** Caso de uso asíncrono que por diseño no puede fallar (p. ej. `hydrate`). */
+export const runRT = <A>(rt: ReaderTask<Deps, A>, deps: Deps): Promise<A> => runReaderTask(rt, deps);
 
 /** Caso de uso asíncrono y falible: el `Either` se resuelve en el slice. */
 export const runRTE = <A>(

@@ -22,6 +22,7 @@ export * as A from 'fp-ts/Array';
 
 import type { Reader } from 'fp-ts/Reader';
 import type { ReaderIO } from 'fp-ts/ReaderIO';
+import type { ReaderTask } from 'fp-ts/ReaderTask';
 import type { ReaderTaskEither } from 'fp-ts/ReaderTaskEither';
 import type { Either } from 'fp-ts/Either';
 
@@ -30,6 +31,9 @@ export const runReader = <R, A>(reader: Reader<R, A>, deps: R): A => reader(deps
 
 /** Aplica las dependencias y ejecuta el efecto síncrono (ids, reloj). */
 export const runReaderIO = <R, A>(rio: ReaderIO<R, A>, deps: R): A => rio(deps)();
+
+/** Aplica las dependencias y ejecuta el efecto asíncrono infalible. */
+export const runReaderTask = <R, A>(rt: ReaderTask<R, A>, deps: R): Promise<A> => rt(deps)();
 
 /** Aplica las dependencias y ejecuta el efecto asíncrono falible. */
 export const runReaderTaskEither = <R, E, A>(

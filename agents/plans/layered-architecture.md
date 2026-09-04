@@ -190,7 +190,7 @@ Cada paso es un commit que deja **`npm test` en verde con los 190 tests**, `npm 
 |---|---|---|
 | 0 | Mover el archivo tal cual a `src/legacy/hilo-legacy.jsx`; `hilo-finanzas.jsx` pasa a barrel | **hecho** |
 | 1 | Cimientos: `tsconfig`, deps, `shared/fp`, `shared/domain`, `shared/design`, `shared/infrastructure` (repos IndexedDB + in-memory), `HiloError`, `Deps` | **hecho** |
-| 2 | Store: slices, `createStore` + Provider, persistencia por `subscribe`. Los 29 `useState` y los 4 `useEffect` salen de `App`; el `App` legacy pasa a leer del store y sigue bajando props | pendiente |
+| 2 | Store: slices, `createStore` + Provider, persistencia por `subscribe`. Los 29 `useState` y los 4 `useEffect` salen de `App`; el `App` legacy pasa a leer del store y sigue bajando props | **hecho** |
 | 3 | Feature `accounts` (la más chica: valida el patrón completo de punta a punta) | pendiente |
 | 4 | Feature `transactions` | pendiente |
 | 5 | Feature `installments` (MSI) | pendiente |
@@ -239,6 +239,32 @@ Notas de implementación:
 - `loadState`/`saveState`/etc. **siguen devolviendo Promises**, no `TaskEither`. Son la API pública histórica y los 9 tests de `test/unit/persistence.test.js` las llaman así; el canal monádico se añade encima, en `repositories.ts`.
 - El legacy dejó de declarar lo migrado y ahora lo importa. Se recortó su import de `lucide-react` a los iconos que sigue usando directamente.
 - 6 tests nuevos en `src/shared/infrastructure/in-memory.test.ts`: corren un caso de uso de ejemplo con `Deps` inyectadas, verifican que el fallo de persistencia llega como `Left` con el texto de toast correcto, y que el repositorio de OCR borra al guardar vacío. Total: **196 tests**.
+
+### Detalle del paso 2 (hecho)
+
+Los 29 `useState` y los 4 `useEffect` salieron de `App`. El default export quedó como un envoltorio de tres líneas sobre `HiloStoreProvider`, y el árbol vive ahora en `AppBody`.
+
+| Módulo | Contenido |
+|---|---|
+| `src/app/store/index.ts` | `createHiloStore(deps)` con `createStore` vanilla + `subscribeWithSelector` |
+| `src/app/store/{data,ui,settings}-slice.ts` | Las 5 colecciones + `loaded`; lo efímero (nav, filtros, formulario, 9 modales, toast); OCR y sync state |
+| `src/app/store/setter.ts` | `makeSetter`, que produce setters con la firma de `useState` |
+| `src/app/store-context.tsx` | Provider (store por montaje) + `useHiloStore` con y sin selector |
+| `src/app/persistence.ts` | Las dos suscripciones de guardado |
+| `src/app/application/{hydrate,persist}.ts` | Los dos primeros casos de uso reales |
+| `src/shared/domain/defaults.ts` | Datos semilla, movidos aquí porque el store los necesita como estado inicial |
+
+Decisiones que vale la pena conocer:
+
+- **Los setters imitan la firma de `useState`** (aceptan valor o función actualizadora). Es lo que permitió que los **28 handlers de `App` migraran sin tocar su cuerpo**: `setTransactions(prev => prev.filter(...))` se sigue escribiendo igual. Los pasos 3–12 los irán reemplazando por acciones respaldadas por casos de uso.
+- **`AppBody` se suscribe al store sin selector**, así que re-renderiza ante cualquier cambio — exactamente lo que hacía cuando era dueño de los 29 `useState`. Los selectores granulares llegan con los containers de cada feature; meterlos ahora cambiaría el comportamiento de render sin que ningún test lo cubra.
+- **`hydrate` es un `ReaderTask`, no un `ReaderTaskEither`.** La hidratación no puede fallar de cara al usuario: si IndexedDB no responde, se arranca con los datos de ejemplo y no se muestra error, que es lo que hacía el `useEffect` original al tragarse la excepción. Cada una de las tres lecturas se recupera por separado porque cada una significa algo distinto al faltar. `persist` sí es `ReaderTaskEither`: su fallo es el toast.
+- **Las slices viven en `src/app/store/` y no en cada feature** (desviación consciente del diseño de arriba). Están agrupadas por ciclo de vida — persistido / efímero / config — porque en el paso 2 las features todavía no existen y repartir los campos ahora obligaría a moverlos otra vez. Los pasos 3–12 añaden, desde `features/<f>/store/`, slices que aportan **acciones**, sin mover los campos.
+- **`makeSyncState` acepta un generador de ids opcional**, para que la hidratación sea determinista en test. Llamarla sin argumentos sigue usando `uid`, que es como la invocan los tests existentes.
+
+12 tests nuevos en `src/app/store/store.test.ts`, sin React: cubren los tres detalles del efecto original que es fácil perder al volverlo suscripción — que no guarda antes de hidratar, que **sí** guarda en el instante en que `loaded` pasa a `true` (lo que persiste la semilla en un perfil nuevo), y que un fallo se vuelve toast. Total: **208 tests**.
+
+> **Trampa del entorno.** Tras mover módulos, el preview puede fallar con `does not provide an export named X` o `Invalid hook call` aunque test, typecheck y build estén en verde: es el **service worker de la PWA** sirviendo el grafo de módulos anterior. Borrar `node_modules/.vite` no basta — hay que desregistrar el SW y limpiar `caches` desde la consola del navegador, y comprobar en una pestaña nueva (el búfer de consola de la vieja conserva los errores previos).
 
 ### Tests nuevos por feature
 

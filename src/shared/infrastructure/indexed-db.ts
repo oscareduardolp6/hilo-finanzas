@@ -15,6 +15,7 @@
    llaman así). Los puertos monádicos las envuelven en `repositories.ts`. */
 
 import { uid } from '../domain/ids';
+import type { IdGenerator } from '../domain/ports';
 import type { DataState, OcrSettings, SyncState, SyncPeer } from '../domain/types';
 
 export const STORAGE_KEY = 'hilo_finanzas_data_v1';
@@ -94,9 +95,11 @@ export async function saveOcrSettings(next: Partial<OcrSettings> | null): Promis
   });
 }
 
-/** Estado de sync inicial de un dispositivo que nunca se ha sincronizado. */
-export function makeSyncState(): SyncState {
-  const id = uid('dev');
+/** Estado de sync inicial de un dispositivo que nunca se ha sincronizado.
+ *  El generador es inyectable para poder fijar el id en test; llamarla sin
+ *  argumentos usa `uid`, que es como la invocan los tests existentes. */
+export function makeSyncState(generateId: IdGenerator = uid): SyncState {
+  const id = generateId('dev');
   return { deviceId: id, deviceName: 'Equipo-' + id.slice(-4), peers: {} };
 }
 

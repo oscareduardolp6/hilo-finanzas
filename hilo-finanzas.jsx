@@ -59,8 +59,14 @@ export {
   computePeriodTransactions,
   computeRecentTxns,
   computeKnownStores,
-  buildDefaultTransactions,
 } from './src/legacy/hilo-legacy.jsx';
+
+/* Datos semilla: migrados en el paso 2 porque el store los necesita como
+   estado inicial (importarlos del legacy haría ciclo). */
+export {
+  buildDefaultTransactions,
+  buildDefaultInstallmentPlans,
+} from './src/shared/domain/defaults';
 
 /* → src/features/dashboard/ */
 export {
@@ -72,7 +78,6 @@ export {
 /* → src/features/installments/ */
 export {
   computePlanProgress,
-  buildDefaultInstallmentPlans,
 } from './src/legacy/hilo-legacy.jsx';
 
 /* → src/features/history/ */

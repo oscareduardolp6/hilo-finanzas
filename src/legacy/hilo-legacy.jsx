@@ -21,48 +21,12 @@ import { formatMoney } from '../shared/domain/money';
 import { normalizeForSearch, accountNameMatches } from '../shared/domain/search';
 import { groupByDate } from '../shared/domain/grouping';
 import { highlightMatch } from '../shared/ui/highlight';
-import {
-  STORAGE_KEY, OCR_SETTINGS_STORAGE_KEY, SYNC_STATE_STORAGE_KEY, PEER_TTL_MS,
-  openDb, loadState, saveState, loadOcrSettings, saveOcrSettings,
-  makeSyncState, loadSyncState, saveSyncState,
-} from '../shared/infrastructure/indexed-db';
+import { saveOcrSettings } from '../shared/infrastructure/indexed-db';
 
-const DEFAULT_EXPENSE_CATEGORIES = [
-  { id: 'comida', name: 'Comida', icon: 'UtensilsCrossed', color: '#E0793F' },
-  { id: 'transporte', name: 'Transporte', icon: 'Car', color: '#4A7FC4' },
-  { id: 'vivienda', name: 'Vivienda', icon: 'Home', color: '#8D6E63' },
-  { id: 'servicios', name: 'Servicios', icon: 'Zap', color: '#C9A24B' },
-  { id: 'salud', name: 'Salud', icon: 'HeartPulse', color: '#C4574F' },
-  { id: 'belleza', name: 'Belleza', icon: 'Sparkles', color: '#C97FB0' },
-  { id: 'entretenimiento', name: 'Entretenimiento', icon: 'Film', color: '#7B6FB0' },
-  { id: 'ropa', name: 'Ropa', icon: 'Shirt', color: '#3F9C8B' },
-  { id: 'educacion', name: 'Educación', icon: 'GraduationCap', color: '#5C8A5C' },
-  { id: 'mascotas', name: 'Mascotas', icon: 'PawPrint', color: '#A3A15C' },
-  { id: 'regalos', name: 'Regalos', icon: 'Gift', color: '#C15C7A' },
-  { id: 'compras', name: 'Compras', icon: 'ShoppingBag', color: '#4FA8A0' },
-  { id: 'otros_gasto', name: 'Otros', icon: 'MoreHorizontal', color: '#8A9490' },
-];
-
-const DEFAULT_INCOME_CATEGORIES = [
-  { id: 'salario', name: 'Salario', icon: 'Wallet', color: '#4FA57B' },
-  { id: 'freelance', name: 'Freelance', icon: 'Briefcase', color: '#3F9C6E' },
-  { id: 'inversion_ingreso', name: 'Inversión', icon: 'TrendingUp', color: '#2E8B6F' },
-  { id: 'regalo_ingreso', name: 'Regalo', icon: 'Gift', color: '#C9A24B' },
-  { id: 'reembolso', name: 'Reembolso', icon: 'RotateCcw', color: '#4A7FC4' },
-  { id: 'descuentos', name: 'Descuentos', icon: 'Ticket', color: '#6FA8A0' },
-  { id: 'otros_ingreso', name: 'Otros', icon: 'MoreHorizontal', color: '#8A9490' },
-];
-
-const DEFAULT_CATEGORIES = [
-  ...DEFAULT_EXPENSE_CATEGORIES.map(c => ({ ...c, type: 'expense' })),
-  ...DEFAULT_INCOME_CATEGORIES.map(c => ({ ...c, type: 'income' })),
-];
-
-const DEFAULT_ACCOUNTS = [
-  { id: 'acc_efectivo', name: 'Efectivo', type: 'efectivo', color: '#C9A24B', initialBalance: 0 },
-  { id: 'acc_nu', name: 'NU', type: 'debito', color: '#8D5FB0', initialBalance: 8000 },
-  { id: 'acc_mp', name: 'Mercado Pago', type: 'debito', color: '#3F9C8B', initialBalance: 0 },
-];
+/* El estado dejó de vivir en `App`: ahora está en el store de zustand, que se
+   crea por montaje. Ver src/app/store/ y agents/plans/layered-architecture.md. */
+import { HiloStoreProvider, useHiloStore } from '../app/store-context';
+import { useToastAutoDismiss } from '../app/use-toast-auto-dismiss';
 
 /* Config del escaneo de tickets. La clave de IndexedDB donde vive
    (`OCR_SETTINGS_STORAGE_KEY`) está en shared/infrastructure/indexed-db.ts. */
@@ -119,26 +83,6 @@ export function initialFormState(type, accounts, categories) {
   }
   const secondAccount = accounts[1] ? accounts[1].id : (accounts[0] ? accounts[0].id : '');
   return { ...base, fromAccountId: accounts[0] ? accounts[0].id : '', toAccountId: secondAccount, taggedAsExpense: false, categoryId: '', installmentPlanId: null, size: '', brand: '', quantity: '' };
-}
-
-export function buildDefaultTransactions() {
-  const today = todayIso();
-  const now = new Date();
-  const firstOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-  return [
-    { id: 'demo_income', type: 'income', date: firstOfMonth, amount: 12000, description: 'Nómina', accountId: 'acc_nu', categoryId: 'salario', createdAt: Date.now() - 500000 },
-    { id: 'demo_expense_food', type: 'expense', date: today, amount: 180, description: 'Tacos', accountId: 'acc_efectivo', categoryId: 'comida', store: null, createdAt: Date.now() - 400000 },
-    { id: 'demo_transfer_cash', type: 'transfer', date: today, amount: 800, description: 'Retiro de efectivo', fromAccountId: 'acc_nu', toAccountId: 'acc_efectivo', taggedAsExpense: false, categoryId: null, installmentPlanId: null, store: null, createdAt: Date.now() - 300000 },
-    { id: 'demo_transfer_cream', type: 'transfer', date: today, amount: 100, description: 'Crema facial (pagando con TDC)', fromAccountId: 'acc_nu', toAccountId: 'acc_mp', taggedAsExpense: true, categoryId: 'belleza', installmentPlanId: null, store: null, createdAt: Date.now() - 100000 },
-    { id: 'demo_transfer_msi1', type: 'transfer', date: today, amount: 150, description: 'Audífonos inalámbricos', fromAccountId: 'acc_nu', toAccountId: 'acc_mp', taggedAsExpense: true, categoryId: 'compras', installmentPlanId: 'demo_msi_audifonos', store: null, createdAt: Date.now() - 50000 },
-    { id: 'demo_transfer_msi2', type: 'transfer', date: today, amount: 75, description: 'Audífonos inalámbricos (quincena)', fromAccountId: 'acc_nu', toAccountId: 'acc_mp', taggedAsExpense: true, categoryId: 'compras', installmentPlanId: 'demo_msi_audifonos', store: null, createdAt: Date.now() - 40000 },
-  ];
-}
-
-export function buildDefaultInstallmentPlans() {
-  return [
-    { id: 'demo_msi_audifonos', description: 'Audífonos inalámbricos', store: 'Walmart', totalAmount: 900, installmentsCount: 6, categoryId: 'compras', startDate: todayIso(), createdAt: Date.now() - 900000 },
-  ];
 }
 
 /* ------------------------------------------------------------------ */
@@ -3785,88 +3729,45 @@ function DesktopShell(props) {
 /* App                                                                  */
 /* ------------------------------------------------------------------ */
 
+/* El default export ya solo monta el store; el árbol vive en `AppBody`.
+   El store se construye por montaje (ver src/app/store-context.tsx), así que
+   cada render(<App/>) arranca limpio — misma semántica que cuando el estado
+   vivía en los 29 useState de este componente. */
 export default function App() {
-  const [loaded, setLoaded] = useState(false);
-  const [accounts, setAccounts] = useState(DEFAULT_ACCOUNTS);
-  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
-  const [transactions, setTransactions] = useState(() => buildDefaultTransactions());
-  const [installmentPlans, setInstallmentPlans] = useState(() => buildDefaultInstallmentPlans());
-  const [tombstones, setTombstones] = useState([]);
+  return (
+    <HiloStoreProvider>
+      <AppBody />
+    </HiloStoreProvider>
+  );
+}
 
-  const [activeTab, setActiveTab] = useState('home');
-  const [monthCursor, setMonthCursor] = useState(() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d; });
-  const [showAllTime, setShowAllTime] = useState(false);
-  const [filterType, setFilterType] = useState('all');
-  const [filterCategory, setFilterCategory] = useState('all');
-  const [filterStore, setFilterStore] = useState('all');
-  const [searchQuery, setSearchQuery] = useState(''); // efímero: no se hidrata ni se persiste, igual que los filtros
+function AppBody() {
+  /* Sin selector: se re-renderiza ante cualquier cambio del store, que es
+     exactamente lo que hacía este componente cuando era dueño del estado.
+     Los selectores granulares llegan con los containers de cada feature. */
+  const {
+    loaded, accounts, categories, transactions, installmentPlans, tombstones,
+    setAccounts, setCategories, setTransactions, setInstallmentPlans, setTombstones,
 
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const [formType, setFormType] = useState('expense');
-  const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState(null);
+    activeTab, monthCursor, showAllTime, filterType, filterCategory, filterStore, searchQuery,
+    setActiveTab, setMonthCursor, setShowAllTime, setFilterType, setFilterCategory,
+    setFilterStore, setSearchQuery,
 
-  const [accountModalOpen, setAccountModalOpen] = useState(false);
-  const [editingAccount, setEditingAccount] = useState(null);
-  const [msiModalOpen, setMsiModalOpen] = useState(false);
-  const [editingPlan, setEditingPlan] = useState(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [importModalOpen, setImportModalOpen] = useState(false);
-  const [syncModalOpen, setSyncModalOpen] = useState(false);
-  const [backupModalOpen, setBackupModalOpen] = useState(false);
-  const [receiptModalOpen, setReceiptModalOpen] = useState(false);
-  const [ocrSettings, setOcrSettings] = useState({ apiKey: '', model: '' });
-  const [syncState, setSyncState] = useState(null); // { deviceId, deviceName, peers } — local, ver SYNC_STATE_STORAGE_KEY
-  const [toast, setToast] = useState(null);
+    sheetOpen, formType, editingId, form,
+    setSheetOpen, setFormType, setEditingId, setForm,
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const data = await loadState();
-        if (mounted && data) {
-          if (data.accounts) setAccounts(data.accounts);
-          if (data.categories) setCategories(data.categories);
-          if (data.transactions) setTransactions(data.transactions);
-          if (data.installmentPlans) setInstallmentPlans(data.installmentPlans);
-          if (data.tombstones) setTombstones(data.tombstones);
-        }
-      } catch (e) {
-        // sin datos previos: nos quedamos con los valores de ejemplo
-      } finally {
-        if (mounted) setLoaded(true);
-      }
-    })();
-    loadOcrSettings().then(s => { if (mounted && s) setOcrSettings({ apiKey: s.apiKey || '', model: s.model || '' }); }).catch(() => {});
-    loadSyncState()
-      .then(s => {
-        if (!mounted) return;
-        setSyncState(s && s.deviceId ? { peers: {}, ...s } : makeSyncState());
-      })
-      .catch(() => { if (mounted) setSyncState(makeSyncState()); });
-    return () => { mounted = false; };
-  }, []);
+    accountModalOpen, editingAccount, msiModalOpen, editingPlan, settingsOpen,
+    importModalOpen, syncModalOpen, backupModalOpen, receiptModalOpen,
+    setAccountModalOpen, setEditingAccount, setMsiModalOpen, setEditingPlan, setSettingsOpen,
+    setImportModalOpen, setSyncModalOpen, setBackupModalOpen, setReceiptModalOpen,
 
-  useEffect(() => {
-    if (!loaded) return;
-    (async () => {
-      try {
-        await saveState({ accounts, categories, transactions, installmentPlans, tombstones });
-      } catch (e) {
-        setToast('No se pudo guardar el cambio localmente');
-      }
-    })();
-  }, [accounts, categories, transactions, installmentPlans, tombstones, loaded]);
+    ocrSettings, setOcrSettings, syncState, setSyncState, toast, setToast,
+  } = useHiloStore();
 
-  useEffect(() => {
-    if (syncState) saveSyncState(syncState).catch(() => {});
-  }, [syncState]);
-
-  useEffect(() => {
-    if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 2200);
-    return () => clearTimeout(timer);
-  }, [toast]);
+  /* La hidratación y el guardado automático los lleva el Provider
+     (src/app/persistence.ts). Aquí solo queda el auto-cierre del toast, que es
+     puro asunto de UI. */
+  useToastAutoDismiss();
 
   const balances = useMemo(() => computeBalances(accounts, transactions), [accounts, transactions]);
 
