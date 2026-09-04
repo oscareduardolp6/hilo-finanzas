@@ -32,13 +32,27 @@ import { AccountsContainer } from '../features/accounts/ui/containers/AccountsCo
 import { AccountFormContainer } from '../features/accounts/ui/containers/AccountFormContainer';
 
 /* Feature `transactions`, paso 4. El legacy consume su dominio; el alta, la
-   edición y el borrado son ahora acciones del store. */
+   edición y el borrado son ahora acciones del store, y la hoja se monta por
+   container (sin props). */
 import { initialFormState } from '../features/transactions/domain/form';
 import {
   computePeriodTransactions,
   computeRecentTxns,
   computeKnownStores,
 } from '../features/transactions/domain/queries';
+import { AddTransactionContainer } from '../features/transactions/ui/containers/AddTransactionContainer';
+
+/* De la feature `installments` solo existe todavía lo que el formulario de
+   movimiento necesitaba (paso 4); el resto llega en el paso 5. */
+import { computePlanProgress } from '../features/installments/domain/progress';
+
+/* Componentes presentacionales compartidos por varias features: por la regla de
+   dependencias no pueden vivir en ninguna de ellas. */
+import { EmptyState } from '../shared/ui/empty-state';
+import { CategoryPicker } from '../shared/ui/category-picker';
+import { StoreInput } from '../shared/ui/store-input';
+import { AccountChips } from '../shared/ui/account-chips';
+import { TransactionRow } from '../shared/ui/transaction-row';
 
 /* El estado dejó de vivir en `App`: ahora está en el store de zustand, que se
    crea por montaje. Ver src/app/store/ y agents/plans/layered-architecture.md. */
@@ -110,24 +124,6 @@ export function computeCategoryTotals(periodTransactions, categories) {
   }).sort((a, b) => b.total - a.total);
 }
 
-export function computePlanProgress(installmentPlans, transactions) {
-  const map = {};
-  for (const p of installmentPlans) {
-    const paid = transactions
-      .filter(t => (t.type === 'transfer' || t.type === 'expense') && t.installmentPlanId === p.id)
-      .reduce((s, t) => s + t.amount, 0);
-    const per = p.installmentsCount > 0 ? p.totalAmount / p.installmentsCount : 0;
-    const installmentsPaid = per > 0 ? paid / per : 0;
-    const remaining = Math.max(p.totalAmount - paid, 0);
-    const pct = p.totalAmount > 0 ? Math.min(paid / p.totalAmount, 1) : 0;
-    const isPaidOff = p.totalAmount > 0 && paid >= p.totalAmount - 0.005;
-    map[p.id] = { paid, per, installmentsPaid, remaining, pct, isPaidOff };
-  }
-  return map;
-}
-
-// Sugerencias para el <datalist> del buscador de historial: lugares + descripciones ya
-// usadas + nombres/lugares de planes MSI. computeKnownStores no sirve porque no trae descripciones.
 export function computeHistorySuggestions(transactions, installmentPlans) {
   const set = new Set();
   transactions.forEach(t => {
@@ -988,17 +984,6 @@ function Toast({ message, desktop }) {
   );
 }
 
-function EmptyState({ text }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-8 text-center">
-      <div className="w-12 h-12 rounded-full flex items-center justify-center mb-2" style={{ backgroundColor: COLORS.surfaceAlt }}>
-        <Receipt size={18} style={{ color: COLORS.textFaint }} />
-      </div>
-      <p className="text-sm" style={{ color: COLORS.textMuted }}>{text}</p>
-    </div>
-  );
-}
-
 function DonutTooltip({ active, payload, total }) {
   if (!active || !payload || !payload.length) return null;
   const d = payload[0].payload;
@@ -1059,254 +1044,6 @@ function ExpenseDonut({ data, total, onSliceClick }) {
   );
 }
 
-function CategoryPicker({ categories, type, selectedId, onSelect, onCreate }) {
-  const [creating, setCreating] = useState(false);
-  const [name, setName] = useState('');
-  const [icon, setIcon] = useState('MoreHorizontal');
-  const [color, setColor] = useState(CATEGORY_PALETTE[0]);
-
-  function submit() {
-    if (!name.trim()) return;
-    onCreate({ id: uid('cat'), name: name.trim(), icon, color, type });
-    setName('');
-    setIcon('MoreHorizontal');
-    setColor(CATEGORY_PALETTE[0]);
-    setCreating(false);
-  }
-
-  return (
-    <div>
-      <div className="grid grid-cols-4 gap-2">
-        {categories.map(c => {
-          const Icon = IconFor(c.icon);
-          const isSel = selectedId === c.id;
-          return (
-            <button key={c.id} onClick={() => onSelect(c.id)} className="flex flex-col items-center gap-1 py-2 rounded-xl border" style={{ borderColor: isSel ? c.color : COLORS.border, backgroundColor: isSel ? c.color + '22' : 'transparent' }}>
-              <Icon size={17} style={{ color: c.color }} />
-              <span className="text-xs text-center leading-tight" style={{ color: COLORS.text }}>{c.name}</span>
-            </button>
-          );
-        })}
-        <button onClick={() => setCreating(v => !v)} className="flex flex-col items-center gap-1 py-2 rounded-xl border" style={{ borderColor: COLORS.border, borderStyle: 'dashed', backgroundColor: creating ? COLORS.surfaceAlt : 'transparent' }}>
-          <Plus size={17} style={{ color: COLORS.textMuted }} />
-          <span className="text-xs text-center leading-tight" style={{ color: COLORS.textMuted }}>Nueva</span>
-        </button>
-      </div>
-
-      {creating && (
-        <div className="mt-3 rounded-xl p-3" style={{ backgroundColor: COLORS.surfaceAlt }}>
-          <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Nueva categoría</p>
-          <input
-            type="text"
-            value={name}
-            onChange={e => setName(e.target.value)}
-            placeholder="Nombre de la categoría"
-            autoFocus
-            className="w-full px-3 py-2 rounded-lg text-sm outline-none mb-3"
-            style={{ backgroundColor: COLORS.elevated, color: COLORS.text, border: `1px solid ${COLORS.border}` }}
-          />
-          <p className="text-xs mb-1.5" style={{ color: COLORS.textFaint }}>Color</p>
-          <div className="flex gap-2 flex-wrap mb-3">
-            {CATEGORY_PALETTE.map(c => (
-              <button key={c} onClick={() => setColor(c)} className="w-6 h-6 rounded-full" style={{ backgroundColor: c, boxShadow: color === c ? `0 0 0 2px ${COLORS.surfaceAlt}, 0 0 0 4px ${c}` : 'none' }} />
-            ))}
-          </div>
-          <p className="text-xs mb-1.5" style={{ color: COLORS.textFaint }}>Ícono</p>
-          <div className="grid grid-cols-6 gap-1.5 mb-3" style={{ maxHeight: 128, overflowY: 'auto' }}>
-            {ICON_CHOICES.map(iconName => {
-              const IconOpt = ICONS[iconName];
-              const isSel = icon === iconName;
-              return (
-                <button key={iconName} onClick={() => setIcon(iconName)} className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: isSel ? color + '33' : COLORS.elevated, border: `1px solid ${isSel ? color : COLORS.border}` }}>
-                  <IconOpt size={14} style={{ color: isSel ? color : COLORS.textMuted }} />
-                </button>
-              );
-            })}
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => setCreating(false)} className="flex-1 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: COLORS.elevated, color: COLORS.text }}>Cancelar</button>
-            <button onClick={submit} disabled={!name.trim()} className="flex-1 py-2 rounded-lg text-sm font-semibold disabled:opacity-40" style={{ backgroundColor: color, color: COLORS.bg }}>Crear</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function StoreInput({ value, onChange, knownStores }) {
-  return (
-    <div>
-      <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Tienda (opcional)</p>
-      <input
-        type="text"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder="Ej. Walmart, HEB, Amazon"
-        className="w-full px-3 py-2 rounded-xl text-sm outline-none"
-        style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }}
-      />
-      {knownStores.length > 0 && (
-        <div className="flex gap-1.5 flex-wrap mt-2">
-          {knownStores.map(s => (
-            <button key={s} type="button" onClick={() => onChange(s)} className="px-2.5 py-1 rounded-full text-xs" style={{ backgroundColor: value === s ? COLORS.accentSoft : COLORS.surfaceAlt, color: value === s ? COLORS.accent : COLORS.textMuted, border: `1px solid ${value === s ? COLORS.accent : COLORS.border}` }}>
-              {s}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* Input de búsqueda por nombre para las filas de chips de cuenta. Presentacional:
-   cada call site decide cuándo renderlo (ver ACCOUNT_SEARCH_THRESHOLD) y sobre
-   qué lista aplica accountNameMatches. */
-function AccountChipSearch({ value, onChange }) {
-  return (
-    <div className="relative mb-2">
-      <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: COLORS.textFaint }} />
-      <input
-        type="text"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder="Buscar cuenta"
-        className="w-full pl-8 pr-7 py-1.5 rounded-lg text-xs outline-none"
-        style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }}
-      />
-      {value && (
-        <button type="button" onClick={() => onChange('')} className="absolute right-2 top-1/2 -translate-y-1/2" style={{ color: COLORS.textFaint }}>
-          <X size={12} />
-        </button>
-      )}
-    </div>
-  );
-}
-
-/* Fila de chips para elegir una cuenta, con buscador cuando hay muchas.
-   Se usa en ReceiptScanModal (cuenta principal / de origen). */
-function AccountChips({ accounts, value, onSelect }) {
-  const [q, setQ] = useState('');
-  const list = accounts.filter(a => accountNameMatches(a.name, q));
-  return (
-    <div>
-      {accounts.length > ACCOUNT_SEARCH_THRESHOLD && <AccountChipSearch value={q} onChange={setQ} />}
-      <div className="flex gap-2 overflow-x-auto hilo-scroll pb-1">
-        {list.map(a => {
-          const isSel = value === a.id;
-          return (
-            <button key={a.id} type="button" onClick={() => onSelect(a.id)} className="shrink-0 px-3 py-2 rounded-xl border text-sm font-medium" style={{ borderColor: isSel ? a.color : COLORS.border, backgroundColor: isSel ? a.color + '22' : 'transparent', color: COLORS.text }}>
-              {a.name}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function InstallmentPlanPicker({ plans, progress, selectedId, onSelect, onCreate, categories, knownStores, onCreateCategory }) {
-  const [creating, setCreating] = useState(false);
-  const [description, setDescription] = useState('');
-  const [store, setStore] = useState('');
-  const [totalAmount, setTotalAmount] = useState('');
-  const [installmentsCount, setInstallmentsCount] = useState('6');
-  const [categoryId, setCategoryId] = useState(categories[0] ? categories[0].id : '');
-  const [startDate, setStartDate] = useState(todayIso());
-
-  const activePlans = plans.filter(p => !(progress[p.id] && progress[p.id].isPaidOff));
-
-  function handleNewCat(cat) {
-    onCreateCategory(cat);
-    setCategoryId(cat.id);
-  }
-
-  const submitValid = description.trim() && parseFloat(totalAmount) > 0 && parseFloat(installmentsCount) > 0 && categoryId;
-
-  function submit() {
-    if (!submitValid) return;
-    const plan = {
-      id: uid('msi'),
-      description: description.trim(),
-      store: store.trim(),
-      totalAmount: parseFloat(totalAmount),
-      installmentsCount: parseFloat(installmentsCount),
-      categoryId,
-      startDate,
-      createdAt: Date.now(),
-    };
-    onCreate(plan);
-    setCreating(false);
-    setDescription('');
-    setStore('');
-    setTotalAmount('');
-    setInstallmentsCount('6');
-  }
-
-  return (
-    <div>
-      {activePlans.length > 0 && (
-        <div className="space-y-2 mb-2">
-          {activePlans.map(p => {
-            const prog = progress[p.id] || { paid: 0, installmentsPaid: 0, remaining: p.totalAmount, pct: 0 };
-            const isSel = selectedId === p.id;
-            return (
-              <button key={p.id} onClick={() => onSelect(p.id)} className="w-full text-left p-3 rounded-xl border" style={{ borderColor: isSel ? COLORS.accent : COLORS.border, backgroundColor: isSel ? COLORS.accentSoft : COLORS.surfaceAlt }}>
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium truncate" style={{ color: COLORS.text }}>{p.description}{p.store ? ` · ${p.store}` : ''}</p>
-                  <p className="text-xs font-mono-custom shrink-0" style={{ color: COLORS.textMuted }}>{prog.installmentsPaid.toFixed(1)}/{p.installmentsCount}</p>
-                </div>
-                <div className="w-full h-1.5 rounded-full mt-2" style={{ backgroundColor: COLORS.elevated }}>
-                  <div className="h-1.5 rounded-full" style={{ width: `${prog.pct * 100}%`, backgroundColor: COLORS.accent }} />
-                </div>
-                <p className="text-xs mt-1" style={{ color: COLORS.textFaint }}>Quedan {formatMoney(prog.remaining)}</p>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      <button onClick={() => setCreating(v => !v)} className="w-full py-2.5 rounded-xl border text-sm font-medium flex items-center justify-center gap-1.5" style={{ borderColor: COLORS.border, borderStyle: 'dashed', color: COLORS.textMuted, backgroundColor: creating ? COLORS.surfaceAlt : 'transparent' }}>
-        <Plus size={15} /> Nuevo plan de MSI
-      </button>
-
-      {creating && (
-        <div className="mt-3 rounded-xl p-3 space-y-3" style={{ backgroundColor: COLORS.surfaceAlt }}>
-          <div>
-            <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>¿Qué compraste?</p>
-            <input type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="Ej. Laptop" className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ backgroundColor: COLORS.elevated, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
-          </div>
-          <StoreInput value={store} onChange={setStore} knownStores={knownStores} />
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Monto total</p>
-              <input type="number" inputMode="decimal" value={totalAmount} onChange={e => setTotalAmount(e.target.value)} placeholder="0.00" className="w-full px-3 py-2 rounded-lg text-sm outline-none font-mono-custom" style={{ backgroundColor: COLORS.elevated, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
-            </div>
-            <div>
-              <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}># de MSI</p>
-              <input type="number" inputMode="decimal" step="any" value={installmentsCount} onChange={e => setInstallmentsCount(e.target.value)} placeholder="6" className="w-full px-3 py-2 rounded-lg text-sm outline-none font-mono-custom" style={{ backgroundColor: COLORS.elevated, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
-            </div>
-          </div>
-          {parseFloat(totalAmount) > 0 && parseFloat(installmentsCount) > 0 && (
-            <p className="text-xs" style={{ color: COLORS.textFaint }}>≈ {formatMoney(parseFloat(totalAmount) / parseFloat(installmentsCount))} por pago completo</p>
-          )}
-          <div>
-            <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Categoría</p>
-            <CategoryPicker categories={categories} type="expense" selectedId={categoryId} onSelect={setCategoryId} onCreate={handleNewCat} />
-          </div>
-          <div>
-            <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Fecha de compra</p>
-            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ backgroundColor: COLORS.elevated, color: COLORS.text, border: `1px solid ${COLORS.border}`, colorScheme: 'dark' }} />
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => setCreating(false)} className="flex-1 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: COLORS.elevated, color: COLORS.text }}>Cancelar</button>
-            <button onClick={submit} disabled={!submitValid} className="flex-1 py-2 rounded-lg text-sm font-semibold disabled:opacity-40" style={{ backgroundColor: COLORS.accent, color: COLORS.bg }}>Crear plan</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function MsiPlanCard({ plan, progress, categories, onClick, muted }) {
   const cat = categories.find(c => c.id === plan.categoryId);
   const prog = progress || { paid: 0, installmentsPaid: 0, remaining: plan.totalAmount, pct: 0, isPaidOff: false };
@@ -1328,74 +1065,6 @@ function MsiPlanCard({ plan, progress, categories, onClick, muted }) {
           <p className="text-xs font-medium" style={{ color: COLORS.income }}>Pagado ✓</p>
         ) : (
           <p className="text-xs" style={{ color: COLORS.textFaint }}>Quedan {formatMoney(prog.remaining)}</p>
-        )}
-      </div>
-    </button>
-  );
-}
-
-function TransactionRow({ txn, accounts, categories, plans, query, onClick }) {
-  const accById = (id) => accounts.find(a => a.id === id);
-
-  if (txn.type === 'transfer') {
-    const fromAcc = accById(txn.fromAccountId);
-    const toAcc = accById(txn.toAccountId);
-    const cat = txn.taggedAsExpense ? categories.find(c => c.id === txn.categoryId) : null;
-    const CatIcon = cat ? IconFor(cat.icon) : null;
-    const plan = txn.installmentPlanId ? (plans || []).find(p => p.id === txn.installmentPlanId) : null;
-    return (
-      <button onClick={onClick} className="w-full flex items-start gap-3 py-3 border-b text-left" style={{ borderColor: COLORS.border }}>
-        <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: COLORS.accentSoft }}>
-          <ArrowRightLeft size={17} style={{ color: COLORS.accent }} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2">
-            <p className="truncate text-sm font-medium" style={{ color: COLORS.text }}>{txn.description ? highlightMatch(txn.description, query) : 'Transferencia'}</p>
-            <p className="font-mono-custom text-sm font-semibold shrink-0" style={{ color: txn.taggedAsExpense ? COLORS.expense : COLORS.text }}>
-              {txn.taggedAsExpense ? '-' : ''}{formatMoney(txn.amount)}
-            </p>
-          </div>
-          <p className="text-xs mt-0.5 truncate" style={{ color: COLORS.textMuted }}>{fromAcc ? fromAcc.name : '—'} → {toAcc ? toAcc.name : '—'}</p>
-          {cat && CatIcon && (
-            <div className="flex items-center gap-1.5 mt-1.5 pl-2" style={{ borderLeft: `2px dashed ${cat.color}` }}>
-              <CatIcon size={12} style={{ color: cat.color }} />
-              <span className="text-xs font-medium" style={{ color: cat.color }}>Cuenta como gasto · {cat.name}</span>
-            </div>
-          )}
-          {plan && (
-            <div className="flex items-center gap-1.5 mt-1 pl-2" style={{ borderLeft: `2px dashed ${COLORS.accent}` }}>
-              <Layers size={12} style={{ color: COLORS.accent }} />
-              <span className="text-xs font-medium" style={{ color: COLORS.accent }}>MSI · {plan.description}{plan.store ? ` (${plan.store})` : ''}</span>
-            </div>
-          )}
-        </div>
-      </button>
-    );
-  }
-
-  const acc = accById(txn.accountId);
-  const cat = categories.find(c => c.id === txn.categoryId);
-  const Icon = IconFor(cat ? cat.icon : null);
-  const isExpense = txn.type === 'expense';
-  const plan = txn.installmentPlanId ? (plans || []).find(p => p.id === txn.installmentPlanId) : null;
-  return (
-    <button onClick={onClick} className="w-full flex items-start gap-3 py-3 border-b text-left" style={{ borderColor: COLORS.border }}>
-      <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: (cat ? cat.color : COLORS.textMuted) + '26' }}>
-        <Icon size={17} style={{ color: cat ? cat.color : COLORS.textMuted }} />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between gap-2">
-          <p className="truncate text-sm font-medium" style={{ color: COLORS.text }}>{txn.description ? highlightMatch(txn.description, query) : (cat ? cat.name : 'Movimiento')}</p>
-          <p className="font-mono-custom text-sm font-semibold shrink-0" style={{ color: isExpense ? COLORS.expense : COLORS.income }}>
-            {isExpense ? '-' : '+'}{formatMoney(txn.amount)}
-          </p>
-        </div>
-        <p className="text-xs mt-0.5 truncate" style={{ color: COLORS.textMuted }}>{cat ? cat.name : ''}{cat && acc ? ' · ' : ''}{acc ? acc.name : ''}{txn.store ? <> · {highlightMatch(txn.store, query)}</> : ''}</p>
-        {plan && (
-          <div className="flex items-center gap-1.5 mt-1.5 pl-2" style={{ borderLeft: `2px dashed ${COLORS.accent}` }}>
-            <Layers size={12} style={{ color: COLORS.accent }} />
-            <span className="text-xs font-medium" style={{ color: COLORS.accent }}>MSI · {plan.description}{plan.store ? ` (${plan.store})` : ''}</span>
-          </div>
         )}
       </div>
     </button>
@@ -1915,288 +1584,6 @@ function MsiViewDesktop({ plans, progress, categories, onAdd, onOpenPlan }) {
 /* Modals / sheets                                                      */
 /* ------------------------------------------------------------------ */
 
-function AddTransactionSheet({ formType, editingId, form, setForm, accounts, categories, plans, planProgress, knownStores, onClose, onSave, onDelete, onSwitchType, onCreateCategory, onCreatePlan, desktop }) {
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [fromAccQuery, setFromAccQuery] = useState('');
-  const [toAccQuery, setToAccQuery] = useState('');
-  const [expenseMode, setExpenseMode] = useState(form && form.installmentPlanId ? 'msi' : 'single');
-  useEffect(() => {
-    setExpenseMode(form && form.installmentPlanId ? 'msi' : 'single');
-  }, [formType]);
-  if (!form) return null;
-
-  const expenseCats = categories.filter(c => c.type === 'expense');
-  const incomeCats = categories.filter(c => c.type === 'income');
-  const catList = formType === 'income' ? incomeCats : expenseCats;
-
-  function handleNewCategory(cat) {
-    onCreateCategory(cat);
-    setForm(f => ({ ...f, categoryId: cat.id }));
-  }
-
-  function handleNewPlan(plan) {
-    onCreatePlan(plan);
-    setForm(f => ({ ...f, installmentPlanId: plan.id, categoryId: plan.categoryId, description: f.description || plan.description }));
-  }
-
-  const isValid = useMemo(() => {
-    const amt = parseFloat(form.amount);
-    if (!amt || amt <= 0) return false;
-    if (formType === 'transfer') {
-      if (!form.fromAccountId || !form.toAccountId || form.fromAccountId === form.toAccountId) return false;
-      if (form.taggedAsExpense) {
-        if (expenseMode === 'msi') {
-          if (!form.installmentPlanId) return false;
-        } else if (!form.categoryId) {
-          return false;
-        }
-      }
-      return true;
-    }
-    if (formType === 'expense' && expenseMode === 'msi' && !form.installmentPlanId) return false;
-    if (!form.accountId || !form.categoryId) return false;
-    return true;
-  }, [form, formType, expenseMode]);
-
-  const typeMeta = {
-    expense: { label: 'Gasto', color: COLORS.expense },
-    income: { label: 'Ingreso', color: COLORS.income },
-    transfer: { label: 'Transferencia', color: COLORS.accent },
-  };
-
-  const toOptions = accounts.filter(a => a.id !== form.fromAccountId);
-
-  return (
-    <SheetOverlay onClose={onClose} desktop={desktop}>
-      <div className="px-5 pt-4 pb-1 flex items-center justify-between">
-        <p className="text-lg font-semibold font-display" style={{ color: COLORS.text }}>
-          {editingId ? `Editar ${typeMeta[formType].label.toLowerCase()}` : 'Nuevo movimiento'}
-        </p>
-        <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: COLORS.surfaceAlt }}>
-          <X size={15} style={{ color: COLORS.textMuted }} />
-        </button>
-      </div>
-
-      {!editingId && (
-        <div className="flex gap-2 p-1 rounded-2xl mx-5 mt-3" style={{ backgroundColor: COLORS.surfaceAlt }}>
-          {['expense', 'income', 'transfer'].map(t => (
-            <button key={t} onClick={() => onSwitchType(t)} className="flex-1 py-2 rounded-xl text-sm font-semibold transition-colors" style={{ backgroundColor: formType === t ? typeMeta[t].color : 'transparent', color: formType === t ? COLORS.bg : COLORS.textMuted }}>
-              {typeMeta[t].label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="px-5 mt-5 flex items-center justify-center gap-1">
-        <span className="font-mono-custom text-2xl" style={{ color: COLORS.textMuted }}>$</span>
-        <input
-          type="number"
-          inputMode="decimal"
-          placeholder="0.00"
-          value={form.amount}
-          onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
-          className="bg-transparent outline-none font-mono-custom text-4xl font-bold text-center w-40"
-          style={{ color: COLORS.text }}
-          autoFocus
-        />
-      </div>
-      <p className="text-center text-xs mb-1" style={{ color: COLORS.textFaint }}>MXN</p>
-
-      {formType !== 'transfer' && (
-        <div className="px-5 mt-4">
-          <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Categoría</p>
-          <CategoryPicker categories={catList} type={formType} selectedId={form.categoryId} onSelect={(id) => setForm(f => ({ ...f, categoryId: id }))} onCreate={handleNewCategory} />
-        </div>
-      )}
-
-      <div className="px-5 mt-4">
-        <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>{formType === 'transfer' ? 'Desde' : 'Cuenta'}</p>
-        {accounts.length > ACCOUNT_SEARCH_THRESHOLD && <AccountChipSearch value={fromAccQuery} onChange={setFromAccQuery} />}
-        <div className="flex gap-2 overflow-x-auto hilo-scroll pb-1">
-          {accounts.filter(a => accountNameMatches(a.name, fromAccQuery)).map(a => {
-            const selId = formType === 'transfer' ? form.fromAccountId : form.accountId;
-            const isSel = selId === a.id;
-            return (
-              <button
-                key={a.id}
-                onClick={() => formType === 'transfer'
-                  ? setForm(f => ({ ...f, fromAccountId: a.id, toAccountId: f.toAccountId === a.id ? (accounts.find(x => x.id !== a.id) ? accounts.find(x => x.id !== a.id).id : '') : f.toAccountId }))
-                  : setForm(f => ({ ...f, accountId: a.id }))
-                }
-                className="shrink-0 px-3 py-2 rounded-xl border text-sm font-medium"
-                style={{ borderColor: isSel ? a.color : COLORS.border, backgroundColor: isSel ? a.color + '22' : 'transparent', color: COLORS.text }}
-              >
-                {a.name}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {formType === 'transfer' && (
-        <div className="px-5 mt-4">
-          <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Hacia</p>
-          {toOptions.length === 0 ? (
-            <p className="text-xs" style={{ color: COLORS.textFaint }}>Necesitas al menos otra cuenta para transferir. Agrega una en la pestaña Cuentas.</p>
-          ) : (
-            <>
-              {toOptions.length > ACCOUNT_SEARCH_THRESHOLD && <AccountChipSearch value={toAccQuery} onChange={setToAccQuery} />}
-              <div className="flex gap-2 overflow-x-auto hilo-scroll pb-1">
-                {toOptions.filter(a => accountNameMatches(a.name, toAccQuery)).map(a => {
-                  const isSel = form.toAccountId === a.id;
-                  return (
-                    <button key={a.id} onClick={() => setForm(f => ({ ...f, toAccountId: a.id }))} className="shrink-0 px-3 py-2 rounded-xl border text-sm font-medium" style={{ borderColor: isSel ? a.color : COLORS.border, backgroundColor: isSel ? a.color + '22' : 'transparent', color: COLORS.text }}>
-                      {a.name}
-                    </button>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {formType === 'expense' && (
-        <div className="px-5 mt-5">
-          <button onClick={() => { const next = expenseMode === 'msi' ? 'single' : 'msi'; setExpenseMode(next); if (next === 'single') setForm(f => ({ ...f, installmentPlanId: null })); }} className="w-full flex items-center justify-between p-3 rounded-xl" style={{ backgroundColor: COLORS.surfaceAlt }}>
-            <div className="flex items-center gap-2">
-              <Layers size={16} style={{ color: COLORS.accent }} />
-              <span className="text-sm font-medium" style={{ color: COLORS.text }}>Vincular a un plan de MSI</span>
-            </div>
-            <div className="w-10 h-6 rounded-full relative transition-colors" style={{ backgroundColor: expenseMode === 'msi' ? COLORS.accent : COLORS.border }}>
-              <div className="w-5 h-5 rounded-full absolute top-0.5 transition-all" style={{ backgroundColor: COLORS.bg, left: expenseMode === 'msi' ? 18 : 2 }} />
-            </div>
-          </button>
-          {expenseMode === 'msi' && (
-            <div className="mt-3">
-              <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>¿A qué plan de MSI pertenece este pago?</p>
-              <InstallmentPlanPicker
-                plans={plans}
-                progress={planProgress}
-                selectedId={form.installmentPlanId}
-                onSelect={(id) => {
-                  const p = plans.find(x => x.id === id);
-                  setForm(f => ({ ...f, installmentPlanId: id, categoryId: p ? p.categoryId : f.categoryId, description: f.description || (p ? p.description : f.description) }));
-                }}
-                onCreate={handleNewPlan}
-                categories={expenseCats}
-                knownStores={knownStores}
-                onCreateCategory={handleNewCategory}
-              />
-            </div>
-          )}
-        </div>
-      )}
-
-      {formType === 'transfer' && (
-        <div className="px-5 mt-5">
-          <button onClick={() => setForm(f => ({ ...f, taggedAsExpense: !f.taggedAsExpense }))} className="w-full flex items-center justify-between p-3 rounded-xl" style={{ backgroundColor: COLORS.surfaceAlt }}>
-            <div className="flex items-center gap-2">
-              <Link2 size={16} style={{ color: COLORS.accent }} />
-              <span className="text-sm font-medium" style={{ color: COLORS.text }}>Marcar como gasto</span>
-            </div>
-            <div className="w-10 h-6 rounded-full relative transition-colors" style={{ backgroundColor: form.taggedAsExpense ? COLORS.accent : COLORS.border }}>
-              <div className="w-5 h-5 rounded-full absolute top-0.5 transition-all" style={{ backgroundColor: COLORS.bg, left: form.taggedAsExpense ? 18 : 2 }} />
-            </div>
-          </button>
-          <p className="text-xs mt-2 px-1" style={{ color: COLORS.textFaint }}>
-            Actívalo si esta transferencia paga algo que ya compraste a crédito (como tu TDC) y quieres que cuente como gasto en tus reportes por categoría, aunque el dinero técnicamente siga siendo tuyo.
-          </p>
-          {form.taggedAsExpense && (
-            <div className="mt-3">
-              <div className="flex gap-2 p-1 rounded-xl mb-3" style={{ backgroundColor: COLORS.elevated }}>
-                <button onClick={() => { setExpenseMode('single'); setForm(f => ({ ...f, installmentPlanId: null })); }} className="flex-1 py-1.5 rounded-lg text-xs font-semibold" style={{ backgroundColor: expenseMode === 'single' ? COLORS.accent : 'transparent', color: expenseMode === 'single' ? COLORS.bg : COLORS.textMuted }}>
-                  Gasto único
-                </button>
-                <button onClick={() => setExpenseMode('msi')} className="flex-1 py-1.5 rounded-lg text-xs font-semibold" style={{ backgroundColor: expenseMode === 'msi' ? COLORS.accent : 'transparent', color: expenseMode === 'msi' ? COLORS.bg : COLORS.textMuted }}>
-                  Pago de MSI
-                </button>
-              </div>
-
-              {expenseMode === 'single' ? (
-                <>
-                  <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>¿A qué categoría de gasto pertenece?</p>
-                  <CategoryPicker categories={expenseCats} type="expense" selectedId={form.categoryId} onSelect={(id) => setForm(f => ({ ...f, categoryId: id }))} onCreate={handleNewCategory} />
-                </>
-              ) : (
-                <>
-                  <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>¿A qué plan de MSI pertenece este pago?</p>
-                  <InstallmentPlanPicker
-                    plans={plans}
-                    progress={planProgress}
-                    selectedId={form.installmentPlanId}
-                    onSelect={(id) => {
-                      const p = plans.find(x => x.id === id);
-                      setForm(f => ({ ...f, installmentPlanId: id, categoryId: p ? p.categoryId : f.categoryId, description: f.description || (p ? p.description : f.description) }));
-                    }}
-                    onCreate={handleNewPlan}
-                    categories={expenseCats}
-                    knownStores={knownStores}
-                    onCreateCategory={handleNewCategory}
-                  />
-                </>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="px-5 mt-5 space-y-3">
-        <div>
-          <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Descripción (opcional)</p>
-          <input type="text" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder={formType === 'transfer' ? 'Ej. Crema facial (TDC)' : 'Ej. Tacos, Uber, Renta'} className="w-full px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
-        </div>
-        {(formType === 'expense' || (formType === 'transfer' && form.taggedAsExpense && expenseMode !== 'msi')) && (
-          <StoreInput value={form.store || ''} onChange={(v) => setForm(f => ({ ...f, store: v }))} knownStores={knownStores} />
-        )}
-        {(formType === 'expense' || (formType === 'transfer' && form.taggedAsExpense)) && (
-          <div className="grid grid-cols-3 gap-2">
-            <div>
-              <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Tamaño</p>
-              <input type="text" value={form.size || ''} onChange={e => setForm(f => ({ ...f, size: e.target.value }))} placeholder="Ej. 1L" className="w-full px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
-            </div>
-            <div>
-              <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Marca</p>
-              <input type="text" value={form.brand || ''} onChange={e => setForm(f => ({ ...f, brand: e.target.value }))} placeholder="Ej. Lala" className="w-full px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
-            </div>
-            <div>
-              <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Cantidad</p>
-              <input type="text" value={form.quantity || ''} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} placeholder="Ej. 2" className="w-full px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
-            </div>
-          </div>
-        )}
-        <div>
-          <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Fecha</p>
-          <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} className="w-full px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}`, colorScheme: 'dark' }} />
-        </div>
-      </div>
-
-      <div className="px-5 mt-6 mb-6">
-        {confirmDelete ? (
-          <div className="rounded-xl p-3" style={{ backgroundColor: COLORS.expenseSoft }}>
-            <p className="text-sm font-medium mb-2" style={{ color: COLORS.expense }}>¿Eliminar este movimiento?</p>
-            <div className="flex gap-2">
-              <button onClick={() => setConfirmDelete(false)} className="flex-1 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>Cancelar</button>
-              <button onClick={() => onDelete(editingId)} className="flex-1 py-2 rounded-lg text-sm font-semibold" style={{ backgroundColor: COLORS.expense, color: COLORS.bg }}>Eliminar</button>
-            </div>
-          </div>
-        ) : (
-          <div className="flex gap-3">
-            {editingId && (
-              <button onClick={() => setConfirmDelete(true)} aria-label="Eliminar movimiento" className="px-4 py-3 rounded-xl" style={{ backgroundColor: COLORS.expenseSoft, color: COLORS.expense }}>
-                <Trash2 size={18} />
-              </button>
-            )}
-            <button disabled={!isValid} onClick={() => onSave(form)} className="flex-1 py-3 rounded-xl font-semibold text-sm disabled:opacity-40" style={{ backgroundColor: typeMeta[formType].color, color: COLORS.bg }}>
-              {editingId ? 'Guardar cambios' : 'Agregar'}
-            </button>
-          </div>
-        )}
-      </div>
-    </SheetOverlay>
-  );
-}
-
 function MsiPlanModal({ plan, progress, payments, categories, knownStores, onClose, onSave, onDelete, onCreateCategory, desktop }) {
   const [description, setDescription] = useState(plan ? plan.description : '');
   const [store, setStore] = useState(plan ? (plan.store || '') : '');
@@ -2209,8 +1596,11 @@ function MsiPlanModal({ plan, progress, payments, categories, knownStores, onClo
   const isValid = description.trim().length > 0 && parseFloat(totalAmount) > 0 && parseFloat(installmentsCount) > 0 && !!categoryId;
 
   function handleNewCat(cat) {
-    onCreateCategory(cat);
-    setCategoryId(cat.id);
+    // `CategoryPicker` vive ahora en shared/ui y su `onCreate` devuelve la
+    // categoría creada: el id lo pone el caso de uso, no el componente.
+    const created = onCreateCategory(cat);
+    setCategoryId(created.id);
+    return created;
   }
 
   return (
@@ -3330,7 +2720,7 @@ function DesktopShell(props) {
     searchQuery, setSearchQuery,
     onAddPlan,
     onOpenAddSheet, onOpenSettings,
-    sheetOpen, formType, editingId, form, setForm, onCloseSheet, onSaveTransaction, onDeleteTransaction, onSwitchFormType, onCreateCategory, onCreatePlan,
+    onCreateCategory,
     msiModalOpen, editingPlan, msiPayments, onCloseMsiModal, onSavePlan, onDeletePlan,
     settingsOpen, onCloseSettings, onResetTransactions,
     importModalOpen, onOpenImport, onCloseImportModal, onConfirmImport,
@@ -3412,26 +2802,7 @@ function DesktopShell(props) {
         {toast && <Toast message={toast} desktop />}
       </div>
 
-      {sheetOpen && (
-        <AddTransactionSheet
-          formType={formType}
-          editingId={editingId}
-          form={form}
-          setForm={setForm}
-          accounts={accounts}
-          categories={categories}
-          plans={installmentPlans}
-          planProgress={planProgress}
-          knownStores={knownStores}
-          onClose={onCloseSheet}
-          onSave={onSaveTransaction}
-          onDelete={onDeleteTransaction}
-          onSwitchType={onSwitchFormType}
-          onCreateCategory={onCreateCategory}
-          onCreatePlan={onCreatePlan}
-          desktop
-        />
-      )}
+      <AddTransactionContainer desktop />
 
       <AccountFormContainer desktop />
 
@@ -3525,10 +2896,9 @@ function AppBody() {
     setActiveTab, setMonthCursor, setShowAllTime, setFilterType, setFilterCategory,
     setFilterStore, setSearchQuery,
 
-    sheetOpen, formType, editingId, form, setForm,
-    /* Acciones del slice de `transactions` (paso 4). */
-    openAddSheet, openEditSheet, closeSheet, switchFormType,
-    saveTransaction, deleteTransaction, resetTransactions,
+    /* Acciones de los slices de las features ya migradas. La hoja de movimiento
+       se monta por container, así que sus campos ya no se leen aquí. */
+    openAddSheet, openEditSheet, resetTransactions, createCategory,
 
     msiModalOpen, editingPlan, settingsOpen,
     importModalOpen, syncModalOpen, backupModalOpen, receiptModalOpen,
@@ -3747,16 +3117,6 @@ function AppBody() {
     setToast(`Se importaron ${plan.transactions.length} movimientos de Monefy`);
   }
 
-  function handleCreateCategory(cat) {
-    setCategories(prev => [...prev, { ...cat, updatedAt: Date.now() }]);
-    setToast('Categoría creada');
-  }
-
-  function handleCreatePlan(plan) {
-    setInstallmentPlans(prev => [...prev, { ...plan, updatedAt: Date.now() }]);
-    setToast('Plan de MSI creado');
-  }
-
   function handleSavePlan(payload) {
     if (payload.id) {
       setInstallmentPlans(prev => prev.map(p => p.id === payload.id ? { ...p, ...payload, updatedAt: Date.now() } : p));
@@ -3822,17 +3182,7 @@ function AppBody() {
         onAddPlan={() => { setEditingPlan(null); setMsiModalOpen(true); }}
         onOpenAddSheet={openAddSheet}
         onOpenSettings={() => setSettingsOpen(true)}
-        sheetOpen={sheetOpen}
-        formType={formType}
-        editingId={editingId}
-        form={form}
-        setForm={setForm}
-        onCloseSheet={closeSheet}
-        onSaveTransaction={saveTransaction}
-        onDeleteTransaction={deleteTransaction}
-        onSwitchFormType={switchFormType}
-        onCreateCategory={handleCreateCategory}
-        onCreatePlan={handleCreatePlan}
+        onCreateCategory={createCategory}
         msiModalOpen={msiModalOpen}
         editingPlan={editingPlan}
         msiPayments={editingPlan ? transactions.filter(t => t.installmentPlanId === editingPlan.id).sort((a, b) => b.date.localeCompare(a.date)) : []}
@@ -3964,25 +3314,7 @@ function AppBody() {
           <Plus size={24} color={COLORS.bg} />
         </button>
 
-        {sheetOpen && (
-          <AddTransactionSheet
-            formType={formType}
-            editingId={editingId}
-            form={form}
-            setForm={setForm}
-            accounts={accounts}
-            categories={categories}
-            plans={installmentPlans}
-            planProgress={planProgress}
-            knownStores={knownStores}
-            onClose={closeSheet}
-            onSave={saveTransaction}
-            onDelete={deleteTransaction}
-            onSwitchType={switchFormType}
-            onCreateCategory={handleCreateCategory}
-            onCreatePlan={handleCreatePlan}
-          />
-        )}
+        <AddTransactionContainer />
 
         <AccountFormContainer />
 
@@ -3996,7 +3328,7 @@ function AppBody() {
             onClose={() => { setMsiModalOpen(false); setEditingPlan(null); }}
             onSave={handleSavePlan}
             onDelete={() => editingPlan && handleDeletePlan(editingPlan.id)}
-            onCreateCategory={handleCreateCategory}
+            onCreateCategory={createCategory}
           />
         )}
 

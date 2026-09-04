@@ -12,6 +12,10 @@ import { createStore } from 'zustand/vanilla';
 import { subscribeWithSelector } from 'zustand/middleware';
 import { createAccountsSlice } from '../../features/accounts/store/accounts-slice';
 import type { AccountsSlice } from '../../features/accounts/store/accounts-slice';
+import { createCategoriesSlice } from '../../features/categories/store/categories-slice';
+import type { CategoriesSlice } from '../../features/categories/store/categories-slice';
+import { createInstallmentsSlice } from '../../features/installments/store/installments-slice';
+import type { InstallmentsSlice } from '../../features/installments/store/installments-slice';
 import { createTransactionsSlice } from '../../features/transactions/store/transactions-slice';
 import type { TransactionsSlice } from '../../features/transactions/store/transactions-slice';
 import type { Deps } from '../dependencies';
@@ -25,7 +29,13 @@ import type { UiSlice } from './ui-slice';
 /* Las slices de `app/store/` aportan CAMPOS, agrupados por ciclo de vida
    (persistido / efímero / config). Las de `features/<f>/store/` aportan solo
    ACCIONES sobre esos campos — así una feature se migra sin mover estado. */
-export type HiloStore = DataSlice & UiSlice & SettingsSlice & AccountsSlice & TransactionsSlice;
+export type HiloStore = DataSlice &
+  UiSlice &
+  SettingsSlice &
+  AccountsSlice &
+  TransactionsSlice &
+  CategoriesSlice &
+  InstallmentsSlice;
 
 export type HiloStoreApi = ReturnType<typeof createHiloStore>;
 
@@ -37,8 +47,12 @@ export const createHiloStore = (deps: Deps) =>
       ...createSettingsSlice(...args),
       ...createAccountsSlice(deps)(...args),
       ...createTransactionsSlice(deps)(...args),
+      ...createCategoriesSlice(deps)(...args),
+      ...createInstallmentsSlice(deps)(...args),
     })),
   );
 
 export { selectDataState } from './data-slice';
-export type { DataSlice, UiSlice, SettingsSlice, AccountsSlice, TransactionsSlice };
+export type {
+  DataSlice, UiSlice, SettingsSlice, AccountsSlice, TransactionsSlice, CategoriesSlice, InstallmentsSlice,
+};

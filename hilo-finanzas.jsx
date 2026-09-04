@@ -75,10 +75,9 @@ export {
   computeCategoryTotals,
 } from './src/legacy/hilo-legacy.jsx';
 
-/* → src/features/installments/ */
-export {
-  computePlanProgress,
-} from './src/legacy/hilo-legacy.jsx';
+/* → src/features/installments/ (el avance ya migró en el paso 4: lo necesitaba
+   el formulario de movimiento; el resto de la feature llega en el paso 5). */
+export { computePlanProgress } from './src/features/installments/domain/progress';
 
 /* → src/features/history/ */
 export {

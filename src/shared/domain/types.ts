@@ -35,6 +35,10 @@ export type Category = Stamped & {
   type: CategoryType;
 };
 
+/** Una categoría tal como la emite el formulario: sin identidad ni marcas de
+ *  tiempo, que las pone el caso de uso (es quien tiene reloj y generador). */
+export type NewCategory = Omit<Category, 'id' | 'createdAt' | 'updatedAt'>;
+
 export type TransactionType = 'expense' | 'income' | 'transfer';
 
 /** Metadatos opcionales de producto; agregados después, pueden faltar. */
@@ -92,6 +96,9 @@ export type InstallmentPlan = Stamped & {
   categoryId?: string | null;
   startDate: string;
 };
+
+/** Un plan tal como lo emite el formulario, sin identidad ni marcas de tiempo. */
+export type NewInstallmentPlan = Omit<InstallmentPlan, 'id' | 'createdAt' | 'updatedAt'>;
 
 /** Lápida de borrado, para que un merge posterior propague la eliminación. */
 export type Tombstone = {

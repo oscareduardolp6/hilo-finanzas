@@ -56,6 +56,8 @@ src/
 
 **Regla de dependencias:** `ui → store → application → domain`. Una feature puede importar de `domain/` y de `store/selectors` de otra feature, **nunca de su `ui/`**. `shared/` lo importa cualquiera y no importa nada de `features/`.
 
+**Corolario (paso 4):** un componente **presentacional que usan dos o más features** vive en `shared/ui/`, no en una de ellas — es la única ubicación que la regla permite. Sigue siendo props → JSX, sin store ni casos de uso, así que no acopla nada.
+
 ### 2. Las tres formas de caso de uso
 
 ```ts
@@ -192,8 +194,8 @@ Cada paso es un commit que deja **`npm test` en verde sin haber editado nada baj
 | 1 | Cimientos: `tsconfig`, deps, `shared/fp`, `shared/domain`, `shared/design`, `shared/infrastructure` (repos IndexedDB + in-memory), `HiloError`, `Deps` | **hecho** |
 | 2 | Store: slices, `createStore` + Provider, persistencia por `subscribe`. Los 29 `useState` y los 4 `useEffect` salen de `App`; el `App` legacy pasa a leer del store y sigue bajando props | **hecho** |
 | 3 | Feature `accounts` (la más chica: valida el patrón completo de punta a punta) | **hecho** |
-| 4 | Feature `transactions` | pendiente |
-| 5 | Feature `installments` (MSI) | pendiente |
+| 4 | Feature `transactions` (en dos commits: lógica y UI) | **hecho** |
+| 5 | Feature `installments` (MSI) — falta todo salvo `domain/progress` y `createPlan` | pendiente |
 | 6 | Feature `dashboard` (Home + donut + totales) | pendiente |
 | 7 | Feature `history` (filtros + buscador) | pendiente |
 | 8 | Feature `sync` (la más pesada: QR, cámara, delta) | pendiente |
@@ -291,6 +293,41 @@ Decisiones y hallazgos:
 - `accountHasTransactions` mira los tres campos de cuenta sin ramificar por `type`, igual que el original: un registro viejo puede traer combinaciones que la unión de tipos ya no admite, y perder una referencia ahí dejaría borrar una cuenta que sí tiene movimientos.
 
 19 tests nuevos: 6 de casos de uso (uno comprueba que **construir el caso de uso no toca el reloj** — solo correrlo), 3 de dominio y 10 de UI por los containers. Total: **227 tests**, con los 190 de regresión intactos.
+
+### Detalle del paso 4 (hecho)
+
+La feature más grande, y la que obligó a fijar dos reglas que el diseño original no había resuelto. Se hizo en **dos commits** — lógica (`c3365de`) y UI (`903cfcf`+1) — porque en uno solo el diff era irrevisable.
+
+| Módulo | Contenido |
+|---|---|
+| `transactions/domain/form.ts` | `TransactionFormDraft` (el borrador: los inputs son strings) + `initialFormState` |
+| `transactions/domain/to-transaction.ts` | Borrador → movimiento. Las tres ramas y sus asimetrías |
+| `transactions/domain/queries.ts` | `computePeriodTransactions`, `computeRecentTxns`, `computeKnownStores` |
+| `transactions/application/` | `saveTransaction`, `deleteTransaction`, `resetTransactions` (los tres `ReaderIO`) |
+| `transactions/store/` | El slice con 7 acciones + selectores |
+| `transactions/ui/components/AddTransactionSheet.tsx` | La pantalla más cargada de Hilo |
+| `transactions/ui/containers/AddTransactionContainer.tsx` | Sustituye 15 props duplicadas entre los dos árboles |
+| `categories/` | Feature mínima: `createCategory` y su slice. No tiene pantalla propia |
+| `installments/domain/progress.ts`, `application/create-plan.ts` | Adelanto del paso 5 (ver abajo) |
+| `shared/ui/` | `EmptyState`, `CategoryPicker`, `StoreInput`, `AccountChips`, `InstallmentPlanPicker`, `TransactionRow` |
+
+**Regla nueva 1 — qué va en `shared/ui/`.** Un componente **presentacional que usan dos o más features** vive en `shared/ui/`, no en una de ellas. No es preferencia: la regla de dependencias prohíbe que una feature importe el `ui/` de otra, y `TransactionRow` lo pintan Inicio y el historial, `CategoryPicker` el formulario de movimiento y los dos de plan, `InstallmentPlanPicker` habla de planes pero lo monta `transactions`. Siguen siendo props → JSX: no tocan store ni casos de uso, así que no acoplan nada.
+
+**Regla nueva 2 — una acción puede devolver lo que creó.** `CategoryPicker` e `InstallmentPlanPicker` llamaban `uid()` **dentro del render**: una fuga de capa que además volvía no determinista cualquier test de esas altas. Ahora emiten la entidad sin id (`NewCategory`, `NewInstallmentPlan`) y `createCategory`/`createPlan` devuelven la creada, porque quien la pidió necesita su id para dejarla seleccionada. Es la excepción a "las acciones devuelven `void`", y la alternativa era peor.
+
+Por qué `categories` e `installments` aparecen aquí:
+
+- `createCategory` no tiene dueño natural — lo invocan el formulario de movimiento, el de plan MSI y el picker de planes. Ponerlo en `transactions` habría sido arbitrario, así que se creó `features/categories/`, que **no estaba en la lista de features** del diseño: es mínima (un caso de uso, una acción) porque las categorías no tienen pantalla propia, se crean al vuelo.
+- De `installments` se adelantaron `domain/progress` (`computePlanProgress`) y `createPlan` porque el formulario de movimiento los necesita. El paso 5 se encuentra la feature empezada.
+
+Otras decisiones:
+
+- **`todayIso` se apoya ahora en `isoFromEpoch(ms)`**, así que `saveTransaction` deriva "hoy" de `deps.clock()` en vez de leer el reloj del sistema. Guardar sin fecha ya es determinista en test, y `todayIso()` sigue existiendo igual para quien lo llama sin reloj inyectado.
+- **`Omit` sobre una unión colapsa a las claves comunes**, lo que borraba `accountId`/`fromAccountId` de `NewTransaction`. Hace falta la versión distributiva (`T extends unknown ? Omit<T, K> : never`); queda anotado en el módulo porque volverá a aparecer.
+- **El `useMemo` de `isValid` estaba después de un `return null` condicional** en el original — un hook condicional que solo no explotaba porque la hoja nunca se monta con `form` nulo. Al migrarlo se subió antes del guard.
+- **Latente, no corregido:** `createCategory` no pone `createdAt` (el alta inline nunca lo puso), mientras que `createPlan` sí. No estorba porque `recordStamp` mira `updatedAt` primero, pero es una asimetría que conviene arreglar **fuera** de un refactor, para no mezclar cambio de comportamiento con movimiento de código.
+
+27 tests nuevos: 10 de `toTransaction` (las tres ramas campo a campo), 7 de casos de uso y 10 de UI por el container. Total: **254 tests**, con los 190 de regresión intactos.
 
 ### Tests nuevos por feature
 
