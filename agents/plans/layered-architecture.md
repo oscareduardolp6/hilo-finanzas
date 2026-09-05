@@ -199,7 +199,7 @@ Cada paso es un commit que deja **`npm test` en verde sin haber editado nada baj
 | 6 | Feature `dashboard` (Home + donut + totales) | **hecho** |
 | 7 | Feature `history` (filtros + buscador) | **hecho** |
 | 8 | Feature `sync` (la más pesada: QR, cámara, delta), en dos commits: lógica y UI | **hecho** |
-| 9 | Feature `backup` | pendiente |
+| 9 | Feature `backup` | **hecho** |
 | 10 | Feature `monefy-import` | pendiente |
 | 11 | Feature `receipt-ocr` | pendiente |
 | 12 | Feature `settings`; borrar `src/legacy/`; `DesktopShell` sin prop drilling; CLAUDE.md final | pendiente |
@@ -452,6 +452,57 @@ Decisiones:
 14 tests nuevos de UI, con las cinco capacidades fingidas: se puede negar la cámara, romper el portapapeles y leer un archivo sin tener ninguna de las tres. Total: **353 tests**, con los 190 de regresión intactos. El legacy baja a 1714 líneas.
 
 **Nota sobre `npm test` en esta máquina:** con el paralelismo por defecto (un worker por core) la suite satura la CPU y dos tests de integración pasan de 5 s y fallan por timeout. Pasa igual en el commit del paso 8a, así que es del entorno y no del codigo; `npx vitest run --minWorkers=1 --maxWorkers=3` la deja verde de forma reproducible.
+
+### Detalle del paso 9 (hecho)
+
+La feature más chica de las que quedaban, y la que mejor enseña en qué se
+diferencia de `sync`: el mismo payload, la intención opuesta.
+
+| Módulo | Contenido |
+|---|---|
+| `backup/domain/replace.ts` | `replaceDataState` — ya estaba, adelantada en el paso 8a |
+| `backup/application/build-backup.ts` | `buildBackup` (`Reader`) y `backupText` (`ReaderTask`) |
+| `backup/application/read-backup.ts` | `readBackup`, `ReaderTaskEither` |
+| `backup/store/backup-slice.ts` | `downloadBackup`, `copyBackup`, `readBackupFile`, `restoreBackup` |
+| `backup/ui/components/BackupModal.tsx` | props → JSX, sin `FileReader` ni `navigator` |
+| `backup/ui/containers/BackupContainer.tsx` | Partido en dos, como el de `sync` |
+
+Decisiones:
+
+- **Leer y aplicar son dos acciones, no una.** `receiveSync` funde en cuanto
+  entiende el payload; restaurar pierde a propósito lo que había, así que entre
+  leer el archivo y reemplazar va una confirmación. El caso de uso `readBackup`
+  solo lee: devuelve el respaldo y no toca el store. Es la razón de que la
+  feature no se pudiera resolver reusando el caso de uso de `sync`.
+- **`backup` importa del `domain/` de `sync`, nunca de su `application/` ni de
+  su `ui/`.** Por eso `backupText` no reusa `prepareShare` pese al parecido: un
+  respaldo no lleva QR, ni delta, ni `device`, y cuando el navegador no comprime
+  cae al JSON plano, donde `prepareShare` se queda sin texto a propósito.
+- **`buildBackup` es `Reader` y no una función pura** porque el reloj entra por
+  `Deps` — fecha el nombre del archivo y el `exportedAt`. Es el primer caso de
+  uso del refactor que usa la forma más simple de las tres.
+- **`backupText` devuelve `string | null`, no un `Either`.** Comprimir es lo
+  único que puede fallar ahí, y el mensaje resultante ('No se pudo copiar.') es
+  el mismo que el del portapapeles: un canal de error tipado distinguiría dos
+  causas que el usuario ve idénticas. Reproduce el `try/catch` único del legacy.
+- **`BackupOutcome` no se comparte con el `ReceiveOutcome` de `sync`** aunque
+  tengan la misma forma. Hoistarlo a `shared/` acoplaría dos features por dos
+  líneas de tipo; que dos slices coincidan en cómo le hablan a su UI es el
+  patrón, no una abstracción que falte.
+- **El componente no ve el respaldo leído, solo dos conteos.** `pending` es
+  `{ transactions, accounts } | null`: la confirmación es lo único que enseña de
+  él, y así el componente de renderizado no sabe qué es un payload.
+- **Restaurar no deja lápidas.** Lo que se pierde no es un borrado que haya que
+  propagar por sync, es otro dataset; el legacy tampoco las dejaba.
+- **`DesktopShell` pierde además tres props que ya estaban muertas**
+  (`installmentPlans`, `transactions`, `onCreateCategory`): las destructuraba y
+  no las usaba desde que sus features se migraron. Baja de 29 props a 22.
+
+14 tests nuevos: 6 de los casos de uso (que un respaldo nunca sea parcial, que
+el texto comprimido vuelva al mismo payload, y las dos ramas de error de leer) y
+8 de UI por el container, incluido el que separa esta feature de `sync` — leer
+no aplica nada, y cancelar deja los datos como estaban. Total: **367 tests**,
+con los 190 de regresión intactos. El legacy baja a 1598 líneas.
 
 ### Tests nuevos por feature
 

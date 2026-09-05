@@ -105,8 +105,7 @@ export {
   mergeDataState,
 } from './src/features/sync/domain/merge';
 
-/* Aplicar un payload por reemplazo es de `backup` (paso 9); llegó antes porque
-   el bloque entero de export/sync salió del legacy en el paso 8. */
+/* ── migrado (paso 9): feature `backup` ── */
 export { replaceDataState } from './src/features/backup/domain/replace';
 
 /* ── migrado (paso 8): compresión y descarga ── */

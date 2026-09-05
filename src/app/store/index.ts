@@ -12,6 +12,8 @@ import { createStore } from 'zustand/vanilla';
 import { subscribeWithSelector } from 'zustand/middleware';
 import { createAccountsSlice } from '../../features/accounts/store/accounts-slice';
 import type { AccountsSlice } from '../../features/accounts/store/accounts-slice';
+import { createBackupSlice } from '../../features/backup/store/backup-slice';
+import type { BackupSlice } from '../../features/backup/store/backup-slice';
 import { createCategoriesSlice } from '../../features/categories/store/categories-slice';
 import type { CategoriesSlice } from '../../features/categories/store/categories-slice';
 import { createDashboardSlice } from '../../features/dashboard/store/dashboard-slice';
@@ -41,7 +43,8 @@ export type HiloStore = DataSlice &
   CategoriesSlice &
   InstallmentsSlice &
   DashboardSlice &
-  SyncSlice;
+  SyncSlice &
+  BackupSlice;
 
 export type HiloStoreApi = ReturnType<typeof createHiloStore>;
 
@@ -57,11 +60,12 @@ export const createHiloStore = (deps: Deps) =>
       ...createInstallmentsSlice(deps)(...args),
       ...createDashboardSlice(...args),
       ...createSyncSlice(deps)(...args),
+      ...createBackupSlice(deps)(...args),
     })),
   );
 
 export { selectDataState } from './data-slice';
 export type {
   DataSlice, UiSlice, SettingsSlice, AccountsSlice, TransactionsSlice, CategoriesSlice,
-  InstallmentsSlice, DashboardSlice, SyncSlice,
+  InstallmentsSlice, DashboardSlice, SyncSlice, BackupSlice,
 };

@@ -4,7 +4,7 @@ import {
   TrendingUp, MoreHorizontal,
   Settings, Receipt, LayoutGrid, Link2, Trash2,
   Check, Layers, Smartphone,
-  QrCode, Camera, Download, Upload, Copy, Share2, RefreshCw, DatabaseBackup, ScanLine,
+  QrCode, Camera, Download, Share2, RefreshCw, DatabaseBackup, ScanLine,
 } from 'lucide-react';
 
 /* Migrado a la capa `shared` (paso 1 de agents/plans/layered-architecture.md).
@@ -39,17 +39,10 @@ import { HomeContainer } from '../features/dashboard/ui/containers/HomeContainer
    últimos `useMemo` de `AppBody`, que ya no deriva absolutamente nada. */
 import { HistoryContainer } from '../features/history/ui/containers/HistoryContainer';
 
-/* Feature `sync`, paso 8. Del legacy solo queda `BackupModal`, que comparte con
-   ella el formato del payload y se migra en el paso 9. */
-import { EXPORT_TEXT_PREFIX, buildExportPayload, parseExportText } from '../features/sync/domain/payload';
+/* Features `sync` (paso 8) y `backup` (paso 9): comparten el formato del
+   payload, y de las dos ya no queda nada en este archivo. */
 import { SyncContainer } from '../features/sync/ui/containers/SyncContainer';
-import { replaceDataState } from '../features/backup/domain/replace';
-import {
-  bytesToBase64,
-  gzipString,
-  supportsCompression,
-} from '../shared/infrastructure/compression';
-import { downloadJson, exportFileName } from '../shared/infrastructure/download';
+import { BackupContainer } from '../features/backup/ui/containers/BackupContainer';
 
 /* Componentes presentacionales compartidos por varias features: por la regla de
    dependencias no pueden vivir en ninguna de ellas. */
@@ -1184,88 +1177,6 @@ function ReceiptScanModal({ accounts, categories, apiKey, model, onClose, onConf
 /* Respaldo de datos (exportar / restaurar reemplazando todo)          */
 /* ------------------------------------------------------------------ */
 
-function BackupModal({ state, onRestore, onClose, desktop }) {
-  const [pendingRestore, setPendingRestore] = useState(null); // colecciones normalizadas
-  const [error, setError] = useState('');
-  const [copied, setCopied] = useState(false);
-
-  function handleBackup() {
-    downloadJson(buildExportPayload(state), exportFileName('respaldo'));
-  }
-
-  async function handleCopy() {
-    try {
-      const json = JSON.stringify(buildExportPayload(state));
-      const text = supportsCompression()
-        ? EXPORT_TEXT_PREFIX + bytesToBase64(await gzipString(json))
-        : json;
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    } catch (e) {
-      setError('No se pudo copiar.');
-    }
-  }
-
-  function handleFile(e) {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    setError('');
-    const reader = new FileReader();
-    reader.onload = async () => {
-      try {
-        setPendingRestore(await parseExportText(String(reader.result || '')));
-      } catch (err) {
-        setError(err.message || 'No se pudo leer el archivo.');
-      }
-    };
-    reader.onerror = () => setError('No se pudo leer el archivo.');
-    reader.readAsText(file);
-  }
-
-  return (
-    <SheetOverlay onClose={onClose} desktop={desktop}>
-      <div className="px-5 pt-4 pb-1 flex items-center justify-between">
-        <p className="text-lg font-semibold font-display" style={{ color: COLORS.text }}>Respaldo de datos</p>
-        <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: COLORS.surfaceAlt }}>
-          <X size={15} style={{ color: COLORS.textMuted }} />
-        </button>
-      </div>
-      <div className="px-5 mt-3 pb-6">
-        <p className="text-xs leading-relaxed mb-3" style={{ color: COLORS.textMuted }}>
-          Un respaldo es una copia completa de tus datos para guardar por si algo falla. Restaurar <span style={{ color: COLORS.text }}>reemplaza todo</span> lo que tengas ahora en este dispositivo.
-        </p>
-
-        <button onClick={handleBackup} className="w-full py-3 rounded-xl text-sm font-semibold mb-2 flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
-          <DatabaseBackup size={15} /> Respaldar ahora
-        </button>
-        <button onClick={handleCopy} className="w-full py-3 rounded-xl text-sm font-semibold mb-4 flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
-          <Copy size={15} /> {copied ? 'Copiado' : 'Copiar texto'}
-        </button>
-
-        {!pendingRestore ? (
-          <label className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer" style={{ backgroundColor: COLORS.expenseSoft, color: COLORS.expense }}>
-            <Upload size={15} /> Restaurar desde archivo
-            <input type="file" accept=".json,application/json" className="hidden" onChange={handleFile} />
-          </label>
-        ) : (
-          <div className="rounded-xl p-3" style={{ backgroundColor: COLORS.expenseSoft }}>
-            <p className="text-sm font-medium mb-2" style={{ color: COLORS.expense }}>
-              Se reemplazarán tus {state.transactions.length} movimientos y {state.accounts.length} cuentas actuales por los del respaldo ({pendingRestore.transactions.length} movimientos, {pendingRestore.accounts.length} cuentas). ¿Seguro?
-            </p>
-            <div className="flex gap-2">
-              <button onClick={() => setPendingRestore(null)} className="flex-1 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>Cancelar</button>
-              <button onClick={() => { onRestore(pendingRestore); onClose(); }} className="flex-1 py-2 rounded-lg text-sm font-semibold" style={{ backgroundColor: COLORS.expense, color: COLORS.bg }}>Sí, restaurar</button>
-            </div>
-          </div>
-        )}
-
-        {error && <p className="text-xs mt-3" style={{ color: COLORS.expense }}>{error}</p>}
-      </div>
-    </SheetOverlay>
-  );
-}
-
 function SettingsModal({ onClose, onResetTransactions, onOpenImport, onOpenSync, onOpenBackup, ocrSettings, onSaveOcrSettings, desktop }) {
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [keyDraft, setKeyDraft] = useState((ocrSettings && ocrSettings.apiKey) || '');
@@ -1357,13 +1268,11 @@ function SettingsModal({ onClose, onResetTransactions, onOpenImport, onOpenSync,
 function DesktopShell(props) {
   const {
     activeTab, setActiveTab,
-    accounts, categories, installmentPlans, transactions,
+    accounts, categories,
     onOpenAddSheet, onOpenSettings,
-    onCreateCategory,
     settingsOpen, onCloseSettings, onResetTransactions,
     importModalOpen, onOpenImport, onCloseImportModal, onConfirmImport,
-    backupModalOpen, onOpenSync, onOpenBackup, onCloseBackupModal, onRestoreBackup,
-    syncData,
+    onOpenSync, onOpenBackup,
     receiptModalOpen, onOpenReceipt, onCloseReceiptModal, onConfirmReceipt, ocrSettings, onSaveOcrSettings,
     toast,
   } = props;
@@ -1427,9 +1336,7 @@ function DesktopShell(props) {
 
       <SyncContainer desktop />
 
-      {backupModalOpen && (
-        <BackupModal state={syncData} onRestore={onRestoreBackup} onClose={onCloseBackupModal} desktop />
-      )}
+      <BackupContainer desktop />
     </div>
   );
 }
@@ -1455,8 +1362,8 @@ function AppBody() {
      exactamente lo que hacía este componente cuando era dueño del estado.
      Los selectores granulares llegan con los containers de cada feature. */
   const {
-    loaded, accounts, categories, transactions, installmentPlans, tombstones,
-    setAccounts, setCategories, setTransactions, setInstallmentPlans, setTombstones,
+    loaded, accounts, categories,
+    setAccounts, setCategories, setTransactions, setInstallmentPlans,
 
     /* Navegación entre pestañas. Los filtros del historial y el cursor de mes
        siguen en el store, pero ya solo los lee el container de su feature. */
@@ -1464,10 +1371,10 @@ function AppBody() {
 
     /* Acciones de los slices de las features ya migradas. Las hojas y vistas se
        montan por container, así que sus campos ya no se leen aquí. */
-    openAddSheet, resetTransactions, createCategory,
+    openAddSheet, resetTransactions,
 
     settingsOpen,
-    importModalOpen, backupModalOpen, receiptModalOpen,
+    importModalOpen, receiptModalOpen,
     setSettingsOpen,
     setImportModalOpen, setSyncModalOpen, setBackupModalOpen, setReceiptModalOpen,
 
@@ -1556,16 +1463,6 @@ function AppBody() {
     setToast(`${built.length} ${built.length === 1 ? 'movimiento agregado' : 'movimientos agregados'} desde el ticket`);
   }
 
-  function handleRestoreBackup(incoming) {
-    const s = replaceDataState(incoming);
-    setAccounts(s.accounts);
-    setCategories(s.categories);
-    setTransactions(s.transactions);
-    setInstallmentPlans(s.installmentPlans);
-    setTombstones(s.tombstones);
-    setToast('Respaldo restaurado');
-  }
-
   function handleImportMonefy(plan) {
     const now = Date.now();
     const stamp = (r) => ({ ...r, updatedAt: now });
@@ -1591,11 +1488,8 @@ function AppBody() {
         setActiveTab={setActiveTab}
         accounts={accounts}
         categories={categories}
-        installmentPlans={installmentPlans}
-        transactions={transactions}
         onOpenAddSheet={openAddSheet}
         onOpenSettings={() => setSettingsOpen(true)}
-        onCreateCategory={createCategory}
         settingsOpen={settingsOpen}
         onCloseSettings={() => setSettingsOpen(false)}
         onResetTransactions={resetTransactions}
@@ -1603,12 +1497,8 @@ function AppBody() {
         onOpenImport={openImportModal}
         onCloseImportModal={() => setImportModalOpen(false)}
         onConfirmImport={handleImportMonefy}
-        backupModalOpen={backupModalOpen}
         onOpenSync={openSyncModal}
         onOpenBackup={openBackupModal}
-        onCloseBackupModal={() => setBackupModalOpen(false)}
-        onRestoreBackup={handleRestoreBackup}
-        syncData={{ accounts, categories, transactions, installmentPlans, tombstones }}
         receiptModalOpen={receiptModalOpen}
         onOpenReceipt={() => setReceiptModalOpen(true)}
         onCloseReceiptModal={() => setReceiptModalOpen(false)}
@@ -1699,13 +1589,7 @@ function AppBody() {
 
         <SyncContainer />
 
-        {backupModalOpen && (
-          <BackupModal
-            state={{ accounts, categories, transactions, installmentPlans, tombstones }}
-            onRestore={handleRestoreBackup}
-            onClose={() => setBackupModalOpen(false)}
-          />
-        )}
+        <BackupContainer />
 
         {toast && <Toast message={toast} />}
       </div>
