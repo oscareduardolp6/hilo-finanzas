@@ -2,7 +2,7 @@
    uso. Su versión de escritorio es `AccountsViewDesktop`, con los mismos props. */
 
 import { Plus } from 'lucide-react';
-import { ACCOUNT_TYPES } from '../../../../shared/design/icons';
+import { accountTypeFor } from '../../../../shared/design/icons';
 import { COLORS } from '../../../../shared/design/tokens';
 import { formatMoney } from '../../../../shared/domain/money';
 import type { Account } from '../../../../shared/domain/types';
@@ -14,10 +14,6 @@ export type AccountsViewProps = {
   onAdd: () => void;
   onEdit: (account: Account) => void;
 };
-
-/** Tipo desconocido (dato de una versión anterior) → la última opción, "Otro". */
-export const typeInfoFor = (type: string) =>
-  ACCOUNT_TYPES.find(t => t.id === type) || ACCOUNT_TYPES[ACCOUNT_TYPES.length - 1]!;
 
 export function AccountsView({ accounts, balances, onAdd, onEdit }: AccountsViewProps) {
   const total = Object.values(balances).reduce((s, v) => s + v, 0);
@@ -31,7 +27,7 @@ export function AccountsView({ accounts, balances, onAdd, onEdit }: AccountsView
       </div>
       <div className="space-y-2">
         {accounts.map(a => {
-          const typeInfo = typeInfoFor(a.type);
+          const typeInfo = accountTypeFor(a.type);
           const TypeIcon = typeInfo.icon;
           const bal = balances[a.id] || 0;
           return (

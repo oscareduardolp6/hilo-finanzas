@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Plus, X, ArrowUpRight, ArrowDownRight, ArrowRightLeft, Landmark,
+  Plus, X, ArrowRightLeft, Landmark,
   TrendingUp, MoreHorizontal,
   ChevronLeft, ChevronRight, Settings, Receipt, LayoutGrid, Link2, Trash2,
   Check, Layers, Search, Smartphone,
@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import jsQR from 'jsqr';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
 /* Migrado a la capa `shared` (paso 1 de agents/plans/layered-architecture.md).
    Este archivo ya solo los consume; el barrel los re-exporta desde su nuevo
@@ -16,7 +15,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { COLORS, CATEGORY_PALETTE, ACCOUNT_SEARCH_THRESHOLD, DESKTOP_BREAKPOINT } from '../shared/design/tokens';
 import { ICONS, ICON_CHOICES, IconFor, ACCOUNT_TYPES } from '../shared/design/icons';
 import { uid } from '../shared/domain/ids';
-import { todayIso, monthKey, monthLabel, formatDateLabel } from '../shared/domain/dates';
+import { todayIso, addMonths, monthKey, monthLabel, formatDateLabel } from '../shared/domain/dates';
 import { formatMoney } from '../shared/domain/money';
 import { normalizeForSearch, accountNameMatches } from '../shared/domain/search';
 import { groupByDate } from '../shared/domain/grouping';
@@ -24,29 +23,25 @@ import { highlightMatch } from '../shared/ui/highlight';
 import { SheetOverlay } from '../shared/ui/sheet-overlay';
 import { saveOcrSettings } from '../shared/infrastructure/indexed-db';
 
-/* Feature `accounts`, migrada en el paso 3. El legacy solo consume su dominio
-   (los saldos los siguen necesitando Inicio y sus totales) y monta sus dos
-   containers, que ya no reciben props: se sirven del store. */
-import { computeBalances, computeTotalBalance } from '../features/accounts/domain/balance';
+/* Feature `accounts`, migrada en el paso 3. */
 import { AccountsContainer } from '../features/accounts/ui/containers/AccountsContainer';
 import { AccountFormContainer } from '../features/accounts/ui/containers/AccountFormContainer';
 
-/* Feature `transactions`, paso 4. El legacy consume su dominio; el alta, la
-   edición y el borrado son ahora acciones del store, y la hoja se monta por
-   container (sin props). */
+/* Feature `transactions`, paso 4. El legacy ya solo consume las tiendas
+   conocidas (las piden los formularios que quedan); el alta, la edición y el
+   borrado son acciones del store, y la hoja se monta por container. */
 import { initialFormState } from '../features/transactions/domain/form';
-import {
-  computePeriodTransactions,
-  computeRecentTxns,
-  computeKnownStores,
-} from '../features/transactions/domain/queries';
+import { computeKnownStores } from '../features/transactions/domain/queries';
 import { AddTransactionContainer } from '../features/transactions/ui/containers/AddTransactionContainer';
 
-/* Feature `installments`, paso 5. Inicio todavía pinta su propio bloque de
-   planes (llega en el paso 6), así que sigue consumiendo el dominio. */
-import { computePlanProgress } from '../features/installments/domain/progress';
+/* Feature `installments`, paso 5. */
 import { MsiContainer } from '../features/installments/ui/containers/MsiContainer';
 import { MsiPlanFormContainer } from '../features/installments/ui/containers/MsiPlanFormContainer';
+
+/* Feature `dashboard`, paso 6: Inicio, la dona y los totales del mes. Con ella
+   se fueron del legacy los saldos, el periodo y el avance de los planes — los
+   siete `useMemo` que le quedaban a `App` viven ahora en su container. */
+import { HomeContainer } from '../features/dashboard/ui/containers/HomeContainer';
 
 /* Componentes presentacionales compartidos por varias features: por la regla de
    dependencias no pueden vivir en ninguna de ellas. */
@@ -55,7 +50,6 @@ import { CategoryPicker } from '../shared/ui/category-picker';
 import { StoreInput } from '../shared/ui/store-input';
 import { AccountChips } from '../shared/ui/account-chips';
 import { TransactionRow } from '../shared/ui/transaction-row';
-import { MsiPlanCard } from '../shared/ui/msi-plan-card';
 
 /* El estado dejó de vivir en `App`: ahora está en el store de zustand, que se
    crea por montaje. Ver src/app/store/ y agents/plans/layered-architecture.md. */
@@ -95,37 +89,8 @@ function useIsDesktop() {
 /* ------------------------------------------------------------------ */
 /* Cálculos derivados (dominio puro, sin React)                        */
 /* ------------------------------------------------------------------ */
-/* Los `useMemo` de `App` (y el filtro de `HistoryView`) sólo invocan
-   estas funciones. Viven aquí sueltas para poder testearlas sin montar
-   la app y como semilla de la futura capa de dominio. Ver
-   agents/plans/testing.md y tasks/layered-architecture.md. */
-
-export function computeTotalIncome(periodTransactions) {
-  return periodTransactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-}
-
-export function computeTotalExpense(periodTransactions) {
-  return periodTransactions.reduce((s, t) => {
-    if (t.type === 'expense') return s + t.amount;
-    if (t.type === 'transfer' && t.taggedAsExpense) return s + t.amount;
-    return s;
-  }, 0);
-}
-
-export function computeCategoryTotals(periodTransactions, categories) {
-  const map = {};
-  for (const t of periodTransactions) {
-    let catId = null;
-    if (t.type === 'expense') catId = t.categoryId;
-    else if (t.type === 'transfer' && t.taggedAsExpense) catId = t.categoryId;
-    if (!catId) continue;
-    map[catId] = (map[catId] || 0) + t.amount;
-  }
-  return Object.entries(map).map(([id, total]) => {
-    const cat = categories.find(c => c.id === id);
-    return { id, total, name: cat ? cat.name : 'Otros', color: cat ? cat.color : COLORS.textMuted, icon: cat ? cat.icon : 'MoreHorizontal' };
-  }).sort((a, b) => b.total - a.total);
-}
+/* Ya solo quedan los del historial; se van con su feature en el paso 7.
+   Los totales del mes se fueron con `dashboard` en el paso 6. */
 
 export function computeHistorySuggestions(transactions, installmentPlans) {
   const set = new Set();
@@ -987,66 +952,6 @@ function Toast({ message, desktop }) {
   );
 }
 
-function DonutTooltip({ active, payload, total }) {
-  if (!active || !payload || !payload.length) return null;
-  const d = payload[0].payload;
-  const pct = total ? Math.round((d.total / total) * 100) : 0;
-  return (
-    <div className="rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: COLORS.elevated, border: `1px solid ${COLORS.borderStrong}`, color: COLORS.text }}>
-      <p className="font-semibold" style={{ color: d.color }}>{d.name}</p>
-      <p className="font-mono-custom">{formatMoney(d.total)} · {pct}%</p>
-    </div>
-  );
-}
-
-function ExpenseDonut({ data, total, onSliceClick }) {
-  if (!data.length) {
-    return (
-      <div className="flex flex-col items-center justify-center py-8 text-center">
-        <div className="w-14 h-14 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: COLORS.surfaceAlt }}>
-          <ArrowDownRight size={20} style={{ color: COLORS.textFaint }} />
-        </div>
-        <p className="text-sm" style={{ color: COLORS.textMuted }}>Aún no hay gastos este mes.<br />Usa el botón + para registrar el primero.</p>
-      </div>
-    );
-  }
-  return (
-    <div>
-      <div className="relative" style={{ height: 220 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie data={data} dataKey="total" nameKey="name" innerRadius={64} outerRadius={92} paddingAngle={2} cornerRadius={6} stroke="none">
-              {data.map(d => (
-                <Cell key={d.id} fill={d.color} style={{ cursor: 'pointer', outline: 'none' }} onClick={() => onSliceClick(d.id)} />
-              ))}
-            </Pie>
-            <Tooltip content={<DonutTooltip total={total} />} />
-          </PieChart>
-        </ResponsiveContainer>
-        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-          <span className="text-xs" style={{ color: COLORS.textMuted }}>Gastos</span>
-          <span className="font-mono-custom font-bold text-xl" style={{ color: COLORS.text }}>{formatMoney(total)}</span>
-        </div>
-      </div>
-      <div className="mt-2">
-        {data.map(d => {
-          const Icon = IconFor(d.icon);
-          const pct = total ? Math.round((d.total / total) * 100) : 0;
-          return (
-            <button key={d.id} onClick={() => onSliceClick(d.id)} className="w-full flex items-center gap-3 py-2 rounded-lg active:opacity-70 transition-opacity">
-              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-              <Icon size={14} style={{ color: d.color }} />
-              <span className="flex-1 text-left text-sm truncate" style={{ color: COLORS.text }}>{d.name}</span>
-              <span className="text-xs" style={{ color: COLORS.textMuted }}>{pct}%</span>
-              <span className="font-mono-custom text-sm font-medium" style={{ color: COLORS.text }}>{formatMoney(d.total)}</span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function BottomNav({ active, onChange }) {
   return (
     <div className="flex items-center justify-around border-t px-1 py-2 shrink-0" style={{ backgroundColor: COLORS.surface, borderColor: COLORS.border }}>
@@ -1067,96 +972,6 @@ function BottomNav({ active, onChange }) {
 /* ------------------------------------------------------------------ */
 /* Views                                                                */
 /* ------------------------------------------------------------------ */
-
-function HomeView({ monthCursor, onPrevMonth, onNextMonth, totalBalance, totalIncome, totalExpense, categoryTotals, accounts, balances, recentTxns, categories, installmentPlans, planProgress, onSliceClick, onSeeAll, onSeeMsi, onOpenMsiPlan, onOpenTxn }) {
-  const activePlans = installmentPlans.filter(p => !(planProgress[p.id] && planProgress[p.id].isPaidOff));
-  return (
-    <div className="pt-2">
-      <div className="rounded-2xl p-5" style={{ backgroundColor: COLORS.surface }}>
-        <p className="text-xs" style={{ color: COLORS.textMuted }}>Saldo total</p>
-        <p className="font-mono-custom font-bold text-3xl mt-1" style={{ color: COLORS.text }}>{formatMoney(totalBalance)}</p>
-        <div className="flex items-center gap-2 mt-4">
-          <button onClick={onPrevMonth} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ backgroundColor: COLORS.surfaceAlt }}>
-            <ChevronLeft size={14} style={{ color: COLORS.textMuted }} />
-          </button>
-          <p className="text-sm font-medium flex-1 text-center" style={{ color: COLORS.text }}>{monthLabel(monthCursor)}</p>
-          <button onClick={onNextMonth} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ backgroundColor: COLORS.surfaceAlt }}>
-            <ChevronRight size={14} style={{ color: COLORS.textMuted }} />
-          </button>
-        </div>
-        <div className="grid grid-cols-2 gap-3 mt-4">
-          <div className="rounded-xl p-3" style={{ backgroundColor: COLORS.incomeSoft }}>
-            <div className="flex items-center gap-1">
-              <ArrowUpRight size={13} style={{ color: COLORS.income }} />
-              <span className="text-xs" style={{ color: COLORS.income }}>Ingresos</span>
-            </div>
-            <p className="font-mono-custom font-semibold mt-1" style={{ color: COLORS.income }}>{formatMoney(totalIncome)}</p>
-          </div>
-          <div className="rounded-xl p-3" style={{ backgroundColor: COLORS.expenseSoft }}>
-            <div className="flex items-center gap-1">
-              <ArrowDownRight size={13} style={{ color: COLORS.expense }} />
-              <span className="text-xs" style={{ color: COLORS.expense }}>Gastos</span>
-            </div>
-            <p className="font-mono-custom font-semibold mt-1" style={{ color: COLORS.expense }}>{formatMoney(totalExpense)}</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-2xl p-5 mt-4" style={{ backgroundColor: COLORS.surface }}>
-        <p className="text-sm font-semibold font-display mb-2" style={{ color: COLORS.text }}>Gastos por categoría</p>
-        <ExpenseDonut data={categoryTotals} total={totalExpense} onSliceClick={onSliceClick} />
-      </div>
-
-      <div className="mt-5">
-        <p className="text-sm font-semibold font-display mb-2" style={{ color: COLORS.text }}>Cuentas</p>
-        <div className="flex gap-3 overflow-x-auto hilo-scroll pb-1">
-          {accounts.map(a => {
-            const typeInfo = ACCOUNT_TYPES.find(t => t.id === a.type) || ACCOUNT_TYPES[ACCOUNT_TYPES.length - 1];
-            const TypeIcon = typeInfo.icon;
-            const bal = balances[a.id] || 0;
-            return (
-              <div key={a.id} className="shrink-0 rounded-xl p-3" style={{ backgroundColor: COLORS.surfaceAlt, minWidth: 130 }}>
-                <div className="w-8 h-8 rounded-full flex items-center justify-center mb-2" style={{ backgroundColor: a.color + '26' }}>
-                  <TypeIcon size={15} style={{ color: a.color }} />
-                </div>
-                <p className="text-xs" style={{ color: COLORS.textMuted }}>{a.name}</p>
-                <p className="font-mono-custom text-sm font-semibold mt-0.5" style={{ color: bal < 0 ? COLORS.expense : COLORS.text }}>{formatMoney(bal)}</p>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {activePlans.length > 0 && (
-        <div className="mt-5">
-          <div className="flex items-center justify-between mb-1">
-            <p className="text-sm font-semibold font-display" style={{ color: COLORS.text }}>Compras a meses</p>
-            <button onClick={onSeeMsi} className="text-xs font-medium" style={{ color: COLORS.accent }}>Ver todo</button>
-          </div>
-          <div className="space-y-2">
-            {activePlans.slice(0, 3).map(p => (
-              <MsiPlanCard key={p.id} plan={p} progress={planProgress[p.id]} categories={categories} onClick={() => onOpenMsiPlan(p)} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="mt-5">
-        <div className="flex items-center justify-between mb-1">
-          <p className="text-sm font-semibold font-display" style={{ color: COLORS.text }}>Movimientos recientes</p>
-          <button onClick={onSeeAll} className="text-xs font-medium" style={{ color: COLORS.accent }}>Ver todo</button>
-        </div>
-        {recentTxns.length === 0 ? (
-          <EmptyState text="Aún no hay movimientos este mes." />
-        ) : (
-          <div>
-            {recentTxns.map(t => <TransactionRow key={t.id} txn={t} accounts={accounts} categories={categories} plans={installmentPlans} onClick={() => onOpenTxn(t)} />)}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 function HistoryView({ transactions, accounts, categories, installmentPlans, knownStores, historySuggestions, monthCursor, onPrevMonth, onNextMonth, showAllTime, setShowAllTime, filterType, setFilterType, filterCategory, setFilterCategory, filterStore, setFilterStore, searchQuery, setSearchQuery, onOpenTxn }) {
   const q = normalizeForSearch((searchQuery || '').trim());
@@ -1286,104 +1101,6 @@ function DesktopSidebar({ active, onChange, onOpenSettings, onAddTransaction, on
       <button onClick={onOpenSettings} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium" style={{ color: COLORS.textMuted }}>
         <Settings size={18} /> Ajustes
       </button>
-    </div>
-  );
-}
-
-function HomeViewDesktop({ monthCursor, onPrevMonth, onNextMonth, totalBalance, totalIncome, totalExpense, categoryTotals, accounts, balances, recentTxns, categories, installmentPlans, planProgress, onSliceClick, onSeeAll, onSeeMsi, onOpenMsiPlan, onOpenTxn }) {
-  const activePlans = installmentPlans.filter(p => !(planProgress[p.id] && planProgress[p.id].isPaidOff));
-  return (
-    <div className="grid grid-cols-3 gap-6">
-      <div className="col-span-2 space-y-6">
-        <div className="rounded-2xl p-6" style={{ backgroundColor: COLORS.surface }}>
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-xs" style={{ color: COLORS.textMuted }}>Saldo total</p>
-              <p className="font-mono-custom font-bold text-4xl mt-1" style={{ color: COLORS.text }}>{formatMoney(totalBalance)}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={onPrevMonth} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: COLORS.surfaceAlt }}>
-                <ChevronLeft size={15} style={{ color: COLORS.textMuted }} />
-              </button>
-              <p className="text-sm font-medium w-32 text-center" style={{ color: COLORS.text }}>{monthLabel(monthCursor)}</p>
-              <button onClick={onNextMonth} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: COLORS.surfaceAlt }}>
-                <ChevronRight size={15} style={{ color: COLORS.textMuted }} />
-              </button>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4 mt-5">
-            <div className="rounded-xl p-4" style={{ backgroundColor: COLORS.incomeSoft }}>
-              <div className="flex items-center gap-1">
-                <ArrowUpRight size={14} style={{ color: COLORS.income }} />
-                <span className="text-xs" style={{ color: COLORS.income }}>Ingresos</span>
-              </div>
-              <p className="font-mono-custom font-semibold text-lg mt-1" style={{ color: COLORS.income }}>{formatMoney(totalIncome)}</p>
-            </div>
-            <div className="rounded-xl p-4" style={{ backgroundColor: COLORS.expenseSoft }}>
-              <div className="flex items-center gap-1">
-                <ArrowDownRight size={14} style={{ color: COLORS.expense }} />
-                <span className="text-xs" style={{ color: COLORS.expense }}>Gastos</span>
-              </div>
-              <p className="font-mono-custom font-semibold text-lg mt-1" style={{ color: COLORS.expense }}>{formatMoney(totalExpense)}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl p-6" style={{ backgroundColor: COLORS.surface }}>
-          <p className="text-sm font-semibold font-display mb-3" style={{ color: COLORS.text }}>Gastos por categoría</p>
-          <ExpenseDonut data={categoryTotals} total={totalExpense} onSliceClick={onSliceClick} />
-        </div>
-
-        <div className="rounded-2xl p-6" style={{ backgroundColor: COLORS.surface }}>
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-sm font-semibold font-display" style={{ color: COLORS.text }}>Movimientos recientes</p>
-            <button onClick={onSeeAll} className="text-xs font-medium" style={{ color: COLORS.accent }}>Ver todo</button>
-          </div>
-          {recentTxns.length === 0 ? (
-            <EmptyState text="Aún no hay movimientos este mes." />
-          ) : (
-            <div>
-              {recentTxns.map(t => <TransactionRow key={t.id} txn={t} accounts={accounts} categories={categories} plans={installmentPlans} onClick={() => onOpenTxn(t)} />)}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="space-y-6">
-        <div className="rounded-2xl p-5" style={{ backgroundColor: COLORS.surface }}>
-          <p className="text-sm font-semibold font-display mb-3" style={{ color: COLORS.text }}>Cuentas</p>
-          <div className="grid grid-cols-2 gap-3">
-            {accounts.map(a => {
-              const typeInfo = ACCOUNT_TYPES.find(t => t.id === a.type) || ACCOUNT_TYPES[ACCOUNT_TYPES.length - 1];
-              const TypeIcon = typeInfo.icon;
-              const bal = balances[a.id] || 0;
-              return (
-                <div key={a.id} className="rounded-xl p-3" style={{ backgroundColor: COLORS.surfaceAlt }}>
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center mb-2" style={{ backgroundColor: a.color + '26' }}>
-                    <TypeIcon size={15} style={{ color: a.color }} />
-                  </div>
-                  <p className="text-xs truncate" style={{ color: COLORS.textMuted }}>{a.name}</p>
-                  <p className="font-mono-custom text-sm font-semibold mt-0.5" style={{ color: bal < 0 ? COLORS.expense : COLORS.text }}>{formatMoney(bal)}</p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {activePlans.length > 0 && (
-          <div className="rounded-2xl p-5" style={{ backgroundColor: COLORS.surface }}>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold font-display" style={{ color: COLORS.text }}>Compras a meses</p>
-              <button onClick={onSeeMsi} className="text-xs font-medium" style={{ color: COLORS.accent }}>Ver todo</button>
-            </div>
-            <div className="space-y-2">
-              {activePlans.slice(0, 4).map(p => (
-                <MsiPlanCard key={p.id} plan={p} progress={planProgress[p.id]} categories={categories} onClick={() => onOpenMsiPlan(p)} />
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
     </div>
   );
 }
@@ -2491,9 +2208,7 @@ function DesktopShell(props) {
   const {
     activeTab, setActiveTab,
     monthCursor, onPrevMonth, onNextMonth,
-    totalBalance, totalIncome, totalExpense, categoryTotals,
-    accounts, balances, recentTxns, categories, installmentPlans, planProgress,
-    onSliceClick, onOpenMsiPlan, onOpenTxn,
+    accounts, categories, installmentPlans, onOpenTxn,
     transactions, knownStores, historySuggestions,
     showAllTime, setShowAllTime, filterType, setFilterType, filterCategory, setFilterCategory, filterStore, setFilterStore,
     searchQuery, setSearchQuery,
@@ -2519,26 +2234,7 @@ function DesktopShell(props) {
           <h2 className="text-2xl font-semibold font-display mb-6" style={{ color: COLORS.text }}>{tabTitles[activeTab]}</h2>
 
           {activeTab === 'home' && (
-            <HomeViewDesktop
-              monthCursor={monthCursor}
-              onPrevMonth={onPrevMonth}
-              onNextMonth={onNextMonth}
-              totalBalance={totalBalance}
-              totalIncome={totalIncome}
-              totalExpense={totalExpense}
-              categoryTotals={categoryTotals}
-              accounts={accounts}
-              balances={balances}
-              recentTxns={recentTxns}
-              categories={categories}
-              installmentPlans={installmentPlans}
-              planProgress={planProgress}
-              onSliceClick={onSliceClick}
-              onSeeAll={() => setActiveTab('history')}
-              onSeeMsi={() => setActiveTab('msi')}
-              onOpenMsiPlan={onOpenMsiPlan}
-              onOpenTxn={onOpenTxn}
-            />
+            <HomeContainer desktop />
           )}
           {activeTab === 'history' && (
             <HistoryViewDesktop
@@ -2654,7 +2350,7 @@ function AppBody() {
 
     /* Acciones de los slices de las features ya migradas. La hoja de movimiento
        se monta por container, así que sus campos ya no se leen aquí. */
-    openAddSheet, openEditSheet, resetTransactions, createCategory, openPlanForm,
+    openAddSheet, openEditSheet, resetTransactions, createCategory,
 
     settingsOpen,
     importModalOpen, syncModalOpen, backupModalOpen, receiptModalOpen,
@@ -2669,32 +2365,6 @@ function AppBody() {
      puro asunto de UI. */
   useToastAutoDismiss();
 
-  const balances = useMemo(() => computeBalances(accounts, transactions), [accounts, transactions]);
-
-  const totalBalance = useMemo(() => computeTotalBalance(balances), [balances]);
-
-  const periodKey = monthKey(monthCursor);
-  const periodTransactions = useMemo(
-    () => computePeriodTransactions(transactions, periodKey),
-    [transactions, periodKey]
-  );
-
-  const totalIncome = useMemo(() => computeTotalIncome(periodTransactions), [periodTransactions]);
-
-  const totalExpense = useMemo(() => computeTotalExpense(periodTransactions), [periodTransactions]);
-
-  const categoryTotals = useMemo(
-    () => computeCategoryTotals(periodTransactions, categories),
-    [periodTransactions, categories]
-  );
-
-  const recentTxns = useMemo(() => computeRecentTxns(periodTransactions, 5), [periodTransactions]);
-
-  const planProgress = useMemo(
-    () => computePlanProgress(installmentPlans, transactions),
-    [installmentPlans, transactions]
-  );
-
   const knownStores = useMemo(
     () => computeKnownStores(transactions, installmentPlans),
     [transactions, installmentPlans]
@@ -2707,19 +2377,12 @@ function AppBody() {
 
   const isDesktop = useIsDesktop();
 
-  function prevMonth() { setMonthCursor(d => { const nd = new Date(d); nd.setMonth(nd.getMonth() - 1); return nd; }); }
-  function nextMonth() { setMonthCursor(d => { const nd = new Date(d); nd.setMonth(nd.getMonth() + 1); return nd; }); }
+  function prevMonth() { setMonthCursor(d => addMonths(d, -1)); }
+  function nextMonth() { setMonthCursor(d => addMonths(d, 1)); }
 
   /* Los movimientos y las cuentas ya no se manejan aquí: sus altas, ediciones y
      borrados son casos de uso en `features/<f>/application/`, que corren sus
      slices. Lo que queda abajo es lo que todavía no se migra. */
-
-  function handleSliceClick(categoryId) {
-    setFilterCategory(categoryId);
-    setFilterType('all');
-    setShowAllTime(false);
-    setActiveTab('history');
-  }
 
   function openImportModal() {
     setSettingsOpen(false);
@@ -2889,18 +2552,9 @@ function AppBody() {
         monthCursor={monthCursor}
         onPrevMonth={prevMonth}
         onNextMonth={nextMonth}
-        totalBalance={totalBalance}
-        totalIncome={totalIncome}
-        totalExpense={totalExpense}
-        categoryTotals={categoryTotals}
         accounts={accounts}
-        balances={balances}
-        recentTxns={recentTxns}
         categories={categories}
         installmentPlans={installmentPlans}
-        planProgress={planProgress}
-        onSliceClick={handleSliceClick}
-        onOpenMsiPlan={openPlanForm}
         onOpenTxn={openEditSheet}
         transactions={transactions}
         knownStores={knownStores}
@@ -2966,26 +2620,7 @@ function AppBody() {
 
         <div className="flex-1 overflow-y-auto hilo-scroll px-5 pb-24">
           {activeTab === 'home' && (
-            <HomeView
-              monthCursor={monthCursor}
-              onPrevMonth={prevMonth}
-              onNextMonth={nextMonth}
-              totalBalance={totalBalance}
-              totalIncome={totalIncome}
-              totalExpense={totalExpense}
-              categoryTotals={categoryTotals}
-              accounts={accounts}
-              balances={balances}
-              recentTxns={recentTxns}
-              categories={categories}
-              installmentPlans={installmentPlans}
-              planProgress={planProgress}
-              onSliceClick={handleSliceClick}
-              onSeeAll={() => setActiveTab('history')}
-              onSeeMsi={() => setActiveTab('msi')}
-              onOpenMsiPlan={openPlanForm}
-              onOpenTxn={openEditSheet}
-            />
+            <HomeContainer />
           )}
           {activeTab === 'history' && (
             <HistoryView

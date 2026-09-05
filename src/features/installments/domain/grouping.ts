@@ -14,14 +14,28 @@ export type GroupedPlans = {
 /** Un plan sin entrada en `progress` cuenta como activo: es lo que hacía el
  *  original (`!(progress[id] && progress[id].isPaidOff)`), y es lo correcto —
  *  sin datos de avance no se puede afirmar que esté pagado. */
+export function isPlanPaidOff(planId: string, progress: Record<string, PlanProgress>): boolean {
+  return !!(progress[planId] && progress[planId]!.isPaidOff);
+}
+
+/** Los planes que aún deben algo, **en el orden en que vienen**. Lo usa Inicio,
+ *  que muestra solo los primeros y no reordena; la pantalla de MSI usa
+ *  `groupPlansByStatus`, que además ordena. */
+export function activePlans(
+  plans: InstallmentPlan[],
+  progress: Record<string, PlanProgress>,
+): InstallmentPlan[] {
+  return plans.filter(p => !isPlanPaidOff(p.id, progress));
+}
+
 export function groupPlansByStatus(
   plans: InstallmentPlan[],
   progress: Record<string, PlanProgress>,
 ): GroupedPlans {
   const byNewest = (a: InstallmentPlan, b: InstallmentPlan) => (b.createdAt ?? 0) - (a.createdAt ?? 0);
   return {
-    active: plans.filter(p => !(progress[p.id] && progress[p.id]!.isPaidOff)).sort(byNewest),
-    completed: plans.filter(p => progress[p.id] && progress[p.id]!.isPaidOff).sort(byNewest),
+    active: activePlans(plans, progress).sort(byNewest),
+    completed: plans.filter(p => isPlanPaidOff(p.id, progress)).sort(byNewest),
   };
 }
 

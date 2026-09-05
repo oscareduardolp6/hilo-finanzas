@@ -4,9 +4,9 @@
    que el container elija una u otra sin cambiar nada más. */
 
 import { Plus } from 'lucide-react';
+import { accountTypeFor } from '../../../../shared/design/icons';
 import { COLORS } from '../../../../shared/design/tokens';
 import { formatMoney } from '../../../../shared/domain/money';
-import { typeInfoFor } from './AccountsView';
 import type { AccountsViewProps } from './AccountsView';
 
 export function AccountsViewDesktop({ accounts, balances, onAdd, onEdit }: AccountsViewProps) {
@@ -21,7 +21,7 @@ export function AccountsViewDesktop({ accounts, balances, onAdd, onEdit }: Accou
       </div>
       <div className="grid grid-cols-3 gap-4">
         {accounts.map(a => {
-          const typeInfo = typeInfoFor(a.type);
+          const typeInfo = accountTypeFor(a.type);
           const TypeIcon = typeInfo.icon;
           const bal = balances[a.id] || 0;
           return (

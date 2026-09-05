@@ -179,7 +179,7 @@ Reglas:
 
 | Fuga | Dónde | Cómo se resuelve |
 |---|---|---|
-| Dominio importa tokens de diseño | `computeCategoryTotals` usa `COLORS.textMuted` | Parámetro opcional al final con ese default. **La firma de 2 argumentos no cambia** — `test/unit/domain.test.js` la llama así. |
+| Dominio importa tokens de diseño | `computeCategoryTotals` usa `COLORS.textMuted` | Parámetro opcional al final con ese default. **La firma de 2 argumentos no cambia** — `test/unit/domain.test.js` la llama así. Cerrada **a medias** en el paso 6: ver su detalle. |
 | Helper de dominio devuelve JSX | `highlightMatch` | Vive en `shared/ui/highlight.tsx`. El test inspecciona `out[1].type === 'mark'` sin renderizar, así que sigue verde. |
 | Lógica de formulario entre helpers de formato | `initialFormState` | `features/transactions/domain/form.ts` |
 | IO dentro de componentes | `FileReader`, `getUserMedia`, `clipboard`, `share`, QR en `SyncModal`/`BackupModal`/`MonefyImportModal`/`ReceiptScanModal` | Salen a gateways inyectados en `Deps` |
@@ -196,7 +196,7 @@ Cada paso es un commit que deja **`npm test` en verde sin haber editado nada baj
 | 3 | Feature `accounts` (la más chica: valida el patrón completo de punta a punta) | **hecho** |
 | 4 | Feature `transactions` (en dos commits: lógica y UI) | **hecho** |
 | 5 | Feature `installments` (MSI) | **hecho** |
-| 6 | Feature `dashboard` (Home + donut + totales) | pendiente |
+| 6 | Feature `dashboard` (Home + donut + totales) | **hecho** |
 | 7 | Feature `history` (filtros + buscador) | pendiente |
 | 8 | Feature `sync` (la más pesada: QR, cámara, delta) | pendiente |
 | 9 | Feature `backup` | pendiente |
@@ -351,6 +351,32 @@ Decisiones:
 - **Único cambio de comportamiento del paso, deliberado:** el botón de borrar de `MsiPlanModal` era un icono sin nombre accesible, mientras que sus hermanos de `AccountFormModal` y `AddTransactionSheet` sí lo tienen. Se le puso `aria-label="Eliminar plan"`. Es aditivo y ningún test previo lo consultaba.
 
 20 tests nuevos: 6 de agrupación, 6 de casos de uso (incluido el que fija los dos toasts) y 8 de UI por los containers. Total: **274 tests**, con los 190 de regresión intactos.
+
+### Detalle del paso 6 (hecho)
+
+Inicio es la vista que más cruza features, y por eso era la prueba real de la regla de dependencias: los saldos son de `accounts`, los movimientos del periodo de `transactions` y el avance de los planes de `installments`. Todo eso entra por `domain/` y por acciones del store; ningún `ui/` de otra feature.
+
+| Módulo | Contenido |
+|---|---|
+| `dashboard/domain/totals.ts` | `computeTotalIncome`, `computeTotalExpense`, `computeCategoryTotals` |
+| `dashboard/store/dashboard-slice.ts` | `showCategoryInHistory` — la única acción propia |
+| `dashboard/ui/components/` | `HomeView`, `HomeViewDesktop`, `ExpenseDonut` (con `DonutTooltip`) |
+| `dashboard/ui/containers/HomeContainer.tsx` | Los siete `useMemo` que le quedaban a `App` |
+| `shared/design/icons.ts` | `accountTypeFor`, el lookup tolerante sobre `ACCOUNT_TYPES` |
+| `shared/domain/dates.ts` | `addMonths`, el pager de mes |
+
+Decisiones:
+
+- **`accountTypeFor` subió a `shared/design/icons.ts`.** Estaba como `typeInfoFor` exportado desde `AccountsView`, y Inicio también pinta la tira de cuentas: importarlo habría sido feature → `ui/` de otra feature. Es un lookup tolerante sobre un catálogo de diseño, igual que `IconFor`, así que ese es su sitio; `accounts` ahora lo importa de ahí.
+- **El pager de mes es `addMonths` en `shared/domain/dates.ts`, no una acción.** El cursor lo comparten Inicio y el historial; una acción en el slice de una de las dos habría dejado a la otra importándola por su nombre. Réplica literal del `setMonth` original, desbordamiento incluido — el cursor siempre es día 1, así que el caso raro no se da, pero cambiar la aritmética sería cambiar comportamiento sin quererlo.
+- **`showCategoryInHistory` sí es una acción del dashboard**, aunque escriba campos del historial: describe lo que pasa al tocar una porción de la dona. Va en un solo `set` — una notificación del store donde antes había un render de React con cuatro `setState`.
+- **Los planes activos los filtra el container**, con `activePlans` extraído a `installments/domain/grouping.ts`. La pantalla de MSI usa `groupPlansByStatus`, que además **ordena**; Inicio no reordena, así que compartir el predicado sin compartir el orden era la única forma de deduplicar sin cambiar lo que se ve.
+- **La fuga de `COLORS` en `computeCategoryTotals` queda a medias, a sabiendas.** El color de una categoría borrada ya entra por parámetro, pero su default sigue siendo `COLORS.textMuted` para que la llamada de dos argumentos (la de `test/unit/domain.test.js`) signifique exactamente lo mismo que antes. Cerrarla del todo obliga a devolver `color: null` y decidir el fallback en los cuatro puntos de la dona que lo pintan, o a duplicar el hex: ninguna vale dentro de un refactor cuyo contrato es no cambiar comportamiento. Queda para cuando la dona se toque por producto.
+- **Cambio de comportamiento deliberado y aditivo:** las flechas del pager eran iconos sin nombre accesible. Llevan `aria-label="Mes anterior"` / `"Mes siguiente"`, como ya hizo el paso 5 con el borrar de MSI. El pager del historial sigue sin ellos hasta el paso 7, que es cuando le toca.
+
+18 tests nuevos: 5 de dominio y 13 de UI por el container. Total: **292 tests**, con los 190 de regresión intactos. `DesktopShell` pierde otras 9 props.
+
+**Observación, no regresión:** en el panel de vista previa la dona de recharts no dibuja sus sectores (el SVG se dimensiona bien y la leyenda, el total y los porcentajes salen correctos, pero los `.recharts-pie-sector` quedan vacíos). Se comprobó contra el commit del paso 5 y pasa igual, así que es previo al paso 6 y ajeno a esta migración.
 
 ### Tests nuevos por feature
 

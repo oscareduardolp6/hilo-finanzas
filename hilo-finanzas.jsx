@@ -73,7 +73,7 @@ export {
   computeTotalIncome,
   computeTotalExpense,
   computeCategoryTotals,
-} from './src/legacy/hilo-legacy.jsx';
+} from './src/features/dashboard/domain/totals';
 
 /* → src/features/installments/ (el avance ya migró en el paso 4: lo necesitaba
    el formulario de movimiento; el resto de la feature llega en el paso 5). */

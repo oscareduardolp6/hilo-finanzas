@@ -14,6 +14,16 @@ export function todayIso(): string {
   return isoFromEpoch(Date.now());
 }
 
+/** Mueve el cursor de mes. Réplica literal del `setMonth` que tenía `App`,
+ *  desbordamiento incluido: el cursor siempre es el día 1, así que nunca cae en
+ *  el caso raro (31 de enero + 1 mes = 3 de marzo), pero cambiar la aritmética
+ *  aquí sería cambiar comportamiento sin quererlo. */
+export function addMonths(d: Date, delta: number): Date {
+  const nd = new Date(d);
+  nd.setMonth(nd.getMonth() + delta);
+  return nd;
+}
+
 /** `YYYY-MM`: la clave con la que se filtra un mes. */
 export function monthKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;

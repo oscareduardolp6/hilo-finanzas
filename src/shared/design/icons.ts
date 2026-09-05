@@ -38,3 +38,11 @@ export const ACCOUNT_TYPES: AccountTypeOption[] = [
   { id: 'inversion', label: 'Inversión', icon: TrendingUp },
   { id: 'otro', label: 'Otro', icon: Coins },
 ];
+
+/** Lookup tolerante, como `IconFor`: un tipo desconocido (dato de una versión
+ *  anterior) cae a la última opción, "Otro". Vive aquí y no en `accounts`
+ *  porque Inicio también pinta la tira de cuentas, y una feature no importa el
+ *  `ui/` de otra. */
+export function accountTypeFor(type: string | null | undefined): AccountTypeOption {
+  return ACCOUNT_TYPES.find(t => t.id === type) || ACCOUNT_TYPES[ACCOUNT_TYPES.length - 1]!;
+}
