@@ -6,18 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 "Hilo" is a personal finance tracker (Mexican Spanish UI, MXN currency), styled with Tailwind utility classes and inline style objects. There's no linter. npm deps are `react`/`react-dom`, `recharts` (charts), `lucide-react` (icons), `qrcode` + `jsqr` (device-sync QR encode/decode), plus `fp-ts` and `zustand` (see the architecture section).
 
-> ### ⚠️ Refactor en curso — lee esto antes de tocar código
+> ### Arquitectura en capas — lee esto antes de tocar código
 >
-> Hilo **era** un solo componente React de 4721 líneas. Se está migrando a una arquitectura en capas feature-first: ver [tasks/layered-architecture.md](tasks/layered-architecture.md) y, sobre todo, el **registro de avance** en [agents/plans/layered-architecture.md](agents/plans/layered-architecture.md), que dice exactamente qué módulos ya se movieron y cuáles siguen en el legacy. **Ese registro es la fuente de verdad**; esta sección describe el objetivo.
+> Hilo **era** un solo componente React de 4721 líneas. Hoy es una arquitectura en capas feature-first, en TypeScript: ver la sección Architecture de abajo y, para el porqué de cada decisión, [agents/plans/layered-architecture.md](agents/plans/layered-architecture.md). El refactor terminó y `src/legacy/` ya no existe.
 >
-> Mientras dure el refactor conviven dos mundos:
-> - `src/legacy/hilo-legacy.jsx` — lo que todavía no se migra. Se vacía commit a commit.
-> - `src/shared/` y `src/features/` — el código ya migrado, en TypeScript.
-> - [hilo-finanzas.jsx](hilo-finanzas.jsx) — **barrel**: solo re-exports, sin lógica. Existe para que `src/main.jsx` y los tests importen desde una ruta estable. Cuando migres un símbolo, cambia el origen de su línea aquí; nunca uses `export *`.
+> - `src/app/` — `App`, el store de zustand, el composition root y los dos árboles (móvil y escritorio).
+> - `src/shared/` y `src/features/<f>/` — todo lo demás, con las cuatro reglas de la sección Architecture.
+> - [hilo-finanzas.jsx](hilo-finanzas.jsx) — **barrel**: solo re-exports, sin lógica. Existe para que `src/main.jsx` y los 190 tests de regresión importen desde una ruta estable. Si mueves un símbolo de sitio, cambia el origen de su línea aquí; nunca uses `export *`.
 
 There **is** a test suite: Vitest + React Testing Library + `fake-indexeddb`, run with `npm test`. Está en dos lugares:
 
-- `test/unit/` y `test/integration/` — la suite de regresión pre-refactor (190 tests). **No se toca durante el refactor**: es la prueba de que mover código no cambió comportamiento. Si uno falla, es un cambio de comportamiento real, no un test desactualizado.
+- `test/unit/` y `test/integration/` — la suite de regresión pre-refactor (190 tests), que atravesó el refactor **sin una línea editada**: es la prueba de que repartir 4721 líneas en capas no cambió comportamiento. Sigue siendo la red de seguridad; si uno falla, es un cambio de comportamiento real, no un test desactualizado.
 - `src/**/*.test.{ts,tsx}` — los tests nuevos, junto a la feature que prueban: casos de uso corridos con dependencias en memoria, y componentes de feature como punto de entrada (sin montar `<App/>`). Para los de UI, usa `renderFeature` de [src/test/render-feature.tsx](src/test/render-feature.tsx): monta **un** container con repositorios en memoria y reloj/ids fijos, así el test es atómico de su feature y sus `createdAt` son comparables.
 
 Además de `npm test`, corre `npm run typecheck` (TypeScript 7, `tsc --noEmit`). When you change product behavior, update or add the matching test; when you change it *deliberately*, the failing test is the checklist of what you're changing.
@@ -36,7 +35,7 @@ The app runs via the **local dev toolchain** (this repo has a minimal Vite scaff
 
 ## Architecture
 
-### Arquitectura objetivo (a la que se está migrando)
+### La arquitectura
 
 Feature-first: la funcionalidad es el primer nivel, y dentro de cada una van las capas.
 
@@ -44,10 +43,9 @@ Feature-first: la funcionalidad es el primer nivel, y dentro de cada una van las
 src/app/          App, store de zustand, Provider, dependencies (composition root), run
 src/shared/       fp/ · domain/ · design/ · infrastructure/ · ui/    ← lo importa cualquiera
 src/features/<f>/ domain/ · application/ · infrastructure/ · store/ · ui/{components,containers}
-src/legacy/       lo que todavía no se migra
 ```
 
-Cuatro reglas que gobiernan el código nuevo:
+Cuatro reglas que gobiernan todo el código:
 
 1. **Dirección de dependencias:** `ui → store → application → domain`. Una feature puede importar el `domain/` y los `store/selectors` de otra, **nunca su `ui/`**. `shared/` no importa nada de `features/`.
 2. **Casos de uso = funciones que devuelven un valor,** con las mónadas de fp-ts: `Reader<Deps, A>` si es determinista, `ReaderIO<Deps, A>` si necesita id o reloj, `ReaderTaskEither<Deps, HiloError, A>` si es asíncrono y falible. Un caso de uso **no ejecuta nada** al invocarlo.
@@ -56,20 +54,23 @@ Cuatro reglas que gobiernan el código nuevo:
 
 Componentes de **renderizado** (`ui/components/`) reciben props y devuelven JSX, sin store ni casos de uso. Componentes de **lógica** (`ui/containers/`) leen el store, ligan acciones y componen a los primeros.
 
-### Lo que todavía vive en el legacy
+### Las diez features
 
-[src/legacy/hilo-legacy.jsx](src/legacy/hilo-legacy.jsx) — consulta el registro de avance del plan para saber qué queda. Organizado top-to-bottom como (los helpers de dominio y las cuatro vistas de pestaña ya no están: cada una se fue con su feature):
+`accounts`, `transactions`, `categories`, `installments` (MSI), `dashboard` (Inicio), `history`, `sync`, `backup`, `monefy-import`, `receipt-ocr` y `settings`. Cada una es autocontenida: su dominio, sus casos de uso, su slice y su UI. Las hojas que abre se montan siempre y cada container decide si le toca pintarse.
 
-1. **Static data** — `DEFAULT_EXPENSE_CATEGORIES`/`DEFAULT_INCOME_CATEGORIES`/`DEFAULT_CATEGORIES`, `DEFAULT_ACCOUNTS`, and demo seed data (`buildDefaultTransactions`, `buildDefaultInstallmentPlans`) used on first load. *(Los tokens de diseño y el catálogo de iconos ya migraron a `src/shared/design/`.)*
-2. **Shared pieces** — `GlobalStyles` (fonts, scrollbar hiding, sheet animations), `Toast`, `BottomNav`. *(La dona `ExpenseDonut` y su `DonutTooltip` se fueron con la feature `dashboard`: solo Inicio las pinta.)* *(Los presentacionales que ya usan varias features viven en `src/shared/ui/`: `SheetOverlay`, `EmptyState`, `CategoryPicker`, `StoreInput`, `AccountChips`, `InstallmentPlanPicker`, `TransactionRow`, `MsiPlanCard` — ver la regla en el plan.)*
-3. **Modals/sheets** — solo queda `SettingsModal`. *(`SyncModal` ya es la feature `sync`: tabs* Enviar */* Recibir */* Dispositivos*, la última gestionando el nombre de este dispositivo y los puntos de sincronización por peer que gobiernan los envíos delta. `BackupModal` ya es la feature `backup`: exportar el blob y restaurarlo por reemplazo, con leer el archivo y aplicarlo como dos pasos separados por una confirmación. `MonefyImportModal` ya es la feature `monefy-import`: el parser del CSV, las heurísticas de tipo de cuenta e icono, la convención de Oscar y el armado del plan, con leer / planear / aplicar como tres acciones distintas. `ReceiptScanModal` ya es la feature `receipt-ocr`: la foto sale por un `ReceiptGateway` inyectado —el único puerto que vive en una feature y no en `shared/`, porque sus tipos son de ahí— y con ella se fue la última llamada a red del legacy.)*
-4. **`App`** (default export) — hoy es solo un envoltorio sobre `HiloStoreProvider`; el árbol vive en `AppBody`, que **ya no es dueño de ningún estado ni deriva nada**: de los 29 `useState` y los diez `useMemo` originales no queda ninguno. Lee del store lo que los modales sin migrar todavía necesitan y se lo baja como props.
+Lo que **no** es de ninguna vive fuera:
+
+- `src/shared/domain/` — el modelo (`types.ts`), los puertos, `HiloError` y los helpers puros (`ids`, `dates`, `money`, `search`, `grouping`, y `defaults` con la semilla de demo).
+- `src/shared/design/` — `COLORS`, `CATEGORY_PALETTE`, `ICONS`, `ACCOUNT_TYPES`.
+- `src/shared/infrastructure/` — IndexedDB y los repositorios, compresión, descarga, imagen, QR, los gateways del navegador y sus dobles en memoria.
+- `src/shared/ui/` — los presentacionales que usan dos o más features (`SheetOverlay`, `Toast`, `GlobalStyles`, `EmptyState`, `CategoryPicker`, `StoreInput`, `AccountChips`, `InstallmentPlanPicker`, `TransactionRow`, `MsiPlanCard`, `highlightMatch`, `useIsDesktop`). Es la única ubicación que la regla de dependencias permite para un componente compartido.
+- `src/app/` — `App.tsx` (40 líneas), el store y sus slices de campos, `dependencies.ts` (composition root), `persistence.ts`, `run.ts` y el cascarón de `ui/` (navegación y los dos árboles).
 
 ### Desktop layout
 
 Above `max-w-md` on a narrow viewport (< 1024px), `App` renders the mobile tree described above unchanged. At `>= 1024px` (`useIsDesktop()`, a `matchMedia` hook), `App` early-returns a **separate, parallel component tree** instead: `DesktopShell` (sidebar nav + wide main area) composing `DesktopSidebar` and the desktop counterpart of whatever tab is active — desktop-specific layouts (multi-column grids, more visible at once) that take the *same props* as their mobile counterparts — hoy eso lo garantiza el container de cada feature, que elige una u otra según `desktop`. `SheetOverlay` and `Toast` take a `desktop` prop to switch from mobile bottom-sheet/toast positioning to a centered modal / corner toast; every modal component (`SettingsModal`, `MonefyImportModal`, `ReceiptScanModal`, `SyncModal`, `BackupModal`) just forwards it through — the migrated ones get `desktop` from their container. See [tasks/desktop-view.md](tasks/desktop-view.md) and [agents/plans/desktop-view.md](agents/plans/desktop-view.md) for why a separate tree was chosen over a single responsive one.
 
-**Lo que cambia según se migra cada feature:** una feature ya migrada no aparece dos veces en ese cableado. Los dos árboles montan **el mismo container** y le pasan `desktop`; el container elige la vista y se sirve del store, sin recibir props. Así lo hacen las cuatro pestañas: `dashboard` (`HomeContainer`), `history` (`HistoryContainer`), `installments` (`MsiContainer` / `MsiPlanFormContainer`) y `accounts` (`AccountsContainer` / `AccountFormContainer`), más `transactions` (`AddTransactionContainer`), `sync` (`SyncContainer`), `backup` (`BackupContainer`), `monefy-import` (`MonefyImportContainer`) y `receipt-ocr` (`ReceiptScanContainer`). `DesktopShell` ha bajado de ~60 props a 14, y las que quedan son de `SettingsModal`, lo último sin migrar. El paso 12 termina de vaciarlo.
+**Los dos árboles son dos layouts, no dos cableados.** Los dos viven en [src/app/ui/Shells.tsx](src/app/ui/Shells.tsx) y montan exactamente los mismos containers, pasándoles solo `desktop`; el container elige la vista y se sirve del store. La pestaña activa entra por `<ActiveTab/>` y las hojas por `<Sheets/>`, escritas una sola vez, así que añadir una hoja no puede olvidarse en un árbol. **`DesktopShell` no recibe ni una prop** — de las ~60 originales —: lee del store la pestaña y el toast, y nada más.
 
 ### Domain model
 
@@ -81,7 +82,7 @@ Above `max-w-md` on a narrow viewport (< 1024px), `App` renders the mobile tree 
   - `transfer` — `{ fromAccountId, toAccountId, amount, date, description, taggedAsExpense, categoryId, installmentPlanId, store, size?, brand?, quantity? }`. Transfers move money between accounts without affecting `totalBalance`. The key domain concept is **`taggedAsExpense`**: a transfer (typically "pay off the credit card") can be tagged so its amount counts toward category spending totals and shows up in expense reports, *without* subtracting from `totalBalance` a second time (the money already left an account as a transfer). This is how credit-card spend is tracked without double-counting. When `taggedAsExpense` is on, the transfer also accepts the same optional `size`/`brand`/`quantity` product-detail fields as an `expense` (edited in `AddTransactionSheet`, never shown in the compact history row); they're forced to `null` when the tag is off.
 - **Installment plans / MSI** (`installmentPlans`) — "Meses sin intereses" (Mexican no-interest installment purchases): `{ id, description, store, totalAmount, installmentsCount, categoryId, startDate }`. A plan has no stored progress; `computePlanProgress` ([src/features/installments/domain/progress.ts](src/features/installments/domain/progress.ts)) derives `paid`/`remaining`/`pct`/`isPaidOff` by summing every `transfer` **or `expense`** transaction whose `installmentPlanId` matches — partial or uneven payments are supported since progress is amount-based, not payment-count-based. `installmentsCount` is parsed with `parseFloat` (not `parseInt`) in both plan forms, so it can be fractional — e.g. `1.5` to model paying a credit-card charge across 3 quincenas ("1.5 months") rather than whole months; `per` and the `installmentsPaid` display just divide, so decimals flow through the rest of the math unchanged.
 - Every record in the four collections above also carries `createdAt` and (for anything created or edited since the device-sync feature) `updatedAt` — millisecond epochs used as the last-write-wins tiebreaker when `SyncModal` merges two datasets by `id`. Records predating the feature fall back to `createdAt`.
-- **Tombstones** (`tombstones`) — `[{ id, deletedAt }]`, a fifth persisted collection. Every delete — handler legacy o caso de uso migrado — pushes one so a later sync merge can propagate the deletion (a record is dropped when a tombstone's `deletedAt` is newer than the incoming record's `updatedAt`). Entries older than 180 days are pruned during a merge.
+- **Tombstones** (`tombstones`) — `[{ id, deletedAt }]`, a fifth persisted collection. Every delete pushes one so a later sync merge can propagate the deletion (a record is dropped when a tombstone's `deletedAt` is newer than the incoming record's `updatedAt`). Entries older than 180 days are pruned during a merge.
 
 ### State flow
 

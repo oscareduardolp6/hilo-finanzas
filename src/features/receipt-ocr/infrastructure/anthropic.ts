@@ -6,11 +6,11 @@
    Los mensajes de error van en español y son contrato: `test/unit/receipt.test.js`
    los compara literalmente, y son lo que el usuario lee dentro de la hoja. */
 
+import { RECEIPT_MODEL_DEFAULT } from '../domain/config';
 import type { ReceiptScan } from '../domain/draft';
 import type { ScanReceiptRequest } from '../domain/ports';
 
 export const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
-export const RECEIPT_MODEL_DEFAULT = 'claude-haiku-4-5';
 
 /* El esquema de la herramienta ES el contrato con el modelo: describe qué
    significa cada campo, y por eso las descripciones están redactadas con el

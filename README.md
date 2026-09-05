@@ -2,11 +2,12 @@
 
 Control de gastos personal (UI en español de México, moneda MXN), como SPA de React sin backend.
 
-> **Refactor en curso.** El producto vivía en un solo componente de 4721 líneas y se está migrando a
-> una arquitectura en capas feature-first (TypeScript, fp-ts, zustand). El registro de qué módulos ya
-> se movieron está en [agents/plans/layered-architecture.md](agents/plans/layered-architecture.md).
-> Hoy conviven `src/legacy/hilo-legacy.jsx` (lo pendiente) con `src/shared/` y `src/features/` (lo
-> migrado); [hilo-finanzas.jsx](hilo-finanzas.jsx) quedó como *barrel* de re-exports.
+> **Arquitectura en capas.** El producto vivía en un solo componente de 4721 líneas; hoy está
+> repartido en capas feature-first (TypeScript, fp-ts, zustand) bajo `src/app/`, `src/shared/` y
+> `src/features/<f>/`. El porqué de cada decisión está en
+> [agents/plans/layered-architecture.md](agents/plans/layered-architecture.md).
+> [hilo-finanzas.jsx](hilo-finanzas.jsx) quedó como *barrel* de re-exports, que es lo que permitió
+> hacer el refactor sin tocar una línea de los 190 tests de regresión.
 
 ## Requisitos
 

@@ -2,7 +2,7 @@
 
 > Implementa [tasks/layered-architecture.md](../../tasks/layered-architecture.md). Ver la nota de sincronización en [CLAUDE.md](../../CLAUDE.md) — si el código diverge de lo aquí descrito, actualiza este documento en el mismo cambio.
 >
-> **Refactor en curso.** El [registro de avance](#registro-de-avance) de abajo es la fuente de verdad de qué se migró ya; se actualiza en el mismo commit que migra cada módulo, para poder retomar el refactor en otra sesión sin releer el diff.
+> **Refactor terminado.** Los doce pasos del [registro de avance](#registro-de-avance) están hechos: `src/legacy/` ya no existe y el árbol es el que describe la sección [Estructura de carpetas](#1-estructura-de-carpetas). Este documento pasa de bitácora a descripción de lo que hay.
 
 ## Context
 
@@ -202,7 +202,7 @@ Cada paso es un commit que deja **`npm test` en verde sin haber editado nada baj
 | 9 | Feature `backup` | **hecho** |
 | 10 | Feature `monefy-import` | **hecho** |
 | 11 | Feature `receipt-ocr` | **hecho** |
-| 12 | Feature `settings`; borrar `src/legacy/`; `DesktopShell` sin prop drilling; CLAUDE.md final | pendiente |
+| 12 | Feature `settings`; borrar `src/legacy/`; `DesktopShell` sin prop drilling; CLAUDE.md final | **hecho** |
 
 Cada paso de feature (3–12) hace lo mismo: dominio → casos de uso → slice conectado → containers/components → tests nuevos de la feature → actualizar este registro.
 
@@ -616,6 +616,60 @@ la re-creación de la categoría "Descuentos" en perfiles viejos) y 6 de UI por 
 container, con la API fingida. Total: **401 tests**, con los 190 de regresión
 intactos. El legacy baja a 506 líneas y `DesktopShell` a 14 props.
 
+### Detalle del paso 12 (hecho)
+
+El paso que cierra el refactor: `src/legacy/hilo-legacy.jsx` **se borra**.
+
+| Módulo | Contenido |
+|---|---|
+| `settings/application/save-ocr-settings.ts` | `saveOcrSettings`, `ReaderTaskEither` |
+| `settings/store/settings-actions-slice.ts` | `saveOcrSettings`, `openFromSettings` |
+| `settings/ui/` | `SettingsModal` y su container |
+| `shared/ui/{global-styles,toast,use-is-desktop}` | Las tres piezas que no son de ninguna feature |
+| `app/ui/{nav,BottomNav,DesktopSidebar,Shells}` | El cascarón: navegación y los dos árboles |
+| `app/App.tsx` | 40 líneas: monta el store, espera la hidratación, elige árbol |
+
+Decisiones:
+
+- **Los dos árboles siguen siendo dos, pero ya no son dos cableados.** Móvil y
+  escritorio comparten `<Sheets/>` y `<ActiveTab/>`: la lista de hojas se
+  escribe una vez y los dos la montan. Antes había que acordarse de añadir cada
+  modal en dos sitios, y ese era el coste real de tener dos árboles — no el
+  duplicado de layout, que es deliberado (ver
+  [desktop-view.md](desktop-view.md)).
+- **`DesktopShell` pasa de ~60 props a CERO.** No recibe ninguna: lee del store
+  lo poco que necesita (la pestaña, el toast) y monta containers. Con eso el
+  prop drilling que motivó el refactor desaparece del todo.
+- **Las hojas se montan siempre, y cada una decide si está abierta.** Antes eran
+  `{estaAbierta && <Modal…/>}` en los dos árboles. El container ya hace ese
+  `return null`, así que montarlas siempre no cuesta nada y quita la última
+  forma de que los dos árboles se desincronicen.
+- **La slice de la feature se llama `settings-actions-slice`** porque
+  `app/store/settings-slice.ts` ya existe y aporta los CAMPOS. Es la división de
+  siempre —`app/store/` estado, `features/<f>/store/` acciones— y aquí se nota
+  porque coinciden en el nombre.
+- **`openFromSettings(tool)` es una acción, no dos `set` en el container.**
+  Cerrar Ajustes y abrir la hoja pedida es un solo cambio de estado; describirlo
+  con un nombre es lo mismo que hizo `showCategoryInHistory` en el paso 6.
+- **`RECEIPT_MODEL_DEFAULT` bajó a `receipt-ocr/domain/config.ts`.** Lo leen la
+  infraestructura (fallback del request) y `settings` (placeholder del campo), y
+  la regla permite el `domain/` de otra feature, no su `infrastructure/`.
+- **El barrel se queda.** Ya no hace falta para migrar nada, pero sigue siendo la
+  ruta que importan `src/main.jsx` y los 190 tests de regresión, y esos no se
+  tocan: son la prueba de que mover 4721 líneas no cambió comportamiento.
+
+8 tests nuevos de UI por el container, incluido el que comprueba lo que más
+importa de Ajustes: que la API key acabe en su propio repositorio y **no** en el
+blob que viaja en sync / QR / respaldo. Total: **409 tests**, con los 190 de
+regresión intactos y sin una sola línea editada bajo `test/`.
+
+**Verificación manual** (`npm run dev`), en los dos anchos: primer arranque con
+datos de ejemplo; alta de movimiento con el saldo bajando de $19,820 a $19,570 y
+sobreviviendo a la recarga; las cuatro pestañas en los dos árboles; las cinco
+hojas abriéndose desde Ajustes y cerrando Ajustes al hacerlo; y el toast `'No se
+pudo guardar el cambio localmente'` al romper `indexedDB.open` desde la consola.
+Sin errores de consola propios de la app en ninguno de los dos layouts.
+
 ### Tests nuevos por feature
 
 Los 190 existentes se quedan como red de regresión y no se editan. Encima, cada feature suma los suyos:
@@ -625,12 +679,12 @@ Los 190 existentes se quedan como red de regresión y no se editan. Encima, cada
 
 ## Archivos tocados
 
-- `hilo-finanzas.jsx` — de 4721 líneas a barrel de re-exports.
-- `src/legacy/hilo-legacy.jsx` — el archivo original; se vacía commit a commit hasta borrarse en el paso 12.
+- `hilo-finanzas.jsx` — de 4721 líneas a un barrel de 140 líneas de re-exports.
+- `src/legacy/hilo-legacy.jsx` — el archivo original; se fue vaciando commit a commit hasta **borrarse en el paso 12**.
 - `src/app/**`, `src/shared/**`, `src/features/**` — el código nuevo.
 - `package.json` — deps `fp-ts` y `zustand`; devDeps `typescript`, `@types/react`, `@types/react-dom`, `@types/qrcode`; script `typecheck`.
 - `vite.config.js`, `tailwind.config.js` — ver detalle del paso 0.
-- `CLAUDE.md` — reescribir "What this is" / "Architecture": ya no es un solo archivo. Se actualiza en el paso 1 describiendo el objetivo y apuntando a este registro, y se afina en el paso 12.
+- `CLAUDE.md` — reescrito: "Architecture" ya no describe un archivo gigante sino las capas. Se actualizó en el paso 1 con el objetivo y en cada paso con lo migrado; el paso 12 quitó la sección del legacy.
 - `tasks/layered-architecture.md` y `tasks/README.md` — `status`.
 - **Sin tocar:** los 16 archivos de `test/` ni `src/test/setup.js`.
 
@@ -644,7 +698,7 @@ npm test && npm run typecheck && npm run build
 
 Los 190 tests deben pasar sin haber editado nada bajo `test/`. Si alguno falla, es un cambio de comportamiento real, no un test desactualizado.
 
-Manual (`npm run dev`), en el paso 2 y en el 12, en móvil <1024px y escritorio ≥1024px:
+Manual (`npm run dev`), hecho en el paso 2 y en el 12, en móvil <1024px y escritorio ≥1024px:
 
 1. Primer arranque sin datos: aparecen las cuentas y movimientos de ejemplo; recargar los conserva.
 2. Alta, edición y borrado de un movimiento; el saldo de la cuenta cambia y sobrevive a la recarga.

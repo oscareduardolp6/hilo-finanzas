@@ -1,23 +1,23 @@
 /* ------------------------------------------------------------------ */
 /* Barrel: API pública de Hilo                                         */
 /* ------------------------------------------------------------------ */
-/* Este archivo ya no contiene lógica: solo re-exporta. Existe para que
-   `src/main.jsx` y los 190 tests de `test/` sigan importando desde una
-   sola ruta estable mientras el código se reparte en capas.
+/* Este archivo no contiene lógica: solo re-exporta. Existe para que
+   `src/main.jsx` y los 190 tests de `test/` importen desde una sola ruta
+   estable — y esa estabilidad es lo que permitió repartir el código en
+   capas sin tocar una línea de `test/`.
 
-   Durante el refactor a arquitectura en capas (ver
-   agents/plans/layered-architecture.md) los símbolos van migrando de
-   `src/legacy/hilo-legacy.jsx` a su feature. Cuando uno se mueve, se
-   cambia SOLO el origen de su línea aquí y los tests no se enteran.
+   El refactor a arquitectura en capas terminó (ver
+   agents/plans/layered-architecture.md): `src/legacy/` ya no existe y
+   cada línea de abajo apunta a la feature dueña del símbolo.
 
    Regla: re-exports explícitos, nunca `export *`. Así, si un símbolo
    quedara declarado en dos módulos a la vez, el error es inmediato en
    vez de silencioso.
 
-   Los grupos de abajo anticipan el módulo destino de cada símbolo; el
-   comentario de cada bloque dice a dónde va cuando le toque migrar. */
+   Los grupos van por módulo destino, y el comentario de cada bloque dice
+   en qué paso del refactor llegó ahí. */
 
-export { default } from './src/legacy/hilo-legacy.jsx';
+export { default } from './src/app/App';
 
 /* ── migrado (paso 1) ── */
 export { ACCOUNT_SEARCH_THRESHOLD } from './src/shared/design/tokens';
