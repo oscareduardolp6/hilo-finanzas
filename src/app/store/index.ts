@@ -16,6 +16,8 @@ import { createCategoriesSlice } from '../../features/categories/store/categorie
 import type { CategoriesSlice } from '../../features/categories/store/categories-slice';
 import { createDashboardSlice } from '../../features/dashboard/store/dashboard-slice';
 import type { DashboardSlice } from '../../features/dashboard/store/dashboard-slice';
+import { createSyncSlice } from '../../features/sync/store/sync-slice';
+import type { SyncSlice } from '../../features/sync/store/sync-slice';
 import { createInstallmentsSlice } from '../../features/installments/store/installments-slice';
 import type { InstallmentsSlice } from '../../features/installments/store/installments-slice';
 import { createTransactionsSlice } from '../../features/transactions/store/transactions-slice';
@@ -38,7 +40,8 @@ export type HiloStore = DataSlice &
   TransactionsSlice &
   CategoriesSlice &
   InstallmentsSlice &
-  DashboardSlice;
+  DashboardSlice &
+  SyncSlice;
 
 export type HiloStoreApi = ReturnType<typeof createHiloStore>;
 
@@ -53,11 +56,12 @@ export const createHiloStore = (deps: Deps) =>
       ...createCategoriesSlice(deps)(...args),
       ...createInstallmentsSlice(deps)(...args),
       ...createDashboardSlice(...args),
+      ...createSyncSlice(deps)(...args),
     })),
   );
 
 export { selectDataState } from './data-slice';
 export type {
   DataSlice, UiSlice, SettingsSlice, AccountsSlice, TransactionsSlice, CategoriesSlice,
-  InstallmentsSlice, DashboardSlice,
+  InstallmentsSlice, DashboardSlice, SyncSlice,
 };

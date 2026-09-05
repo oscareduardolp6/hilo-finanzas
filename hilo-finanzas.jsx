@@ -84,7 +84,7 @@ export {
   filterHistoryTransactions,
 } from './src/features/history/domain/filters';
 
-/* → src/features/sync/ */
+/* ── migrado (paso 8): feature `sync` ── */
 export {
   EXPORT_APP_ID,
   EXPORT_SCHEMA,
@@ -98,21 +98,29 @@ export {
   normalizeExportPayload,
   parseExportText,
   parseExportBytes,
+} from './src/features/sync/domain/payload';
+export {
   mergeCollection,
   mergeTombstones,
   mergeDataState,
-  replaceDataState,
-} from './src/legacy/hilo-legacy.jsx';
+} from './src/features/sync/domain/merge';
 
-/* → src/shared/infrastructure/ (compresión, descarga, archivos) */
+/* Aplicar un payload por reemplazo es de `backup` (paso 9); llegó antes porque
+   el bloque entero de export/sync salió del legacy en el paso 8. */
+export { replaceDataState } from './src/features/backup/domain/replace';
+
+/* ── migrado (paso 8): compresión y descarga ── */
 export {
   supportsCompression,
   gzipString,
   gunzipBytes,
   bytesToBase64,
   base64ToBytes,
-  exportFileName,
-  downloadJson,
+} from './src/shared/infrastructure/compression';
+export { exportFileName, downloadJson } from './src/shared/infrastructure/download';
+
+/* → src/features/receipt-ocr/ (lectura de archivos e imagen) */
+export {
   fileToBase64,
   downscaleImage,
 } from './src/legacy/hilo-legacy.jsx';

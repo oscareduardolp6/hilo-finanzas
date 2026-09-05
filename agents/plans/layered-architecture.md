@@ -198,7 +198,7 @@ Cada paso es un commit que deja **`npm test` en verde sin haber editado nada baj
 | 5 | Feature `installments` (MSI) | **hecho** |
 | 6 | Feature `dashboard` (Home + donut + totales) | **hecho** |
 | 7 | Feature `history` (filtros + buscador) | **hecho** |
-| 8 | Feature `sync` (la más pesada: QR, cámara, delta) | pendiente |
+| 8 | Feature `sync` (la más pesada: QR, cámara, delta), en dos commits: lógica y UI | **8a hecho** · 8b pendiente |
 | 9 | Feature `backup` | pendiente |
 | 10 | Feature `monefy-import` | pendiente |
 | 11 | Feature `receipt-ocr` | pendiente |
@@ -396,6 +396,34 @@ Decisiones:
 **Con este paso `AppBody` deja de derivar nada.** De los diez `useMemo` originales no queda ninguno, y `DesktopShell` baja de ~60 props a 36 — las que quedan son casi todas de los modales, que se van en los pasos 8-12.
 
 28 tests nuevos: 13 de dominio (cómo se componen los filtros, y la regla de que buscar ignora el mes) y 15 de UI por el container. Total: **320 tests**, con los 190 de regresión intactos.
+
+### Detalle del paso 8a (hecho)
+
+El paso más grande, y por eso va en dos commits como el 4: primero la lógica, después la UI.
+
+| Módulo | Contenido |
+|---|---|
+| `shared/infrastructure/compression.ts` | `supportsCompression`, `gzipString`, `gunzipBytes`, `bytesToBase64`, `base64ToBytes` |
+| `shared/infrastructure/download.ts` | `exportFileName`, `downloadJson` |
+| `sync/domain/payload.ts` | El formato del blob: constantes, `recordStamp`, `buildExportPayload`, `normalizeExportPayload`, `parseExportText`/`parseExportBytes` |
+| `sync/domain/merge.ts` | `mergeCollection`, `mergeTombstones`, `mergeDataState` |
+| `sync/domain/peers.ts` | El estado local de peers y el texto del resumen |
+| `sync/application/receive-sync.ts` | El caso de uso, `ReaderTaskEither` |
+| `sync/store/sync-slice.ts` | `receiveSync`, `renameDevice`, `forgetPeer`, `markSent` |
+| `backup/domain/replace.ts` | `replaceDataState` — ver abajo |
+
+Decisiones:
+
+- **La compresión y la descarga van a `shared/infrastructure/`, no a `sync/`.** No saben nada de Hilo: una comprime un string, la otra baja un JSON. `backup` y `receipt-ocr` también las van a querer.
+- **`replaceDataState` se adelanta a `backup/domain/`.** Es de la feature del paso 9, pero el bloque de export/sync salió del legacy entero en este paso y dejarla sola ahí habría sido peor que empezar la carpeta antes de tiempo — como ya pasó con `installments` en el paso 4.
+- **El fallo de `receiveSync` NO sale como toast**, a diferencia de todo lo demás. El mensaje ("Esto no parece un export de Hilo") habla del texto que el usuario acaba de pegar y va debajo de ese cuadro. El `Either` igual muere en el slice; lo que cruza a la UI es un `{ ok } | { ok, message }` plano, no una mónada.
+- **Tres funciones ganaron un parámetro de tiempo opcional** (`buildExportPayload`, `mergeTombstones`, `mergeDataState`, `exportFileName`). Llamaban a `Date.now()` por dentro, lo que las volvía no deterministas pese a ser "puras". El default preserva la firma que usan `test/unit/sync.test.js` y el barrel; el caso de uso pasa `deps.clock()`.
+- **`SyncPeer.lastSentAt`/`lastReceivedAt` pasan a `number | null`.** El código escribía `?? null` desde antes del refactor, así que eso es lo que hay guardado en los IndexedDB de los usuarios: el tipo tiene que decir la verdad sobre el dato.
+- **La asimetría de los dos sellos está ahora escrita en el dominio.** `lastSentAt` gobierna el delta y lo avanza el usuario a mano; `lastReceivedAt` es informativo y avanza solo. Era un comentario dentro de un handler de `App`; ahora es la documentación de `peers.ts` y tiene tests.
+
+19 tests nuevos: 13 del estado de peers y 6 del caso de uso (incluido que un delta no borre lo que no lleva). Total: **339 tests**, con los 190 de regresión intactos.
+
+Falta el **8b**: `SyncModal` a `sync/ui/`, con los gateways de QR, cámara, portapapeles y compartir saliendo a `Deps`.
 
 ### Tests nuevos por feature
 

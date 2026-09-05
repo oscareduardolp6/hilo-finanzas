@@ -41,6 +41,24 @@ import { HomeContainer } from '../features/dashboard/ui/containers/HomeContainer
    últimos `useMemo` de `AppBody`, que ya no deriva absolutamente nada. */
 import { HistoryContainer } from '../features/history/ui/containers/HistoryContainer';
 
+/* Feature `sync`, paso 8a: el formato del payload, el merge y el estado de
+   peers ya son dominio y casos de uso; `SyncModal` y `BackupModal` siguen aquí
+   (paso 8b) pero ya solo consumen esas piezas y las acciones del store. */
+import {
+  EXPORT_TEXT_PREFIX,
+  QR_BYTE_LIMIT,
+  buildExportPayload,
+  countPayloadRecords,
+  parseExportText,
+} from '../features/sync/domain/payload';
+import { replaceDataState } from '../features/backup/domain/replace';
+import {
+  bytesToBase64,
+  gzipString,
+  supportsCompression,
+} from '../shared/infrastructure/compression';
+import { downloadJson, exportFileName } from '../shared/infrastructure/download';
+
 /* Componentes presentacionales compartidos por varias features: por la regla de
    dependencias no pueden vivir en ninguna de ellas. */
 import { CategoryPicker } from '../shared/ui/category-picker';
@@ -80,231 +98,6 @@ function useIsDesktop() {
     return () => mq.removeEventListener('change', handler);
   }, []);
   return isDesktop;
-}
-
-/* ------------------------------------------------------------------ */
-/* Export / sincronización / respaldo (sin backend)                    */
-/* ------------------------------------------------------------------ */
-/* Un mismo formato de "blob de datos" sirve para tres cosas: pasar los
-   datos a otro dispositivo (archivo, texto comprimido o QR), sincronizar
-   por merge, y guardar/restaurar un respaldo completo. No hay servidor:
-   el usuario mueve el archivo/texto/QR a mano. Ver
-   agents/plans/desktop-mobile-sync.md. */
-
-export const EXPORT_APP_ID = 'hilo-finanzas';
-export const EXPORT_SCHEMA = 1;
-export const EXPORT_TEXT_PREFIX = 'hilo1:';
-export const QR_BYTE_LIMIT = 2900;          // capacidad práctica de un QR byte-mode (v40, ECC L)
-export const TOMBSTONE_TTL_MS = 180 * 864e5; // 180 días — después de eso se olvida el borrado
-export const SYNC_SKEW_MARGIN_MS = 5 * 60 * 1000; // margen anti-desfase de reloj al calcular un delta
-
-export const SYNC_COLLECTIONS = ['accounts', 'categories', 'transactions', 'installmentPlans'];
-
-export const recordStamp = (r) => r.updatedAt ?? r.createdAt ?? 0;
-
-/* Un payload de export. Sin opts es la foto completa (sync completo / respaldo).
-   Con `since` (epoch) es un DELTA: solo registros y tombstones tocados después de
-   ese punto — el merge del receptor los funde por `id` igual (un registro ausente
-   no es un borrado). `device` identifica al emisor para que el receptor lleve el
-   registro de hasta dónde recibió de él. Ver agents/plans/sync-incremental.md. */
-export function buildExportPayload(state, { device, since } = {}) {
-  const partial = Number.isFinite(since);
-  const cutoff = partial ? since - SYNC_SKEW_MARGIN_MS : -Infinity;
-  const pick = (list) => (partial ? (list || []).filter((r) => recordStamp(r) > cutoff) : (list || []));
-  return {
-    app: EXPORT_APP_ID,
-    schema: EXPORT_SCHEMA,
-    exportedAt: new Date().toISOString(),
-    device: device || null,
-    partial,
-    since: partial ? since : null,
-    data: {
-      accounts: pick(state.accounts),
-      categories: pick(state.categories),
-      transactions: pick(state.transactions),
-      installmentPlans: pick(state.installmentPlans),
-      tombstones: partial
-        ? (state.tombstones || []).filter((t) => (t.deletedAt || 0) > cutoff)
-        : (state.tombstones || []),
-    },
-  };
-}
-
-export function supportsCompression() {
-  return typeof CompressionStream === 'function' && typeof DecompressionStream === 'function';
-}
-
-export async function gzipString(str) {
-  const stream = new Blob([new TextEncoder().encode(str)]).stream().pipeThrough(new CompressionStream('gzip'));
-  const buf = await new Response(stream).arrayBuffer();
-  return new Uint8Array(buf);
-}
-
-export async function gunzipBytes(bytes) {
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
-  const buf = await new Response(stream).arrayBuffer();
-  return new TextDecoder().decode(buf);
-}
-
-export function bytesToBase64(bytes) {
-  let bin = '';
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-  return btoa(bin);
-}
-
-export function base64ToBytes(b64) {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-
-/* Valida un objeto ya parseado y devuelve las 5 colecciones normalizadas más los
-   metadatos del envelope (`exportedAt`, `device`, `partial`, `since`). Los tres
-   últimos faltan en exports viejos / respaldos → se normalizan a null/false, y ni
-   `mergeDataState` ni `replaceDataState` los miran. Lanza Error legible si no
-   parece un export de Hilo. */
-export function normalizeExportPayload(obj) {
-  if (!obj || obj.app !== EXPORT_APP_ID || !obj.data) {
-    throw new Error('Esto no parece un export de Hilo.');
-  }
-  const d = obj.data;
-  for (const key of SYNC_COLLECTIONS) {
-    if (!Array.isArray(d[key])) throw new Error('El export de Hilo está incompleto o dañado.');
-  }
-  const dev = obj.device && typeof obj.device.id === 'string'
-    ? { id: obj.device.id, name: typeof obj.device.name === 'string' ? obj.device.name : '' }
-    : null;
-  return {
-    accounts: d.accounts,
-    categories: d.categories,
-    transactions: d.transactions,
-    installmentPlans: d.installmentPlans,
-    tombstones: Array.isArray(d.tombstones) ? d.tombstones : [],
-    exportedAt: typeof obj.exportedAt === 'string' ? obj.exportedAt : null,
-    device: dev,
-    partial: !!obj.partial,
-    since: Number.isFinite(obj.since) ? obj.since : null,
-  };
-}
-
-/* Punto de entrada único para texto pegado / contenido de archivo: acepta JSON
-   plano o "hilo1:<base64 gzip>". Async porque descomprimir lo es. */
-export async function parseExportText(text) {
-  const trimmed = (text || '').trim();
-  if (!trimmed) throw new Error('No hay nada que leer.');
-  if (trimmed.startsWith(EXPORT_TEXT_PREFIX)) {
-    let json;
-    try {
-      json = await gunzipBytes(base64ToBytes(trimmed.slice(EXPORT_TEXT_PREFIX.length)));
-    } catch (e) {
-      throw new Error('No se pudo leer el texto comprimido de Hilo.');
-    }
-    return normalizeExportPayload(JSON.parse(json));
-  }
-  let obj;
-  try {
-    obj = JSON.parse(trimmed);
-  } catch (e) {
-    throw new Error('Esto no parece un export de Hilo.');
-  }
-  return normalizeExportPayload(obj);
-}
-
-/* Para el QR: los bytes escaneados son el JSON comprimido con gzip. */
-export async function parseExportBytes(bytes) {
-  let json;
-  try {
-    json = await gunzipBytes(bytes);
-  } catch (e) {
-    throw new Error('El QR no contiene datos de Hilo legibles.');
-  }
-  return normalizeExportPayload(JSON.parse(json));
-}
-
-/* Funde dos listas por `id` (gana el `recordStamp` mayor; empate → entrante),
-   luego descarta los registros con un tombstone posterior a su última edición. */
-export function mergeCollection(currentList, incomingList, tombstoneMap) {
-  const map = new Map((currentList || []).map((r) => [r.id, r]));
-  let added = 0;
-  let updated = 0;
-  for (const inc of incomingList || []) {
-    const cur = map.get(inc.id);
-    if (!cur) {
-      map.set(inc.id, inc);
-      added++;
-    } else if (recordStamp(inc) >= recordStamp(cur)) {
-      map.set(inc.id, inc);
-      if (recordStamp(inc) > recordStamp(cur)) updated++;
-    }
-  }
-  let removed = 0;
-  const list = [];
-  for (const r of map.values()) {
-    const deletedAt = tombstoneMap.get(r.id);
-    if (deletedAt != null && deletedAt >= recordStamp(r)) {
-      removed++;
-      continue;
-    }
-    list.push(r);
-  }
-  return { list, added, updated, removed };
-}
-
-export function mergeTombstones(a, b) {
-  const cutoff = Date.now() - TOMBSTONE_TTL_MS;
-  const map = new Map();
-  for (const t of [...(a || []), ...(b || [])]) {
-    if (!t || !t.id || typeof t.deletedAt !== 'number') continue;
-    if (t.deletedAt < cutoff) continue;
-    const prev = map.get(t.id);
-    if (prev == null || t.deletedAt > prev) map.set(t.id, t.deletedAt);
-  }
-  return [...map.entries()].map(([id, deletedAt]) => ({ id, deletedAt }));
-}
-
-/* Merge de sincronización: une tombstones, aplica el mapa a las 4 colecciones. */
-export function mergeDataState(current, incoming) {
-  const tombstones = mergeTombstones(current.tombstones, incoming.tombstones);
-  const tombstoneMap = new Map(tombstones.map((t) => [t.id, t.deletedAt]));
-  const out = { tombstones, stats: { added: 0, updated: 0, removed: 0 } };
-  for (const key of SYNC_COLLECTIONS) {
-    const res = mergeCollection(current[key], incoming[key], tombstoneMap);
-    out[key] = res.list;
-    out.stats.added += res.added;
-    out.stats.updated += res.updated;
-    out.stats.removed += res.removed;
-  }
-  return out;
-}
-
-/* Restaurar respaldo: reemplaza todo con la foto del payload. */
-export function replaceDataState(incoming) {
-  return {
-    accounts: incoming.accounts || [],
-    categories: incoming.categories || [],
-    transactions: incoming.transactions || [],
-    installmentPlans: incoming.installmentPlans || [],
-    tombstones: Array.isArray(incoming.tombstones) ? incoming.tombstones : [],
-  };
-}
-
-export function exportFileName(kind) {
-  const d = new Date();
-  const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  return `hilo-${kind}-${stamp}.json`;
-}
-
-export function downloadJson(payload, fileName) {
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1450,7 +1243,7 @@ function SyncModal({ state, syncState, onMerge, onRenameDevice, onResetPeer, onM
     const device = sync.deviceId ? { id: sync.deviceId, name: sync.deviceName } : undefined;
     const payload = buildExportPayload(state, { device, since: deltaSince });
     const json = JSON.stringify(payload);
-    const count = SYNC_COLLECTIONS.reduce((n, k) => n + payload.data[k].length, 0) + payload.data.tombstones.length;
+    const count = countPayloadRecords(payload);
     setSharePayload({ payload, json, count, since: payload.since });
     (async () => {
       if (!supportsCompression()) {
@@ -1485,25 +1278,23 @@ function SyncModal({ state, syncState, onMerge, onRenameDevice, onResetPeer, onM
 
   useEffect(() => stopScan, []); // limpieza al desmontar
 
-  async function applyIncoming(promise) {
+  /* `onMerge` es la acción del slice: parsea, funde y anota el peer. Devuelve un
+     dato plano, no una excepción, así que el error se pinta aquí abajo en vez de
+     salir como toast — habla del texto que el usuario acaba de pegar. */
+  async function applyIncoming(source) {
     setError('');
     setBusy(true);
-    try {
-      const incoming = await promise;
-      onMerge(incoming);
-      onClose();
-    } catch (e) {
-      setError(e.message || 'No se pudo leer el archivo.');
-    } finally {
-      setBusy(false);
-    }
+    const outcome = await onMerge(source);
+    setBusy(false);
+    if (outcome.ok) onClose();
+    else setError(outcome.message);
   }
 
   function handleFile(e) {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => applyIncoming(parseExportText(String(reader.result || '')));
+    reader.onload = () => applyIncoming({ kind: 'text', text: String(reader.result || '') });
     reader.onerror = () => setError('No se pudo leer el archivo.');
     reader.readAsText(file);
   }
@@ -1562,7 +1353,7 @@ function SyncModal({ state, syncState, onMerge, onRenameDevice, onResetPeer, onM
           const hit = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
           if (hit && hit.binaryData && hit.binaryData.length) {
             stopScan();
-            applyIncoming(parseExportBytes(new Uint8Array(hit.binaryData)));
+            applyIncoming({ kind: 'bytes', bytes: new Uint8Array(hit.binaryData) });
             return;
           }
         }
@@ -1724,7 +1515,7 @@ function SyncModal({ state, syncState, onMerge, onRenameDevice, onResetPeer, onM
               style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }}
             />
             <button
-              onClick={() => applyIncoming(parseExportText(pasted))}
+              onClick={() => applyIncoming({ kind: 'text', text: pasted })}
               disabled={busy || !pasted.trim()}
               className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
               style={{ backgroundColor: COLORS.accent, color: COLORS.bg, opacity: busy || !pasted.trim() ? 0.5 : 1 }}
@@ -2087,6 +1878,7 @@ function AppBody() {
     /* Acciones de los slices de las features ya migradas. Las hojas y vistas se
        montan por container, así que sus campos ya no se leen aquí. */
     openAddSheet, resetTransactions, createCategory,
+    receiveSync, renameDevice, forgetPeer, markSent,
 
     settingsOpen,
     importModalOpen, syncModalOpen, backupModalOpen, receiptModalOpen,
@@ -2178,66 +1970,6 @@ function AppBody() {
     setToast(`${built.length} ${built.length === 1 ? 'movimiento agregado' : 'movimientos agregados'} desde el ticket`);
   }
 
-  function handleMergeSync(incoming) {
-    const merged = mergeDataState({ accounts, categories, transactions, installmentPlans, tombstones }, incoming);
-    setAccounts(merged.accounts);
-    setCategories(merged.categories);
-    setTransactions(merged.transactions);
-    setInstallmentPlans(merged.installmentPlans);
-    setTombstones(merged.tombstones);
-    const { added, updated, removed } = merged.stats;
-
-    // Recibir de un peer avanza SU `lastReceivedAt` (acabo de incorporar lo suyo
-    // hasta `exportedAt`). No toca `lastSentAt` — recibir no prueba nada sobre lo
-    // que el peer tiene de lo mío.
-    let peerName = '';
-    const dev = incoming.device;
-    if (dev && dev.id && syncState && dev.id !== syncState.deviceId) {
-      const at = Date.parse(incoming.exportedAt) || Date.now();
-      setSyncState(s => {
-        const prev = (s.peers && s.peers[dev.id]) || {};
-        return { ...s, peers: { ...s.peers, [dev.id]: {
-          name: dev.name || prev.name || '',
-          lastSentAt: prev.lastSentAt ?? null,
-          lastReceivedAt: at,
-        } } };
-      });
-      peerName = dev.name || '';
-    }
-
-    const who = peerName ? ` con ${peerName}` : '';
-    const tail = incoming.partial ? ' (parcial)' : '';
-    setToast(`Sincronizado${who}: ${added} nuevos, ${updated} actualizados, ${removed} borrados${tail}`);
-  }
-
-  function handleRenameDevice(name) {
-    setSyncState(s => (s ? { ...s, deviceName: (name || '').trim() || s.deviceName } : s));
-  }
-
-  function handleResetPeer(peerId) {
-    setSyncState(s => {
-      if (!s || !s.peers[peerId]) return s;
-      const peers = { ...s.peers };
-      delete peers[peerId];
-      return { ...s, peers };
-    });
-  }
-
-  function handleMarkSent(peerId, at) {
-    if (!peerId) return;
-    setSyncState(s => {
-      if (!s) return s;
-      const prev = s.peers[peerId] || {};
-      return { ...s, peers: { ...s.peers, [peerId]: {
-        name: prev.name || '',
-        lastReceivedAt: prev.lastReceivedAt ?? null,
-        lastSentAt: at,
-      } } };
-    });
-    const nm = (syncState && syncState.peers[peerId] && syncState.peers[peerId].name) || 'el otro dispositivo';
-    setToast(`Punto marcado con ${nm}`);
-  }
-
   function handleRestoreBackup(incoming) {
     const s = replaceDataState(incoming);
     setAccounts(s.accounts);
@@ -2291,13 +2023,13 @@ function AppBody() {
         onOpenBackup={openBackupModal}
         onCloseSyncModal={() => setSyncModalOpen(false)}
         onCloseBackupModal={() => setBackupModalOpen(false)}
-        onMergeSync={handleMergeSync}
+        onMergeSync={receiveSync}
         onRestoreBackup={handleRestoreBackup}
         syncData={{ accounts, categories, transactions, installmentPlans, tombstones }}
         syncState={syncState}
-        onRenameDevice={handleRenameDevice}
-        onResetPeer={handleResetPeer}
-        onMarkSent={handleMarkSent}
+        onRenameDevice={renameDevice}
+        onResetPeer={forgetPeer}
+        onMarkSent={markSent}
         receiptModalOpen={receiptModalOpen}
         onOpenReceipt={() => setReceiptModalOpen(true)}
         onCloseReceiptModal={() => setReceiptModalOpen(false)}
@@ -2390,10 +2122,10 @@ function AppBody() {
           <SyncModal
             state={{ accounts, categories, transactions, installmentPlans, tombstones }}
             syncState={syncState}
-            onMerge={handleMergeSync}
-            onRenameDevice={handleRenameDevice}
-            onResetPeer={handleResetPeer}
-            onMarkSent={handleMarkSent}
+            onMerge={receiveSync}
+            onRenameDevice={renameDevice}
+            onResetPeer={forgetPeer}
+            onMarkSent={markSent}
             onClose={() => setSyncModalOpen(false)}
           />
         )}
