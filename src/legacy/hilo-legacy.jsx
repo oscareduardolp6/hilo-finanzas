@@ -6,8 +6,6 @@ import {
   Check, Layers, Smartphone,
   QrCode, Camera, Download, Upload, Copy, Share2, RefreshCw, DatabaseBackup, ScanLine,
 } from 'lucide-react';
-import QRCode from 'qrcode';
-import jsQR from 'jsqr';
 
 /* Migrado a la capa `shared` (paso 1 de agents/plans/layered-architecture.md).
    Este archivo ya solo los consume; el barrel los re-exporta desde su nuevo
@@ -41,16 +39,10 @@ import { HomeContainer } from '../features/dashboard/ui/containers/HomeContainer
    últimos `useMemo` de `AppBody`, que ya no deriva absolutamente nada. */
 import { HistoryContainer } from '../features/history/ui/containers/HistoryContainer';
 
-/* Feature `sync`, paso 8a: el formato del payload, el merge y el estado de
-   peers ya son dominio y casos de uso; `SyncModal` y `BackupModal` siguen aquí
-   (paso 8b) pero ya solo consumen esas piezas y las acciones del store. */
-import {
-  EXPORT_TEXT_PREFIX,
-  QR_BYTE_LIMIT,
-  buildExportPayload,
-  countPayloadRecords,
-  parseExportText,
-} from '../features/sync/domain/payload';
+/* Feature `sync`, paso 8. Del legacy solo queda `BackupModal`, que comparte con
+   ella el formato del payload y se migra en el paso 9. */
+import { EXPORT_TEXT_PREFIX, buildExportPayload, parseExportText } from '../features/sync/domain/payload';
+import { SyncContainer } from '../features/sync/ui/containers/SyncContainer';
 import { replaceDataState } from '../features/backup/domain/replace';
 import {
   bytesToBase64,
@@ -1189,400 +1181,6 @@ function ReceiptScanModal({ accounts, categories, apiKey, model, onClose, onConf
 }
 
 /* ------------------------------------------------------------------ */
-/* Sincronizar dispositivos (merge, sin backend)                       */
-/* ------------------------------------------------------------------ */
-
-function SyncModal({ state, syncState, onMerge, onRenameDevice, onResetPeer, onMarkSent, onClose, desktop }) {
-  const sync = syncState || { deviceId: '', deviceName: '', peers: {} };
-  const peerEntries = Object.entries(sync.peers || {});
-  const peerKey = peerEntries.map(([id]) => id).sort().join(',');
-  const stampOf = (p) => Math.max(p.lastSentAt || 0, p.lastReceivedAt || 0);
-  const fmtStamp = (ms) => (ms ? new Date(ms).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }) : 'nunca');
-
-  const [mode, setMode] = useState('send');
-  const [qrDataUrl, setQrDataUrl] = useState(null);
-  const [payloadBytesLen, setPayloadBytesLen] = useState(null);
-  const [textPayload, setTextPayload] = useState('');
-  const [sharePayload, setSharePayload] = useState(null); // { payload, json, count, since }
-  const [copied, setCopied] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [pasted, setPasted] = useState('');
-  const [error, setError] = useState('');
-  const [scanning, setScanning] = useState(false);
-  const [scanError, setScanError] = useState('');
-  const [peerId, setPeerId] = useState('');
-  const [sendAll, setSendAll] = useState(false);
-  const [markSentConfirm, setMarkSentConfirm] = useState(false);
-  const [resetPeerId, setResetPeerId] = useState('');
-  const [nameDraft, setNameDraft] = useState(sync.deviceName);
-
-  const videoRef = useRef(null);
-  const streamRef = useRef(null);
-  const rafRef = useRef(null);
-
-  const canShare = typeof navigator !== 'undefined' && !!navigator.canShare;
-
-  // Autoselecciona el peer con intercambio más reciente cuando cambia el conjunto.
-  useEffect(() => {
-    const best = peerEntries.slice().sort((a, b) => stampOf(b[1]) - stampOf(a[1]))[0];
-    setPeerId(best ? best[0] : '');
-    setMarkSentConfirm(false);
-  }, [peerKey]);
-
-  useEffect(() => { setNameDraft(sync.deviceName); }, [sync.deviceName]);
-  useEffect(() => { setMarkSentConfirm(false); }, [peerId, sendAll, mode]);
-
-  const selectedPeer = (peerId && sync.peers[peerId]) || null;
-  const canDelta = !!(selectedPeer && selectedPeer.lastSentAt);
-  const deltaSince = canDelta && !sendAll ? selectedPeer.lastSentAt : undefined;
-
-  // Prepara el payload de salida (QR + texto) al entrar a "Enviar".
-  useEffect(() => {
-    if (mode !== 'send') return;
-    let cancelled = false;
-    const device = sync.deviceId ? { id: sync.deviceId, name: sync.deviceName } : undefined;
-    const payload = buildExportPayload(state, { device, since: deltaSince });
-    const json = JSON.stringify(payload);
-    const count = countPayloadRecords(payload);
-    setSharePayload({ payload, json, count, since: payload.since });
-    (async () => {
-      if (!supportsCompression()) {
-        if (!cancelled) { setQrDataUrl(null); setPayloadBytesLen(null); setTextPayload(''); }
-        return;
-      }
-      try {
-        const bytes = await gzipString(json);
-        if (cancelled) return;
-        setPayloadBytesLen(bytes.length);
-        setTextPayload(EXPORT_TEXT_PREFIX + bytesToBase64(bytes));
-        if (bytes.length <= QR_BYTE_LIMIT) {
-          const url = await QRCode.toDataURL([{ data: bytes, mode: 'byte' }], {
-            errorCorrectionLevel: 'L', margin: 2, width: 320,
-          });
-          if (!cancelled) setQrDataUrl(url);
-        } else {
-          setQrDataUrl(null);
-        }
-      } catch (e) {
-        if (!cancelled) { setQrDataUrl(null); setTextPayload(''); }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [mode, state, deltaSince, sync.deviceId, sync.deviceName]);
-
-  function stopScan() {
-    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
-    if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
-    setScanning(false);
-  }
-
-  useEffect(() => stopScan, []); // limpieza al desmontar
-
-  /* `onMerge` es la acción del slice: parsea, funde y anota el peer. Devuelve un
-     dato plano, no una excepción, así que el error se pinta aquí abajo en vez de
-     salir como toast — habla del texto que el usuario acaba de pegar. */
-  async function applyIncoming(source) {
-    setError('');
-    setBusy(true);
-    const outcome = await onMerge(source);
-    setBusy(false);
-    if (outcome.ok) onClose();
-    else setError(outcome.message);
-  }
-
-  function handleFile(e) {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => applyIncoming({ kind: 'text', text: String(reader.result || '') });
-    reader.onerror = () => setError('No se pudo leer el archivo.');
-    reader.readAsText(file);
-  }
-
-  function handleDownload() {
-    if (sharePayload) downloadJson(sharePayload.payload, exportFileName('sync'));
-  }
-
-  async function handleCopy() {
-    if (!textPayload) return;
-    try {
-      await navigator.clipboard.writeText(textPayload);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    } catch (e) {
-      setError('El navegador no dejó copiar. Usa el archivo.');
-    }
-  }
-
-  async function handleShare() {
-    if (!sharePayload) return;
-    try {
-      const file = new File([JSON.stringify(sharePayload.payload, null, 2)], exportFileName('sync'), { type: 'application/json' });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: 'Datos de Hilo' });
-      } else {
-        await navigator.share({ title: 'Datos de Hilo', text: textPayload });
-      }
-    } catch (e) {
-      if (e && e.name !== 'AbortError') setError('No se pudo compartir.');
-    }
-  }
-
-  async function startScan() {
-    setScanError('');
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      setScanError('Este navegador no permite usar la cámara. Usa archivo o texto.');
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-      streamRef.current = stream;
-      setScanning(true);
-      const video = videoRef.current;
-      video.srcObject = stream;
-      await video.play();
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      const tick = () => {
-        if (!streamRef.current) return;
-        if (video.readyState === video.HAVE_ENOUGH_DATA) {
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const hit = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
-          if (hit && hit.binaryData && hit.binaryData.length) {
-            stopScan();
-            applyIncoming({ kind: 'bytes', bytes: new Uint8Array(hit.binaryData) });
-            return;
-          }
-        }
-        rafRef.current = requestAnimationFrame(tick);
-      };
-      rafRef.current = requestAnimationFrame(tick);
-    } catch (e) {
-      const msg = e && e.name === 'NotAllowedError' ? 'Permiso de cámara denegado.'
-        : e && e.name === 'NotFoundError' ? 'No se encontró una cámara.'
-        : 'No se pudo abrir la cámara.';
-      setScanError(msg + ' Usa archivo o texto.');
-      stopScan();
-    }
-  }
-
-  const kb = payloadBytesLen != null ? Math.max(1, Math.round(payloadBytesLen / 1024)) : null;
-
-  return (
-    <SheetOverlay onClose={onClose} desktop={desktop}>
-      <div className="px-5 pt-4 pb-1 flex items-center justify-between">
-        <p className="text-lg font-semibold font-display" style={{ color: COLORS.text }}>Sincronizar dispositivos</p>
-        <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: COLORS.surfaceAlt }}>
-          <X size={15} style={{ color: COLORS.textMuted }} />
-        </button>
-      </div>
-      <div className="px-5 mt-3 pb-6">
-        <p className="text-xs leading-relaxed mb-3" style={{ color: COLORS.textMuted }}>
-          Pasa tus datos de un dispositivo a otro sin servidor. Al recibir, se <span style={{ color: COLORS.text }}>combinan</span> con lo que ya tengas (no se borra nada que no hayas borrado tú).
-        </p>
-
-        <div className="flex gap-1 p-1 rounded-xl mb-4" style={{ backgroundColor: COLORS.surfaceAlt }}>
-          {[['send', 'Enviar'], ['receive', 'Recibir'], ['devices', 'Dispositivos']].map(([id, label]) => (
-            <button
-              key={id}
-              onClick={() => { stopScan(); setError(''); setMode(id); }}
-              className="flex-1 py-2 rounded-lg text-xs font-semibold"
-              style={{ backgroundColor: mode === id ? COLORS.accent : 'transparent', color: mode === id ? COLORS.bg : COLORS.textMuted }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {mode === 'send' && (
-          <div>
-            {peerEntries.length > 0 && (
-              <div className="mb-3">
-                <label className="text-[11px] font-semibold block mb-1" style={{ color: COLORS.textMuted }}>Enviar a</label>
-                <select
-                  value={peerId}
-                  onChange={(e) => { setPeerId(e.target.value); setSendAll(false); }}
-                  className="w-full rounded-xl p-2.5 text-sm mb-2"
-                  style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }}
-                >
-                  {peerEntries.map(([id, p]) => (
-                    <option key={id} value={id}>{p.name || 'Dispositivo sin nombre'}</option>
-                  ))}
-                  <option value="">Otro / primera vez</option>
-                </select>
-                {canDelta && (
-                  <div className="flex gap-1 p-1 rounded-lg" style={{ backgroundColor: COLORS.surfaceAlt }}>
-                    {[[false, 'Solo cambios recientes'], [true, 'Todo']].map(([val, label]) => (
-                      <button
-                        key={String(val)}
-                        onClick={() => setSendAll(val)}
-                        className="flex-1 py-1.5 rounded-md text-[11px] font-semibold"
-                        style={{ backgroundColor: sendAll === val ? COLORS.accent : 'transparent', color: sendAll === val ? COLORS.bg : COLORS.textMuted }}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-            {qrDataUrl ? (
-              <div className="rounded-xl p-4 mb-3 flex flex-col items-center" style={{ backgroundColor: '#FFFFFF' }}>
-                <img src={qrDataUrl} alt="Código QR con tus datos" className="w-56 h-56" />
-              </div>
-            ) : (
-              <div className="rounded-xl p-3 mb-3 flex items-start gap-2" style={{ backgroundColor: COLORS.surfaceAlt }}>
-                <QrCode size={16} style={{ color: COLORS.textFaint, marginTop: 2 }} />
-                <p className="text-xs leading-relaxed" style={{ color: COLORS.textMuted }}>
-                  {!supportsCompression()
-                    ? 'Este navegador no puede comprimir; usa el archivo.'
-                    : sharePayload && sharePayload.since != null
-                      ? `Aún con solo los cambios recientes${kb ? ` (${kb} KB)` : ''} no cabe en un QR. Usa el archivo o el texto.`
-                      : `Tu historial${kb ? ` (${kb} KB)` : ''} es muy grande para un QR. Usa el archivo o el texto.`}
-                </p>
-              </div>
-            )}
-            {sharePayload && sharePayload.since != null && (
-              <p className="text-[11px] mb-2" style={{ color: COLORS.textMuted }}>
-                Solo lo nuevo desde {fmtStamp(sharePayload.since)} · {sharePayload.count} {sharePayload.count === 1 ? 'registro' : 'registros'}
-              </p>
-            )}
-            <button onClick={handleDownload} className="w-full py-3 rounded-xl text-sm font-semibold mb-2 flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
-              <Download size={15} /> Descargar archivo
-            </button>
-            {textPayload && (
-              <button onClick={handleCopy} className="w-full py-3 rounded-xl text-sm font-semibold mb-2 flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
-                <Copy size={15} /> {copied ? 'Copiado' : 'Copiar texto'}
-              </button>
-            )}
-            {canShare && (
-              <button onClick={handleShare} className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
-                <Share2 size={15} /> Compartir
-              </button>
-            )}
-            {peerId && (
-              markSentConfirm ? (
-                <div className="rounded-xl p-3 mt-2" style={{ backgroundColor: COLORS.surfaceAlt }}>
-                  <p className="text-xs leading-relaxed mb-2" style={{ color: COLORS.textMuted }}>
-                    ¿El otro dispositivo ya escaneó o importó estos datos? Se marcará el punto de sincronización con <span style={{ color: COLORS.text }}>{selectedPeer && selectedPeer.name ? selectedPeer.name : 'ese dispositivo'}</span>; los próximos envíos solo llevarán lo nuevo.
-                  </p>
-                  <div className="flex gap-2">
-                    <button onClick={() => setMarkSentConfirm(false)} className="flex-1 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: COLORS.bg, color: COLORS.text }}>Cancelar</button>
-                    <button
-                      onClick={() => { onMarkSent(peerId, sharePayload ? (Date.parse(sharePayload.payload.exportedAt) || Date.now()) : Date.now()); setMarkSentConfirm(false); }}
-                      className="flex-1 py-2 rounded-lg text-sm font-semibold"
-                      style={{ backgroundColor: COLORS.accent, color: COLORS.bg }}
-                    >Sí, marcar</button>
-                  </div>
-                </div>
-              ) : (
-                <button onClick={() => setMarkSentConfirm(true)} className="w-full py-3 rounded-xl text-sm font-semibold mt-2 flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
-                  <Check size={15} /> Marcar como enviado{selectedPeer && selectedPeer.name ? ` a ${selectedPeer.name}` : ''}
-                </button>
-              )
-            )}
-          </div>
-        )}
-
-        {mode === 'receive' && (
-          <div>
-            {scanning ? (
-              <div className="rounded-xl overflow-hidden mb-2" style={{ backgroundColor: '#000' }}>
-                <video ref={videoRef} playsInline muted className="w-full" style={{ maxHeight: 260, objectFit: 'cover' }} />
-                <button onClick={stopScan} className="w-full py-2 text-xs font-semibold" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.textMuted }}>Cancelar escaneo</button>
-              </div>
-            ) : (
-              <button onClick={startScan} className="w-full py-3 rounded-xl text-sm font-semibold mb-2 flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
-                <Camera size={15} /> Escanear QR
-              </button>
-            )}
-            {scanError && <p className="text-xs mb-2" style={{ color: COLORS.expense }}>{scanError}</p>}
-
-            <label className="w-full py-3 rounded-xl text-sm font-semibold mb-2 flex items-center justify-center gap-2 cursor-pointer" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
-              <Upload size={15} /> Subir archivo
-              <input type="file" accept=".json,application/json" className="hidden" onChange={handleFile} />
-            </label>
-
-            <textarea
-              value={pasted}
-              onChange={(e) => setPasted(e.target.value)}
-              placeholder="…o pega aquí el texto que copiaste"
-              rows={3}
-              className="w-full rounded-xl p-3 text-xs mb-2 resize-none"
-              style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }}
-            />
-            <button
-              onClick={() => applyIncoming({ kind: 'text', text: pasted })}
-              disabled={busy || !pasted.trim()}
-              className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
-              style={{ backgroundColor: COLORS.accent, color: COLORS.bg, opacity: busy || !pasted.trim() ? 0.5 : 1 }}
-            >
-              <RefreshCw size={15} /> Combinar
-            </button>
-          </div>
-        )}
-
-        {mode === 'devices' && (
-          <div>
-            <p className="text-xs leading-relaxed mb-3" style={{ color: COLORS.textMuted }}>
-              El <span style={{ color: COLORS.text }}>punto de sincronización</span> con cada dispositivo permite mandar solo lo nuevo por QR. Márcalo tú tras una sincronización completa; al recibir se guarda solo.
-            </p>
-
-            <label className="text-[11px] font-semibold block mb-1" style={{ color: COLORS.textMuted }}>Nombre de este dispositivo</label>
-            <div className="flex gap-2 mb-4">
-              <input
-                value={nameDraft}
-                onChange={(e) => setNameDraft(e.target.value)}
-                className="flex-1 rounded-xl p-2.5 text-sm"
-                style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }}
-              />
-              <button
-                onClick={() => onRenameDevice(nameDraft)}
-                disabled={!nameDraft.trim() || nameDraft.trim() === sync.deviceName}
-                className="px-4 rounded-xl text-sm font-semibold"
-                style={{ backgroundColor: COLORS.accent, color: COLORS.bg, opacity: !nameDraft.trim() || nameDraft.trim() === sync.deviceName ? 0.5 : 1 }}
-              >
-                Guardar
-              </button>
-            </div>
-
-            {peerEntries.length === 0 ? (
-              <div className="rounded-xl p-3 flex items-start gap-2" style={{ backgroundColor: COLORS.surfaceAlt }}>
-                <Smartphone size={16} style={{ color: COLORS.textFaint, marginTop: 2 }} />
-                <p className="text-xs leading-relaxed" style={{ color: COLORS.textMuted }}>Aún no has recibido de otro dispositivo.</p>
-              </div>
-            ) : (
-              peerEntries.map(([id, p]) => (
-                <div key={id} className="rounded-xl p-3 mb-2" style={{ backgroundColor: COLORS.surfaceAlt }}>
-                  <p className="text-sm font-semibold mb-1" style={{ color: COLORS.text }}>{p.name || 'Dispositivo sin nombre'}</p>
-                  <p className="text-[11px]" style={{ color: COLORS.textMuted }}>Enviado hasta: {fmtStamp(p.lastSentAt)}</p>
-                  <p className="text-[11px] mb-2" style={{ color: COLORS.textMuted }}>Recibido hasta: {fmtStamp(p.lastReceivedAt)}</p>
-                  {resetPeerId === id ? (
-                    <div className="flex gap-2">
-                      <button onClick={() => setResetPeerId('')} className="flex-1 py-1.5 rounded-lg text-xs font-medium" style={{ backgroundColor: COLORS.bg, color: COLORS.text }}>Cancelar</button>
-                      <button onClick={() => { onResetPeer(id); setResetPeerId(''); }} className="flex-1 py-1.5 rounded-lg text-xs font-semibold" style={{ backgroundColor: COLORS.expense, color: COLORS.bg }}>Reiniciar</button>
-                    </div>
-                  ) : (
-                    <button onClick={() => setResetPeerId(id)} className="text-xs font-semibold flex items-center gap-1" style={{ color: COLORS.expense }}>
-                      <Trash2 size={13} /> Reiniciar punto
-                    </button>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-        )}
-
-        {error && <p className="text-xs mt-3" style={{ color: COLORS.expense }}>{error}</p>}
-      </div>
-    </SheetOverlay>
-  );
-}
-
-/* ------------------------------------------------------------------ */
 /* Respaldo de datos (exportar / restaurar reemplazando todo)          */
 /* ------------------------------------------------------------------ */
 
@@ -1764,8 +1362,8 @@ function DesktopShell(props) {
     onCreateCategory,
     settingsOpen, onCloseSettings, onResetTransactions,
     importModalOpen, onOpenImport, onCloseImportModal, onConfirmImport,
-    syncModalOpen, backupModalOpen, onOpenSync, onOpenBackup, onCloseSyncModal, onCloseBackupModal, onMergeSync, onRestoreBackup,
-    syncData, syncState, onRenameDevice, onResetPeer, onMarkSent,
+    backupModalOpen, onOpenSync, onOpenBackup, onCloseBackupModal, onRestoreBackup,
+    syncData,
     receiptModalOpen, onOpenReceipt, onCloseReceiptModal, onConfirmReceipt, ocrSettings, onSaveOcrSettings,
     toast,
   } = props;
@@ -1827,18 +1425,7 @@ function DesktopShell(props) {
         />
       )}
 
-      {syncModalOpen && (
-        <SyncModal
-          state={syncData}
-          syncState={syncState}
-          onMerge={onMergeSync}
-          onRenameDevice={onRenameDevice}
-          onResetPeer={onResetPeer}
-          onMarkSent={onMarkSent}
-          onClose={onCloseSyncModal}
-          desktop
-        />
-      )}
+      <SyncContainer desktop />
 
       {backupModalOpen && (
         <BackupModal state={syncData} onRestore={onRestoreBackup} onClose={onCloseBackupModal} desktop />
@@ -1878,10 +1465,9 @@ function AppBody() {
     /* Acciones de los slices de las features ya migradas. Las hojas y vistas se
        montan por container, así que sus campos ya no se leen aquí. */
     openAddSheet, resetTransactions, createCategory,
-    receiveSync, renameDevice, forgetPeer, markSent,
 
     settingsOpen,
-    importModalOpen, syncModalOpen, backupModalOpen, receiptModalOpen,
+    importModalOpen, backupModalOpen, receiptModalOpen,
     setSettingsOpen,
     setImportModalOpen, setSyncModalOpen, setBackupModalOpen, setReceiptModalOpen,
 
@@ -2017,19 +1603,12 @@ function AppBody() {
         onOpenImport={openImportModal}
         onCloseImportModal={() => setImportModalOpen(false)}
         onConfirmImport={handleImportMonefy}
-        syncModalOpen={syncModalOpen}
         backupModalOpen={backupModalOpen}
         onOpenSync={openSyncModal}
         onOpenBackup={openBackupModal}
-        onCloseSyncModal={() => setSyncModalOpen(false)}
         onCloseBackupModal={() => setBackupModalOpen(false)}
-        onMergeSync={receiveSync}
         onRestoreBackup={handleRestoreBackup}
         syncData={{ accounts, categories, transactions, installmentPlans, tombstones }}
-        syncState={syncState}
-        onRenameDevice={renameDevice}
-        onResetPeer={forgetPeer}
-        onMarkSent={markSent}
         receiptModalOpen={receiptModalOpen}
         onOpenReceipt={() => setReceiptModalOpen(true)}
         onCloseReceiptModal={() => setReceiptModalOpen(false)}
@@ -2118,17 +1697,7 @@ function AppBody() {
           />
         )}
 
-        {syncModalOpen && (
-          <SyncModal
-            state={{ accounts, categories, transactions, installmentPlans, tombstones }}
-            syncState={syncState}
-            onMerge={receiveSync}
-            onRenameDevice={renameDevice}
-            onResetPeer={forgetPeer}
-            onMarkSent={markSent}
-            onClose={() => setSyncModalOpen(false)}
-          />
-        )}
+        <SyncContainer />
 
         {backupModalOpen && (
           <BackupModal

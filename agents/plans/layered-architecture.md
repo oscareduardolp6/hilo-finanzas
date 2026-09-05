@@ -198,7 +198,7 @@ Cada paso es un commit que deja **`npm test` en verde sin haber editado nada baj
 | 5 | Feature `installments` (MSI) | **hecho** |
 | 6 | Feature `dashboard` (Home + donut + totales) | **hecho** |
 | 7 | Feature `history` (filtros + buscador) | **hecho** |
-| 8 | Feature `sync` (la más pesada: QR, cámara, delta), en dos commits: lógica y UI | **8a hecho** · 8b pendiente |
+| 8 | Feature `sync` (la más pesada: QR, cámara, delta), en dos commits: lógica y UI | **hecho** |
 | 9 | Feature `backup` | pendiente |
 | 10 | Feature `monefy-import` | pendiente |
 | 11 | Feature `receipt-ocr` | pendiente |
@@ -423,7 +423,35 @@ Decisiones:
 
 19 tests nuevos: 13 del estado de peers y 6 del caso de uso (incluido que un delta no borre lo que no lleva). Total: **339 tests**, con los 190 de regresión intactos.
 
-Falta el **8b**: `SyncModal` a `sync/ui/`, con los gateways de QR, cámara, portapapeles y compartir saliendo a `Deps`.
+El **8b** lo completa: `SyncModal` a `sync/ui/`, con los gateways saliendo a `Deps`.
+
+### Detalle del paso 8b (hecho)
+
+Cierra la fuga que la tabla de arriba llamaba "IO dentro de componentes". Los cinco `useEffect` de `SyncModal` —comprimir, pintar el QR, abrir la cámara, leer un archivo, copiar y compartir— se convirtieron en cinco puertos.
+
+| Módulo | Contenido |
+|---|---|
+| `shared/domain/ports.ts` | `FileGateway`, `ClipboardGateway`, `ShareGateway`, `DownloadGateway`, `QrGateway` |
+| `shared/infrastructure/browser.ts` | Las cuatro primeras, sobre `FileReader`, `navigator.clipboard` y `navigator.share` |
+| `shared/infrastructure/qr.ts` | `qrcode` + `getUserMedia` + `jsqr`, detrás de una promesa con `cancel` |
+| `shared/infrastructure/in-memory.ts` | Los dobles de las cinco, con un registro de lo que se les pidió |
+| `sync/application/prepare-share.ts` | `ReaderTask`: payload → gzip → base64 → QR |
+| `sync/ui/components/SyncModal.tsx` | props → JSX, sin un solo efecto que hable con el navegador |
+| `sync/ui/containers/SyncContainer.tsx` | El container más grande del refactor |
+
+Decisiones:
+
+- **`QrGateway.scan` recibe un `HTMLVideoElement`.** Es el único puerto que toca el DOM, y es deliberado: la cámara tiene que pintarse en algún sitio y ese sitio lo decide la UI. A cambio, el bucle de `requestAnimationFrame` sale del componente.
+- **El límite del QR (`QR_BYTE_LIMIT`) se comprueba en el caso de uso, no en el gateway.** `shared/` no importa de `features/`, y "cuántos bytes caben" es un concepto de Hilo, no del navegador.
+- **`prepareShare` es `ReaderTask`, no `ReaderTaskEither`.** Quedarse sin QR no es un error: es un historial grande. Devuelve un preview sin QR y la UI ofrece el archivo.
+- **`prepareShare` devuelve el preview en vez de guardarlo en el store.** Es una vista previa, no estado de la app, y quien la pidió puede haberla descartado — el `cancelled` del efecto vive donde React sabe expresarlo.
+- **El container va partido en dos.** `SyncContainer` solo mira si la hoja está abierta; el estado vive en `SyncSheet`, que se desmonta con ella. Sin esa partición, reabrir la hoja recordaba la última pestaña en vez de volver a "Enviar" — se detectó en el navegador, no en los tests.
+- **El `<video>` se monta siempre y solo se oculta.** Antes se montaba a la vez que `scanning` pasaba a true y el código leía la ref inmediatamente después; funcionaba por un orden de renders que no conviene volver a apostar.
+- **`qrcode` y `jsqr` se cargan con `import()` dinámico.** Un import estático en `shared/infrastructure/qr.ts` entra por `dependencies.ts` —que lo importa todo— al arranque de cada test unitario y al chunk inicial del bundle. Con la carga diferida, el bundle principal baja de 862 KB a 709 KB y las dos librerías quedan en chunks aparte.
+
+14 tests nuevos de UI, con las cinco capacidades fingidas: se puede negar la cámara, romper el portapapeles y leer un archivo sin tener ninguna de las tres. Total: **353 tests**, con los 190 de regresión intactos. El legacy baja a 1714 líneas.
+
+**Nota sobre `npm test` en esta máquina:** con el paralelismo por defecto (un worker por core) la suite satura la CPU y dos tests de integración pasan de 5 s y fallan por timeout. Pasa igual en el commit del paso 8a, así que es del entorno y no del codigo; `npx vitest run --minWorkers=1 --maxWorkers=3` la deja verde de forma reproducible.
 
 ### Tests nuevos por feature
 

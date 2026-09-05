@@ -16,11 +16,12 @@ import type { IncomingPayload } from '../domain/payload';
 import { parseExportBytes, parseExportText } from '../domain/payload';
 import { recordPeerReceive, syncSummaryToast } from '../domain/peers';
 
-/** De dónde vino lo que hay que leer. El QR llega como bytes ya crudos; el
- *  archivo y el texto pegado, como string. */
+/** De dónde vino lo que hay que leer. Las tres entran por la misma puerta, y
+ *  por eso el slice tiene una sola acción de recibir en vez de tres. */
 export type IncomingSource =
   | { readonly kind: 'text'; readonly text: string }
-  | { readonly kind: 'bytes'; readonly bytes: Uint8Array };
+  | { readonly kind: 'bytes'; readonly bytes: Uint8Array }
+  | { readonly kind: 'file'; readonly file: File };
 
 export type ReceiveResult = {
   readonly data: DataState;
@@ -32,9 +33,15 @@ export type ReceiveResult = {
 /* Los mensajes de error vienen ya en español desde `normalizeExportPayload` y
    `parseExport*`, así que se pasan tal cual: son lo que el usuario lee bajo el
    cuadro de texto. `messageFor` los devuelve intactos para `InvalidPayload`. */
-const parse = (source: IncomingSource): TE.TaskEither<HiloError, IncomingPayload> =>
+const read = (deps: Deps, source: IncomingSource): Promise<IncomingPayload> => {
+  if (source.kind === 'bytes') return parseExportBytes(source.bytes);
+  if (source.kind === 'text') return parseExportText(source.text);
+  return deps.fileGateway.readText(source.file).then(parseExportText);
+};
+
+const parse = (deps: Deps, source: IncomingSource): TE.TaskEither<HiloError, IncomingPayload> =>
   TE.tryCatch(
-    () => (source.kind === 'text' ? parseExportText(source.text) : parseExportBytes(source.bytes)),
+    () => read(deps, source),
     (e) => invalidPayload(e instanceof Error ? e.message : 'No se pudo leer el archivo.'),
   );
 
@@ -47,7 +54,7 @@ export const receiveSync = (
     RTE.ask<Deps>(),
     RTE.chainTaskEitherK((deps) =>
       pipe(
-        parse(source),
+        parse(deps, source),
         TE.map((incoming): ReceiveResult => {
           const now = deps.clock();
           const merged = mergeDataState(current, incoming, now);

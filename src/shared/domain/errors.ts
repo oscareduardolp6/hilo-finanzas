@@ -11,7 +11,7 @@ export type HiloError =
   | { readonly _tag: 'InvalidPayload'; readonly message: string }
   | { readonly _tag: 'ReceiptApiError'; readonly status: number; readonly message: string }
   | { readonly _tag: 'CsvParseError'; readonly message: string }
-  | { readonly _tag: 'CameraUnavailable'; readonly cause: unknown };
+  | { readonly _tag: 'CameraUnavailable'; readonly message: string; readonly cause: unknown };
 
 export const persistenceError = (cause: unknown): HiloError => ({ _tag: 'PersistenceError', cause });
 
@@ -25,7 +25,11 @@ export const receiptApiError = (status: number, message: string): HiloError => (
 
 export const csvParseError = (message: string): HiloError => ({ _tag: 'CsvParseError', message });
 
-export const cameraUnavailable = (cause: unknown): HiloError => ({ _tag: 'CameraUnavailable', cause });
+export const cameraUnavailable = (message: string, cause: unknown): HiloError => ({
+  _tag: 'CameraUnavailable',
+  message,
+  cause,
+});
 
 /** Texto que ve el usuario en el toast. */
 export const messageFor = (error: HiloError): string => {
@@ -34,10 +38,11 @@ export const messageFor = (error: HiloError): string => {
     // hidratación fallida se traga a propósito y deja los datos de ejemplo.
     case 'PersistenceError':
       return 'No se pudo guardar el cambio localmente';
+    // Los demás ya traen su mensaje en español desde donde se construyeron:
+    // `scanReceipt` mapea 401/429 a su texto, y el gateway de cámara distingue
+    // permiso denegado de cámara ausente, que es lo que el usuario necesita
+    // saber para arreglarlo.
     case 'CameraUnavailable':
-      return 'No se pudo abrir la cámara';
-    // Estos tres ya traen su mensaje en español desde donde se construyeron
-    // (p. ej. `scanReceipt` mapea 401/429 a su texto).
     case 'InvalidPayload':
     case 'ReceiptApiError':
     case 'CsvParseError':

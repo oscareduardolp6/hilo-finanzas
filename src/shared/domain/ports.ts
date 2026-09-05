@@ -28,6 +28,46 @@ export type SyncStateRepository = {
   readonly save: (state: SyncState) => TaskEither<HiloError, void>;
 };
 
+/* --- Capacidades del navegador ---------------------------------------- */
+/* Lo que antes se llamaba directo desde dentro de un componente: leer un
+   archivo, copiar, compartir, bajar un JSON, pintar y escanear un QR. Como
+   puertos, un caso de uso puede ejercitarlos sin navegador y un test puede
+   fingir que el usuario denegó la cámara. */
+
+export type FileGateway = {
+  readonly readText: (file: File) => Promise<string>;
+};
+
+export type ClipboardGateway = {
+  readonly writeText: (text: string) => Promise<void>;
+};
+
+export type ShareGateway = {
+  /** Si es `false`, la UI ni siquiera ofrece el botón. */
+  readonly canShare: () => boolean;
+  readonly shareFile: (fileName: string, contents: string, text: string) => Promise<void>;
+};
+
+export type DownloadGateway = {
+  readonly json: (payload: unknown, fileName: string) => void;
+};
+
+/** Una sesión de cámara en curso. Se cancela al cambiar de pestaña o cerrar. */
+export type QrScanSession = {
+  readonly result: Promise<Uint8Array>;
+  readonly cancel: () => void;
+};
+
+/* El `HTMLVideoElement` en la firma es deliberado: la cámara tiene que pintarse
+   en algún sitio y ese sitio lo decide la UI. Es el único puerto que toca el
+   DOM, y a cambio el bucle de escaneo sale del componente. */
+export type QrGateway = {
+  /** Data URL con el QR. Si los bytes caben o no en uno lo decide quien
+   *  llama: el límite es un concepto de Hilo, no del navegador. */
+  readonly encode: (bytes: Uint8Array) => Promise<string>;
+  readonly scan: (video: HTMLVideoElement) => QrScanSession;
+};
+
 /** Inyectados para que los casos de uso sean deterministas en test. */
 export type Clock = () => number;
 export type IdGenerator = (prefix?: string) => string;
