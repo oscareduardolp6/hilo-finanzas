@@ -118,11 +118,9 @@ export {
 } from './src/shared/infrastructure/compression';
 export { exportFileName, downloadJson } from './src/shared/infrastructure/download';
 
-/* → src/features/receipt-ocr/ (lectura de archivos e imagen) */
-export {
-  fileToBase64,
-  downscaleImage,
-} from './src/legacy/hilo-legacy.jsx';
+/* ── migrado (paso 11): preparar una imagen no sabe nada de Hilo, así que
+   —como la compresión y la descarga— vive en `shared/infrastructure/`. ── */
+export { fileToBase64, downscaleImage } from './src/shared/infrastructure/image';
 
 /* ── migrado (paso 10): feature `monefy-import` ── */
 export {
@@ -137,9 +135,6 @@ export { parseOscarDescription } from './src/features/monefy-import/domain/oscar
 export { buildMonefyImportPreview } from './src/features/monefy-import/domain/preview';
 export { buildMonefyImportPlan } from './src/features/monefy-import/domain/plan';
 
-/* → src/features/receipt-ocr/ */
-export {
-  isValidIsoDate,
-  buildReceiptDraft,
-  scanReceipt,
-} from './src/legacy/hilo-legacy.jsx';
+/* ── migrado (paso 11): feature `receipt-ocr` ── */
+export { isValidIsoDate, buildReceiptDraft } from './src/features/receipt-ocr/domain/draft';
+export { scanReceipt } from './src/features/receipt-ocr/infrastructure/anthropic';

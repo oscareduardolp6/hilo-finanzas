@@ -182,7 +182,7 @@ Reglas:
 | Dominio importa tokens de diseño | `computeCategoryTotals` usa `COLORS.textMuted` | Parámetro opcional al final con ese default. **La firma de 2 argumentos no cambia** — `test/unit/domain.test.js` la llama así. Cerrada **a medias** en el paso 6: ver su detalle. |
 | Helper de dominio devuelve JSX | `highlightMatch` | Vive en `shared/ui/highlight.tsx`. El test inspecciona `out[1].type === 'mark'` sin renderizar, así que sigue verde. |
 | Lógica de formulario entre helpers de formato | `initialFormState` | `features/transactions/domain/form.ts` |
-| IO dentro de componentes | `FileReader`, `getUserMedia`, `clipboard`, `share`, QR en `SyncModal`/`BackupModal`/`MonefyImportModal`/`ReceiptScanModal` | Salen a gateways inyectados en `Deps` |
+| IO dentro de componentes | `FileReader`, `getUserMedia`, `clipboard`, `share`, `fetch`, `canvas`, QR en `SyncModal`/`BackupModal`/`MonefyImportModal`/`ReceiptScanModal` | Salen a gateways inyectados en `Deps`. **Cerrada** en los pasos 8b, 9, 10 y 11 |
 
 ## Registro de avance
 
@@ -201,7 +201,7 @@ Cada paso es un commit que deja **`npm test` en verde sin haber editado nada baj
 | 8 | Feature `sync` (la más pesada: QR, cámara, delta), en dos commits: lógica y UI | **hecho** |
 | 9 | Feature `backup` | **hecho** |
 | 10 | Feature `monefy-import` | **hecho** |
-| 11 | Feature `receipt-ocr` | pendiente |
+| 11 | Feature `receipt-ocr` | **hecho** |
 | 12 | Feature `settings`; borrar `src/legacy/`; `DesktopShell` sin prop drilling; CLAUDE.md final | pendiente |
 
 Cada paso de feature (3–12) hace lo mismo: dominio → casos de uso → slice conectado → containers/components → tests nuevos de la feature → actualizar este registro.
@@ -557,6 +557,64 @@ Decisiones:
 aplique) y 6 de UI por el container, incluidos los dos lados del switch de la
 convención de Oscar. Total: **382 tests**, con los 190 de regresión intactos. El
 legacy baja a 1030 líneas y `DesktopShell` a 19 props.
+
+### Detalle del paso 11 (hecho)
+
+La feature con más superficie de IO de toda la app: una foto, un `<canvas>`, una
+llamada a red y un modal de 260 líneas que hacía las tres cosas.
+
+| Módulo | Contenido |
+|---|---|
+| `shared/infrastructure/image.ts` | `fileToBase64`, `downscaleImage` |
+| `receipt-ocr/domain/draft.ts` | `isValidIsoDate`, `buildReceiptDraft` y los tipos de lo que emite el modelo |
+| `receipt-ocr/domain/review.ts` | `computeReviewTotals` — las once derivaciones de la hoja |
+| `receipt-ocr/domain/to-transactions.ts` | De ticket confirmado a movimientos: la regla del descuento como ingreso |
+| `receipt-ocr/domain/ports.ts` | `ReceiptGateway` |
+| `receipt-ocr/infrastructure/` | `anthropic.ts` (el `fetch`), el gateway real y su doble |
+| `receipt-ocr/application/` | `scanReceipt` (`ReaderTaskEither`) y `addReceiptTransactions` (`ReaderIO`) |
+| `receipt-ocr/store/receipt-slice.ts` | Las dos acciones |
+| `receipt-ocr/ui/` | `ReceiptScanModal` (props → JSX) y su container |
+
+Decisiones:
+
+- **El puerto vive en la feature, no en `shared/domain/ports.ts`.** Es el primero
+  así, y la razón es la regla de dependencias: sus tipos (`ReceiptScan`) son de
+  aquí, y `shared/` no puede importar de `features/`. `app/dependencies.ts` sí
+  puede — es el composition root, y está por encima de las dos capas. Por lo
+  mismo su doble vive en `receipt-ocr/infrastructure/in-memory.ts` y no junto a
+  los otros.
+- **Preparar la imagen y escanear van en un solo puerto.** Desde fuera son un
+  solo paso ("de esta foto, sácame un ticket") y un test que finge uno necesita
+  fingir el otro: en jsdom no hay `<canvas>` ni red.
+- **`fileToBase64`/`downscaleImage` suben a `shared/infrastructure/`**, con el
+  mismo criterio que la compresión y la descarga en el paso 8a: encogen una
+  imagen y la leen en base64, sin saber qué es un ticket.
+- **`computeReviewTotals` es la extracción que más se nota.** Las sumas, el neto,
+  el descuadre, qué cuentas participan y si se puede guardar se calculaban entre
+  el JSX; ahora son una función pura con nombre y seis tests, y el componente
+  recibe el resultado.
+- **`buildReceiptDraft` gana `newId` y `today` opcionales**, como
+  `buildMonefyImportPlan` en el paso 10 y `buildExportPayload` en el 8a. El
+  default preserva la firma de dos argumentos de `test/unit/receipt.test.js`.
+- **`scanReceipt` sigue siendo una función suelta sobre `fetch`.** Es contrato de
+  test: `test/unit/receipt.test.js` la llama con `{ apiKey, model, image,
+  expenseCategories }` y le parchea el `fetch` global. El gateway la envuelve, no
+  la sustituye.
+- **`NewTransaction` se importa de `transactions/domain/`** en vez de redefinir un
+  `Omit` distributivo. Es exactamente el caso que la regla de dependencias
+  permite: el `domain/` de otra feature, nunca su `ui/`.
+- **La fecha del ticket usa `isoFromEpoch(deps.clock())`, no `toISOString()`.** El
+  día es el local del usuario, como en el resto de la app; con UTC se habría
+  colado un cambio de comportamiento a partir de las 18:00 en México.
+
+Con esto la fuga "IO dentro de componentes" de §9 queda **cerrada del todo**: ya
+no hay un solo `FileReader`, `fetch`, `canvas` ni `navigator` dentro de un
+componente.
+
+19 tests nuevos: 6 de las derivaciones de la hoja, 7 del caso de uso (incluida
+la re-creación de la categoría "Descuentos" en perfiles viejos) y 6 de UI por el
+container, con la API fingida. Total: **401 tests**, con los 190 de regresión
+intactos. El legacy baja a 506 líneas y `DesktopShell` a 14 props.
 
 ### Tests nuevos por feature
 

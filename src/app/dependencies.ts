@@ -6,6 +6,8 @@
    objeto y ya. Un test llama `createDeps({ stateRepository: inMemory..., clock:
    () => 0 })` y sobreescribe solo lo que le importa. */
 
+import type { ReceiptGateway } from '../features/receipt-ocr/domain/ports';
+import { browserReceiptGateway } from '../features/receipt-ocr/infrastructure/browser-receipt-gateway';
 import { uid } from '../shared/domain/ids';
 import type {
   Clock, ClipboardGateway, DownloadGateway, FileGateway, IdGenerator, OcrSettingsRepository,
@@ -36,6 +38,10 @@ export type Deps = {
   readonly shareGateway: ShareGateway;
   readonly downloadGateway: DownloadGateway;
   readonly qrGateway: QrGateway;
+  /* El único adaptador que sale a la red: reescala la foto del ticket y la
+     manda a la API de visión de Anthropic. Su puerto vive en la feature y no
+     en `shared/`, porque sus tipos son de ahí. */
+  readonly receiptGateway: ReceiptGateway;
   /** `Date.now` inyectado: vuelve deterministas los `createdAt`/`updatedAt`. */
   readonly clock: Clock;
   /** `uid` inyectado: vuelve deterministas los ids en test. */
@@ -52,6 +58,7 @@ export const productionDeps: Deps = {
   shareGateway: browserShareGateway,
   downloadGateway: browserDownloadGateway,
   qrGateway: browserQrGateway,
+  receiptGateway: browserReceiptGateway,
   clock: () => Date.now(),
   idGenerator: uid,
 };
