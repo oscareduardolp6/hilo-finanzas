@@ -69,6 +69,10 @@ export type IncomeTransaction = TransactionBase & {
   type: 'income';
   accountId: string;
   categoryId: string;
+  /* El import de Monefy escribe `store` también en los ingresos (siempre lo
+     hizo), así que hay perfiles con ese campo guardado. El tipo tiene que
+     decir la verdad sobre el dato aunque ninguna pantalla lo pinte todavía. */
+  store?: string | null;
 };
 
 export type TransferTransaction = TransactionBase & ProductDetails & {

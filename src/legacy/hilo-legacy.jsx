@@ -10,10 +10,10 @@ import {
 /* Migrado a la capa `shared` (paso 1 de agents/plans/layered-architecture.md).
    Este archivo ya solo los consume; el barrel los re-exporta desde su nuevo
    hogar, así que los tests no se enteran del movimiento. */
-import { COLORS, CATEGORY_PALETTE, ACCOUNT_SEARCH_THRESHOLD, DESKTOP_BREAKPOINT } from '../shared/design/tokens';
-import { ICONS, ICON_CHOICES, IconFor, ACCOUNT_TYPES } from '../shared/design/icons';
+import { COLORS, ACCOUNT_SEARCH_THRESHOLD, DESKTOP_BREAKPOINT } from '../shared/design/tokens';
+import { ICONS, ICON_CHOICES, IconFor } from '../shared/design/icons';
 import { uid } from '../shared/domain/ids';
-import { todayIso, formatDateLabel } from '../shared/domain/dates';
+import { todayIso } from '../shared/domain/dates';
 import { formatMoney } from '../shared/domain/money';
 import { accountNameMatches } from '../shared/domain/search';
 import { highlightMatch } from '../shared/ui/highlight';
@@ -43,6 +43,10 @@ import { HistoryContainer } from '../features/history/ui/containers/HistoryConta
    payload, y de las dos ya no queda nada en este archivo. */
 import { SyncContainer } from '../features/sync/ui/containers/SyncContainer';
 import { BackupContainer } from '../features/backup/ui/containers/BackupContainer';
+
+/* Feature `monefy-import`, paso 10: el parser del CSV, la hoja de revisión y
+   el plan de importación. */
+import { MonefyImportContainer } from '../features/monefy-import/ui/containers/MonefyImportContainer';
 
 /* Componentes presentacionales compartidos por varias features: por la regla de
    dependencias no pueden vivir en ninguna de ellas. */
@@ -83,376 +87,6 @@ function useIsDesktop() {
     return () => mq.removeEventListener('change', handler);
   }, []);
   return isDesktop;
-}
-
-/* ------------------------------------------------------------------ */
-/* Importación de Monefy                                               */
-/* ------------------------------------------------------------------ */
-/* Convierte el CSV export de Monefy (columnas: date,account,category,
-   amount,currency,converted amount,currency,description) en cuentas/
-   categorías/transacciones de Hilo. Monefy no trae tipo de cuenta ni
-   ícono de categoría (se adivinan por nombre), y codifica cada
-   transferencia como dos filas separadas — "To 'X'" en la cuenta
-   origen y "From 'Y'" en la cuenta destino, mismo día y monto — que
-   hay que reconstruir como un solo movimiento de tipo transfer. */
-
-const MONEFY_HEADER_PREFIX = ['date', 'account', 'category', 'amount'];
-const MONEFY_TO_RE = /^To '(.+)'$/;
-const MONEFY_FROM_RE = /^From '(.+)'$/;
-const MONEFY_INITIAL_RE = /^Initial balance '(.+)'$/;
-const MONEFY_TRANSFER_CATEGORY = 'Transferencias';
-
-export function parseCsv(text) {
-  const rows = [];
-  let row = [];
-  let field = '';
-  let inQuotes = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (inQuotes) {
-      if (ch === '"') {
-        if (text[i + 1] === '"') { field += '"'; i++; } else { inQuotes = false; }
-      } else {
-        field += ch;
-      }
-      continue;
-    }
-    if (ch === '"') { inQuotes = true; continue; }
-    if (ch === ',') { row.push(field); field = ''; continue; }
-    if (ch === '\r') { continue; }
-    if (ch === '\n') { row.push(field); rows.push(row); row = []; field = ''; continue; }
-    field += ch;
-  }
-  if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
-  return rows;
-}
-
-export function parseMonefyDate(ddmmyyyy) {
-  const [d, m, y] = ddmmyyyy.split('/');
-  return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-}
-
-export function parseMonefyAmount(str) {
-  return parseFloat(String(str).replace(/,/g, '')) || 0;
-}
-
-export function classifyMonefyCategory(raw) {
-  const trimmed = (raw || '').trim();
-  let m = trimmed.match(MONEFY_TO_RE);
-  if (m) return { kind: 'to', otherAccount: m[1].trim() };
-  m = trimmed.match(MONEFY_FROM_RE);
-  if (m) return { kind: 'from', otherAccount: m[1].trim() };
-  m = trimmed.match(MONEFY_INITIAL_RE);
-  if (m) return { kind: 'initial', otherAccount: m[1].trim() };
-  return { kind: 'plain', category: trimmed };
-}
-
-export function parseMonefyRows(text) {
-  const table = parseCsv(text.replace(/^﻿/, ''));
-  if (!table.length) return null;
-  const header = table[0].map(h => h.trim().toLowerCase());
-  const headerOk = MONEFY_HEADER_PREFIX.every((h, idx) => header[idx] === h);
-  if (!headerOk) return null;
-  const rows = [];
-  for (let i = 1; i < table.length; i++) {
-    const cols = table[i];
-    if (!cols || cols.length < 4 || (cols.length === 1 && cols[0] === '')) continue;
-    const date = (cols[0] || '').trim();
-    const account = (cols[1] || '').trim();
-    const amount = parseMonefyAmount(cols[3]);
-    const description = (cols[7] || '').trim();
-    if (!date || !account) continue;
-    rows.push({ date: parseMonefyDate(date), account, amount, description, ...classifyMonefyCategory(cols[2]) });
-  }
-  return rows;
-}
-
-const MONEFY_ACCOUNT_TYPE_HINTS = [
-  { type: 'efectivo', keywords: ['efectivo', 'cash'] },
-  { type: 'credito', keywords: ['crédito', 'credito', 'tdc'] },
-  { type: 'inversion', keywords: ['inversión', 'inversion', 'cetes'] },
-  { type: 'ahorro', keywords: ['ahorro', 'apartado', 'fondo'] },
-];
-
-export function guessAccountType(name) {
-  const lower = name.toLowerCase();
-  for (const { type, keywords } of MONEFY_ACCOUNT_TYPE_HINTS) {
-    if (keywords.some(k => lower.includes(k))) return type;
-  }
-  return 'debito';
-}
-
-const MONEFY_CATEGORY_ICON_HINTS = [
-  { icon: 'UtensilsCrossed', keywords: ['comida', 'restaurante', 'súper', 'super', 'snack'] },
-  { icon: 'Coffee', keywords: ['cafeter', 'café', 'cafe'] },
-  { icon: 'Fuel', keywords: ['gasolina'] },
-  { icon: 'Car', keywords: ['coche', 'transporte', 'uber', 'estacionamiento', 'caseta'] },
-  { icon: 'Home', keywords: ['renta', 'casa'] },
-  { icon: 'HeartPulse', keywords: ['salud', 'enfermedad', 'terapia'] },
-  { icon: 'Sparkles', keywords: ['belleza', 'spa', 'higiene'] },
-  { icon: 'Film', keywords: ['entretenimiento', 'x box', 'cardistry', 'magia', 'apuesta'] },
-  { icon: 'Shirt', keywords: ['ropa'] },
-  { icon: 'GraduationCap', keywords: ['escuela', 'educaci', 'beca'] },
-  { icon: 'PawPrint', keywords: ['mascota', 'ganado'] },
-  { icon: 'Gift', keywords: ['regalo'] },
-  { icon: 'ShoppingBag', keywords: ['compra', 'computadora', 'software'] },
-  { icon: 'Wallet', keywords: ['sueldo', 'salario', 'prestacion', 'prestación'] },
-  { icon: 'Briefcase', keywords: ['trabajo', 'freelance', 'proservicio'] },
-  { icon: 'TrendingUp', keywords: ['inversion', 'inversión', 'ahorro', 'financiero', 'banco'] },
-  { icon: 'RotateCcw', keywords: ['reembolso', 'descuento', 'devolucion', 'devolución'] },
-  { icon: 'Plane', keywords: ['viaje', 'vacacion', 'vacación', 'hospedaje'] },
-  { icon: 'Dumbbell', keywords: ['gym', 'deporte', 'alberca'] },
-  { icon: 'Wrench', keywords: ['herramienta', 'tramite', 'trámite'] },
-  { icon: 'Smartphone', keywords: ['telefon'] },
-];
-
-export function guessCategoryIcon(name) {
-  const lower = name.toLowerCase();
-  for (const { icon, keywords } of MONEFY_CATEGORY_ICON_HINTS) {
-    if (keywords.some(k => lower.includes(k))) return icon;
-  }
-  return 'MoreHorizontal';
-}
-
-/* Convención personal de Oscar en Monefy (opcional, no es un feature de
-   Monefy): "Base (N/D)" marca el progreso de un pago a meses (él lleva sus
-   cuentas quincenales, así que un pago cuenta como medio "mes"), y todo lo
-   que sigue -por guiones- son "lugar - tamaño - marca - cantidad". Ambos
-   patrones comparten el mismo separador, así que una sola función cubre los
-   dos casos (con y sin fracción). */
-const OSCAR_FRACTION_RE = /[(\[]\s*([0-9]+(?:\.[0-9]+)?)\s*\/\s*([0-9]+)\s*[)\]]/;
-
-export function parseOscarDescription(raw) {
-  const text = raw || '';
-  const m = text.match(OSCAR_FRACTION_RE);
-  let base, rest, numerator = null, denominator = null;
-  if (m) {
-    base = text.slice(0, m.index).trim();
-    rest = text.slice(m.index + m[0].length).replace(/^[\s-]+/, '').trim();
-    numerator = parseFloat(m[1]);
-    denominator = parseInt(m[2], 10);
-  } else {
-    const parts = text.split(' - ');
-    base = parts[0].trim();
-    rest = parts.slice(1).join(' - ').trim();
-  }
-  const [store, size, brand, quantity] = rest ? rest.split(' - ').map(s => s.trim()).filter(Boolean) : [];
-  return { description: base || text.trim(), store: store || '', size: size || '', brand: brand || '', quantity: quantity || '', numerator, denominator };
-}
-
-export function buildMonefyImportPreview(rows) {
-  const accountsByName = new Map();
-  function ensureAccount(name, appearsDirectly) {
-    let entry = accountsByName.get(name);
-    if (!entry) {
-      entry = { name, suggestedType: guessAccountType(name), isGhost: !appearsDirectly };
-      accountsByName.set(name, entry);
-    } else if (appearsDirectly) {
-      entry.isGhost = false;
-    }
-    return entry;
-  }
-
-  const initialBalances = new Map();
-  const plain = [];
-  const toRows = [];
-  const fromRows = [];
-  let minDate = null;
-  let maxDate = null;
-
-  for (const row of rows) {
-    ensureAccount(row.account, true);
-    if (!minDate || row.date < minDate) minDate = row.date;
-    if (!maxDate || row.date > maxDate) maxDate = row.date;
-    if (row.kind === 'initial') {
-      initialBalances.set(row.account, row.amount);
-    } else if (row.kind === 'to') {
-      ensureAccount(row.otherAccount, false);
-      toRows.push(row);
-    } else if (row.kind === 'from') {
-      ensureAccount(row.otherAccount, false);
-      fromRows.push(row);
-    } else {
-      plain.push({ date: row.date, accountName: row.account, categoryName: row.category, type: row.amount < 0 ? 'expense' : 'income', amount: row.amount, description: row.description, _idx: plain.length, oscarParsed: parseOscarDescription(row.description) });
-    }
-  }
-
-  const msiSeries = new Map();
-  const seriesRows = new Map();
-  for (const p of plain) {
-    if (p.type !== 'expense' || p.oscarParsed.numerator == null) continue;
-    const key = `${p.accountName}||${p.oscarParsed.description.toLowerCase()}||${p.oscarParsed.denominator}`;
-    if (!seriesRows.has(key)) seriesRows.set(key, []);
-    seriesRows.get(key).push(p);
-  }
-  for (const [key, entries] of seriesRows) {
-    entries.sort((a, b) => a.date.localeCompare(b.date) || a._idx - b._idx);
-    const categoryCounts = new Map();
-    for (const e of entries) categoryCounts.set(e.categoryName, (categoryCounts.get(e.categoryName) || 0) + 1);
-    let categoryName = entries[0].categoryName;
-    let bestCount = 0;
-    for (const [c, n] of categoryCounts) { if (n > bestCount) { bestCount = n; categoryName = c; } }
-    let store = '';
-    for (const e of entries) { if (e.oscarParsed.store) { store = e.oscarParsed.store; break; } }
-    const paidSoFar = entries.reduce((s, e) => s + Math.abs(e.amount), 0);
-    const finalNumerator = entries[entries.length - 1].oscarParsed.numerator;
-    const denominator = entries[0].oscarParsed.denominator;
-    const totalAmount = finalNumerator > 0 ? paidSoFar * denominator / finalNumerator : paidSoFar;
-    msiSeries.set(key, { accountName: entries[0].accountName, description: entries[0].oscarParsed.description, store, categoryName, installmentsCount: denominator, totalAmount, startDate: entries[0].date });
-    for (const e of entries) e._msiSeriesKey = key;
-  }
-
-  function pairKey(date, amount, fromName, toName) {
-    return `${date}|${Math.abs(amount)}|${fromName}|${toName}`;
-  }
-
-  const toQueues = new Map();
-  for (const row of toRows) {
-    const key = pairKey(row.date, row.amount, row.account, row.otherAccount);
-    if (!toQueues.has(key)) toQueues.set(key, []);
-    toQueues.get(key).push(row);
-  }
-
-  const transfers = [];
-  const degraded = [];
-  for (const row of fromRows) {
-    const key = pairKey(row.date, row.amount, row.otherAccount, row.account);
-    const queue = toQueues.get(key);
-    if (queue && queue.length) {
-      const toRow = queue.shift();
-      transfers.push({ date: row.date, fromName: row.otherAccount, toName: row.account, amount: Math.abs(row.amount), description: row.description || toRow.description });
-    } else {
-      degraded.push({ date: row.date, accountName: row.account, categoryName: MONEFY_TRANSFER_CATEGORY, type: 'income', amount: Math.abs(row.amount), description: row.description, oscarParsed: parseOscarDescription(row.description) });
-    }
-  }
-  for (const queue of toQueues.values()) {
-    for (const row of queue) {
-      degraded.push({ date: row.date, accountName: row.account, categoryName: MONEFY_TRANSFER_CATEGORY, type: 'expense', amount: Math.abs(row.amount), description: row.description, oscarParsed: parseOscarDescription(row.description) });
-    }
-  }
-
-  return {
-    accounts: Array.from(accountsByName.values()).sort((a, b) => a.name.localeCompare(b.name)),
-    dateRange: { min: minDate, max: maxDate },
-    transactionCount: plain.length + degraded.length + transfers.length,
-    transferCount: transfers.length,
-    initialBalances,
-    skeleton: { plain: [...plain, ...degraded], transfers, msiSeries },
-    oscarConvention: {
-      seriesCount: msiSeries.size,
-      transactionsWithFraction: plain.filter(p => p.oscarParsed.numerator != null).length,
-      transactionsWithDash: plain.filter(p => p.oscarParsed.store || p.oscarParsed.size || p.oscarParsed.brand || p.oscarParsed.quantity).length,
-    },
-  };
-}
-
-export function buildMonefyImportPlan(skeleton, initialBalances, { accountDecisions, existingAccounts, existingCategories, useOscarConvention }) {
-  const accountsToAdd = [];
-  const categoriesToAdd = [];
-  const newAccountIds = new Map();
-  const newCategoryIds = new Map();
-  let colorIndex = existingAccounts.length + existingCategories.length;
-  function nextColor() {
-    return CATEGORY_PALETTE[colorIndex++ % CATEGORY_PALETTE.length];
-  }
-
-  function accountIdFor(name) {
-    const decision = accountDecisions[name];
-    if (!decision || decision.include === false) return null;
-    if (newAccountIds.has(name)) return newAccountIds.get(name);
-    const finalName = (decision.name || name).trim();
-    const existing = existingAccounts.find(a => a.name.trim().toLowerCase() === finalName.toLowerCase());
-    if (existing) {
-      newAccountIds.set(name, existing.id);
-      return existing.id;
-    }
-    const id = uid('acc');
-    accountsToAdd.push({ id, name: finalName, type: decision.type || 'debito', color: nextColor(), initialBalance: initialBalances.get(name) || 0 });
-    newAccountIds.set(name, id);
-    return id;
-  }
-
-  function categoryIdFor(name, type) {
-    const key = `${name.trim().toLowerCase()}|${type}`;
-    if (newCategoryIds.has(key)) return newCategoryIds.get(key);
-    const existing = existingCategories.find(c => c.type === type && c.name.trim().toLowerCase() === name.trim().toLowerCase());
-    if (existing) {
-      newCategoryIds.set(key, existing.id);
-      return existing.id;
-    }
-    const id = uid('cat');
-    categoriesToAdd.push({ id, name: name.trim(), icon: guessCategoryIcon(name), color: nextColor(), type });
-    newCategoryIds.set(key, id);
-    return id;
-  }
-
-  // Crea/resuelve toda cuenta decidida por el usuario aunque no participe en
-  // ninguna transacción (p. ej. una cuenta que solo tuvo un "Initial balance").
-  for (const name of Object.keys(accountDecisions)) {
-    accountIdFor(name);
-  }
-
-  const transactions = [];
-  const installmentPlansToAdd = [];
-  const baseCreatedAt = Date.now();
-  let seq = 0;
-
-  const planBySeriesKey = new Map();
-  if (useOscarConvention && skeleton.msiSeries) {
-    for (const [key, series] of skeleton.msiSeries) {
-      const catId = categoryIdFor(series.categoryName, 'expense');
-      const planId = uid('msi');
-      installmentPlansToAdd.push({
-        id: planId, description: series.description, store: series.store,
-        totalAmount: series.totalAmount, installmentsCount: series.installmentsCount,
-        categoryId: catId, startDate: series.startDate, createdAt: baseCreatedAt + (seq++),
-      });
-      planBySeriesKey.set(key, { id: planId, categoryId: catId });
-    }
-  }
-
-  for (const row of skeleton.plain) {
-    const accountId = accountIdFor(row.accountName);
-    if (!accountId) continue;
-    const plan = useOscarConvention && row._msiSeriesKey ? planBySeriesKey.get(row._msiSeriesKey) : null;
-    const categoryId = plan ? plan.categoryId : categoryIdFor(row.categoryName, row.type);
-    const useOscar = useOscarConvention && row.oscarParsed;
-    const txn = {
-      id: uid('txn'), type: row.type, accountId, categoryId,
-      amount: Math.abs(row.amount), date: row.date,
-      description: useOscar ? row.oscarParsed.description : row.description,
-      store: useOscar ? (row.oscarParsed.store || '') : '',
-      createdAt: baseCreatedAt + (seq++),
-    };
-    if (row.type === 'expense') {
-      txn.installmentPlanId = plan ? plan.id : null;
-      txn.size = useOscar ? (row.oscarParsed.size || null) : null;
-      txn.brand = useOscar ? (row.oscarParsed.brand || null) : null;
-      txn.quantity = useOscar ? (row.oscarParsed.quantity || null) : null;
-    }
-    transactions.push(txn);
-  }
-
-  for (const row of skeleton.transfers) {
-    const fromId = accountIdFor(row.fromName);
-    const toId = accountIdFor(row.toName);
-    if (fromId && toId) {
-      transactions.push({
-        id: uid('txn'), type: 'transfer', fromAccountId: fromId, toAccountId: toId,
-        amount: row.amount, date: row.date, description: row.description,
-        taggedAsExpense: false, categoryId: null, installmentPlanId: null, store: '',
-        createdAt: baseCreatedAt + (seq++),
-      });
-    } else if (fromId && !toId) {
-      const categoryId = categoryIdFor(MONEFY_TRANSFER_CATEGORY, 'expense');
-      transactions.push({ id: uid('txn'), type: 'expense', accountId: fromId, categoryId, amount: row.amount, date: row.date, description: row.description, store: '', createdAt: baseCreatedAt + (seq++) });
-    } else if (!fromId && toId) {
-      const categoryId = categoryIdFor(MONEFY_TRANSFER_CATEGORY, 'income');
-      transactions.push({ id: uid('txn'), type: 'income', accountId: toId, categoryId, amount: row.amount, date: row.date, description: row.description, createdAt: baseCreatedAt + (seq++) });
-    }
-  }
-
-  return { accountsToAdd, categoriesToAdd, installmentPlansToAdd, transactions };
 }
 
 /* ------------------------------------------------------------------ */
@@ -731,179 +365,6 @@ function DesktopSidebar({ active, onChange, onOpenSettings, onAddTransaction, on
         <Settings size={18} /> Ajustes
       </button>
     </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Modals / sheets                                                      */
-/* ------------------------------------------------------------------ */
-
-function MonefyImportModal({ existingAccounts, existingCategories, onClose, onConfirm, desktop }) {
-  const [step, setStep] = useState('upload');
-  const [error, setError] = useState('');
-  const [fileName, setFileName] = useState('');
-  const [preview, setPreview] = useState(null);
-  const [accountDecisions, setAccountDecisions] = useState({});
-  const [useOscarConvention, setUseOscarConvention] = useState(true);
-  const [result, setResult] = useState(null);
-
-  function handleFile(e) {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    setFileName(file.name);
-    setError('');
-    const reader = new FileReader();
-    reader.onload = () => {
-      const rows = parseMonefyRows(String(reader.result || ''));
-      if (!rows) {
-        setError('Este archivo no parece un export CSV de Monefy (revisa el encabezado de columnas).');
-        return;
-      }
-      if (!rows.length) {
-        setError('El archivo no tiene movimientos.');
-        return;
-      }
-      const built = buildMonefyImportPreview(rows);
-      const decisions = {};
-      for (const acc of built.accounts) {
-        decisions[acc.name] = { include: true, type: acc.suggestedType, name: acc.name };
-      }
-      setPreview(built);
-      setAccountDecisions(decisions);
-      setStep('review');
-    };
-    reader.onerror = () => setError('No se pudo leer el archivo.');
-    reader.readAsText(file);
-  }
-
-  function updateDecision(name, patch) {
-    setAccountDecisions(prev => ({ ...prev, [name]: { ...prev[name], ...patch } }));
-  }
-
-  function runImport() {
-    setStep('importing');
-    setTimeout(() => {
-      const plan = buildMonefyImportPlan(preview.skeleton, preview.initialBalances, {
-        accountDecisions, existingAccounts, existingCategories, useOscarConvention,
-      });
-      setResult(plan);
-      setStep('done');
-    }, 0);
-  }
-
-  function finish() {
-    if (result) onConfirm(result);
-    onClose();
-  }
-
-  return (
-    <SheetOverlay onClose={onClose} desktop={desktop}>
-      <div className="px-5 pt-4 pb-1 flex items-center justify-between">
-        <p className="text-lg font-semibold font-display" style={{ color: COLORS.text }}>Importar desde Monefy</p>
-        <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: COLORS.surfaceAlt }}>
-          <X size={15} style={{ color: COLORS.textMuted }} />
-        </button>
-      </div>
-
-      {step === 'upload' && (
-        <div className="px-5 mt-3 pb-6">
-          <p className="text-xs leading-relaxed mb-4" style={{ color: COLORS.textMuted }}>
-            Sube el CSV que exportas desde Monefy (no el backup cifrado). Todo se procesa en tu navegador, nada se sube a ningún servidor.
-          </p>
-          <label className="w-full flex flex-col items-center justify-center gap-2 py-8 rounded-xl border cursor-pointer" style={{ borderColor: COLORS.border, borderStyle: 'dashed', backgroundColor: COLORS.surfaceAlt }}>
-            <Layers size={20} style={{ color: COLORS.textMuted }} />
-            <span className="text-sm font-medium" style={{ color: COLORS.text }}>{fileName || 'Seleccionar archivo .csv'}</span>
-            <input type="file" accept=".csv" className="hidden" onChange={handleFile} />
-          </label>
-          {error && <p className="text-xs mt-3" style={{ color: COLORS.expense }}>{error}</p>}
-        </div>
-      )}
-
-      {step === 'review' && preview && (
-        <div className="px-5 mt-3 pb-6">
-          <div className="rounded-xl p-3 mb-4" style={{ backgroundColor: COLORS.surfaceAlt }}>
-            <p className="text-sm font-medium" style={{ color: COLORS.text }}>{preview.transactionCount} movimientos detectados</p>
-            <p className="text-xs mt-0.5" style={{ color: COLORS.textMuted }}>
-              {formatDateLabel(preview.dateRange.min)} — {formatDateLabel(preview.dateRange.max)} · {preview.transferCount} transferencias
-            </p>
-            {useOscarConvention && preview.oscarConvention.seriesCount > 0 && (
-              <p className="text-xs mt-0.5" style={{ color: COLORS.accent }}>{preview.oscarConvention.seriesCount} planes de MSI detectados por la convención de Oscar</p>
-            )}
-          </div>
-
-          <button onClick={() => setUseOscarConvention(v => !v)} className="w-full flex items-center justify-between p-3 rounded-xl mb-4" style={{ backgroundColor: COLORS.surfaceAlt }}>
-            <div className="flex-1 text-left pr-3">
-              <span className="text-sm font-medium block" style={{ color: COLORS.text }}>Usar la convención de Oscar</span>
-              <span className="text-xs block mt-0.5" style={{ color: COLORS.textFaint }}>Reconoce fracciones "(N/D)" como pagos de MSI y separa "item - lugar - tamaño - marca - cantidad". Es específico de esta forma de anotar en Monefy, no una función genérica.</span>
-            </div>
-            <div className="w-10 h-6 rounded-full relative transition-colors shrink-0" style={{ backgroundColor: useOscarConvention ? COLORS.accent : COLORS.border }}>
-              <div className="w-5 h-5 rounded-full absolute top-0.5 transition-all" style={{ backgroundColor: COLORS.bg, left: useOscarConvention ? 18 : 2 }} />
-            </div>
-          </button>
-
-          <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Cuentas detectadas</p>
-          <p className="text-xs mb-3" style={{ color: COLORS.textFaint }}>Si excluyes una cuenta, no se importa ninguno de sus movimientos; las transferencias donde participaba se convierten en gasto/ingreso en la otra cuenta.</p>
-
-          <div className="space-y-2 mb-2">
-            {preview.accounts.map(acc => {
-              const decision = accountDecisions[acc.name] || { include: true, type: acc.suggestedType, name: acc.name };
-              const existingMatch = existingAccounts.find(a => a.name.trim().toLowerCase() === (decision.name || acc.name).trim().toLowerCase());
-              return (
-                <div key={acc.name} className="rounded-xl p-3" style={{ backgroundColor: COLORS.surfaceAlt, opacity: decision.include ? 1 : 0.5 }}>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => updateDecision(acc.name, { include: !decision.include })} className="w-5 h-5 rounded-md flex items-center justify-center shrink-0" style={{ backgroundColor: decision.include ? COLORS.accent : 'transparent', border: `1px solid ${decision.include ? COLORS.accent : COLORS.borderStrong}` }}>
-                      {decision.include && <Check size={12} style={{ color: COLORS.bg }} />}
-                    </button>
-                    <input value={decision.name} onChange={e => updateDecision(acc.name, { name: e.target.value })} className="flex-1 px-2 py-1 rounded-lg text-sm outline-none" style={{ backgroundColor: COLORS.elevated, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
-                  </div>
-                  {acc.isGhost && (
-                    <p className="text-xs mt-1.5 ml-7" style={{ color: COLORS.textFaint }}>Solo aparece en transferencias antiguas — probablemente renombrada o cerrada.</p>
-                  )}
-                  {existingMatch ? (
-                    <p className="text-xs mt-1.5 ml-7" style={{ color: COLORS.income }}>Ya existe en Hilo, se fusiona.</p>
-                  ) : decision.include && (
-                    <div className="grid grid-cols-3 gap-1.5 mt-2 ml-7">
-                      {ACCOUNT_TYPES.map(t => {
-                        const Icon = t.icon;
-                        const isSel = decision.type === t.id;
-                        return (
-                          <button key={t.id} onClick={() => updateDecision(acc.name, { type: t.id })} className="flex flex-col items-center gap-0.5 py-1.5 rounded-lg border" style={{ borderColor: isSel ? COLORS.accent : COLORS.border, backgroundColor: isSel ? COLORS.accentSoft : 'transparent' }}>
-                            <Icon size={13} style={{ color: isSel ? COLORS.accent : COLORS.textMuted }} />
-                            <span className="text-[10px] text-center leading-tight" style={{ color: COLORS.text }}>{t.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          <button onClick={runImport} className="w-full mt-4 py-3 rounded-xl font-semibold text-sm" style={{ backgroundColor: COLORS.accent, color: COLORS.bg }}>
-            Importar {preview.transactionCount} movimientos
-          </button>
-        </div>
-      )}
-
-      {step === 'importing' && (
-        <div className="px-5 py-10 flex flex-col items-center gap-2">
-          <p className="text-sm" style={{ color: COLORS.textMuted }}>Importando…</p>
-        </div>
-      )}
-
-      {step === 'done' && result && (
-        <div className="px-5 mt-3 pb-6">
-          <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: COLORS.incomeSoft }}>
-            <p className="text-sm font-medium" style={{ color: COLORS.income }}>¡Listo! Se importaron {result.transactions.length} movimientos.</p>
-            <p className="text-xs mt-1" style={{ color: COLORS.textMuted }}>{result.accountsToAdd.length} cuentas nuevas · {result.categoriesToAdd.length} categorías nuevas{result.installmentPlansToAdd.length > 0 ? ` · ${result.installmentPlansToAdd.length} planes de MSI` : ''}</p>
-          </div>
-          <button onClick={finish} className="w-full py-3 rounded-xl font-semibold text-sm" style={{ backgroundColor: COLORS.accent, color: COLORS.bg }}>
-            Listo
-          </button>
-        </div>
-      )}
-    </SheetOverlay>
   );
 }
 
@@ -1271,8 +732,7 @@ function DesktopShell(props) {
     accounts, categories,
     onOpenAddSheet, onOpenSettings,
     settingsOpen, onCloseSettings, onResetTransactions,
-    importModalOpen, onOpenImport, onCloseImportModal, onConfirmImport,
-    onOpenSync, onOpenBackup,
+    onOpenImport, onOpenSync, onOpenBackup,
     receiptModalOpen, onOpenReceipt, onCloseReceiptModal, onConfirmReceipt, ocrSettings, onSaveOcrSettings,
     toast,
   } = props;
@@ -1311,15 +771,7 @@ function DesktopShell(props) {
         <SettingsModal onClose={onCloseSettings} onResetTransactions={onResetTransactions} onOpenImport={onOpenImport} onOpenSync={onOpenSync} onOpenBackup={onOpenBackup} ocrSettings={ocrSettings} onSaveOcrSettings={onSaveOcrSettings} desktop />
       )}
 
-      {importModalOpen && (
-        <MonefyImportModal
-          existingAccounts={accounts}
-          existingCategories={categories}
-          onClose={onCloseImportModal}
-          onConfirm={onConfirmImport}
-          desktop
-        />
-      )}
+      <MonefyImportContainer desktop />
 
       {receiptModalOpen && (
         <ReceiptScanModal
@@ -1363,7 +815,7 @@ function AppBody() {
      Los selectores granulares llegan con los containers de cada feature. */
   const {
     loaded, accounts, categories,
-    setAccounts, setCategories, setTransactions, setInstallmentPlans,
+    setCategories, setTransactions,
 
     /* Navegación entre pestañas. Los filtros del historial y el cursor de mes
        siguen en el store, pero ya solo los lee el container de su feature. */
@@ -1374,11 +826,11 @@ function AppBody() {
     openAddSheet, resetTransactions,
 
     settingsOpen,
-    importModalOpen, receiptModalOpen,
+    receiptModalOpen,
     setSettingsOpen,
     setImportModalOpen, setSyncModalOpen, setBackupModalOpen, setReceiptModalOpen,
 
-    ocrSettings, setOcrSettings, syncState, setSyncState, toast, setToast,
+    ocrSettings, setOcrSettings, toast, setToast,
   } = useHiloStore();
 
   /* La hidratación y el guardado automático los lleva el Provider
@@ -1463,16 +915,6 @@ function AppBody() {
     setToast(`${built.length} ${built.length === 1 ? 'movimiento agregado' : 'movimientos agregados'} desde el ticket`);
   }
 
-  function handleImportMonefy(plan) {
-    const now = Date.now();
-    const stamp = (r) => ({ ...r, updatedAt: now });
-    if (plan.accountsToAdd.length) setAccounts(prev => [...prev, ...plan.accountsToAdd.map(stamp)]);
-    if (plan.categoriesToAdd.length) setCategories(prev => [...prev, ...plan.categoriesToAdd.map(stamp)]);
-    if (plan.installmentPlansToAdd && plan.installmentPlansToAdd.length) setInstallmentPlans(prev => [...prev, ...plan.installmentPlansToAdd.map(stamp)]);
-    setTransactions(prev => [...prev, ...plan.transactions.map(stamp)]);
-    setToast(`Se importaron ${plan.transactions.length} movimientos de Monefy`);
-  }
-
   if (!loaded) {
     return (
       <div className="w-full h-screen flex items-center justify-center" style={{ backgroundColor: COLORS.bg }}>
@@ -1493,10 +935,7 @@ function AppBody() {
         settingsOpen={settingsOpen}
         onCloseSettings={() => setSettingsOpen(false)}
         onResetTransactions={resetTransactions}
-        importModalOpen={importModalOpen}
         onOpenImport={openImportModal}
-        onCloseImportModal={() => setImportModalOpen(false)}
-        onConfirmImport={handleImportMonefy}
         onOpenSync={openSyncModal}
         onOpenBackup={openBackupModal}
         receiptModalOpen={receiptModalOpen}
@@ -1566,14 +1005,7 @@ function AppBody() {
           <SettingsModal onClose={() => setSettingsOpen(false)} onResetTransactions={resetTransactions} onOpenImport={openImportModal} onOpenSync={openSyncModal} onOpenBackup={openBackupModal} ocrSettings={ocrSettings} onSaveOcrSettings={handleSaveOcrSettings} />
         )}
 
-        {importModalOpen && (
-          <MonefyImportModal
-            existingAccounts={accounts}
-            existingCategories={categories}
-            onClose={() => setImportModalOpen(false)}
-            onConfirm={handleImportMonefy}
-          />
-        )}
+        <MonefyImportContainer />
 
         {receiptModalOpen && (
           <ReceiptScanModal

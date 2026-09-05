@@ -124,19 +124,18 @@ export {
   downscaleImage,
 } from './src/legacy/hilo-legacy.jsx';
 
-/* → src/features/monefy-import/ */
+/* ── migrado (paso 10): feature `monefy-import` ── */
 export {
   parseCsv,
   parseMonefyDate,
   parseMonefyAmount,
   classifyMonefyCategory,
   parseMonefyRows,
-  guessAccountType,
-  guessCategoryIcon,
-  parseOscarDescription,
-  buildMonefyImportPreview,
-  buildMonefyImportPlan,
-} from './src/legacy/hilo-legacy.jsx';
+} from './src/features/monefy-import/domain/csv';
+export { guessAccountType, guessCategoryIcon } from './src/features/monefy-import/domain/guess';
+export { parseOscarDescription } from './src/features/monefy-import/domain/oscar';
+export { buildMonefyImportPreview } from './src/features/monefy-import/domain/preview';
+export { buildMonefyImportPlan } from './src/features/monefy-import/domain/plan';
 
 /* → src/features/receipt-ocr/ */
 export {

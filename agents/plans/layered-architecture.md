@@ -200,7 +200,7 @@ Cada paso es un commit que deja **`npm test` en verde sin haber editado nada baj
 | 7 | Feature `history` (filtros + buscador) | **hecho** |
 | 8 | Feature `sync` (la más pesada: QR, cámara, delta), en dos commits: lógica y UI | **hecho** |
 | 9 | Feature `backup` | **hecho** |
-| 10 | Feature `monefy-import` | pendiente |
+| 10 | Feature `monefy-import` | **hecho** |
 | 11 | Feature `receipt-ocr` | pendiente |
 | 12 | Feature `settings`; borrar `src/legacy/`; `DesktopShell` sin prop drilling; CLAUDE.md final | pendiente |
 
@@ -503,6 +503,60 @@ el texto comprimido vuelva al mismo payload, y las dos ramas de error de leer) y
 8 de UI por el container, incluido el que separa esta feature de `sync` — leer
 no aplica nada, y cancelar deja los datos como estaban. Total: **367 tests**,
 con los 190 de regresión intactos. El legacy baja a 1598 líneas.
+
+### Detalle del paso 10 (hecho)
+
+El bloque de dominio más grande que quedaba en el legacy: **370 líneas** de
+parser, heurísticas y armado del plan, más las 170 de la hoja de revisión.
+
+| Módulo | Contenido |
+|---|---|
+| `monefy-import/domain/csv.ts` | `parseCsv`, `parseMonefyDate`, `parseMonefyAmount`, `classifyMonefyCategory`, `parseMonefyRows` |
+| `monefy-import/domain/guess.ts` | `guessAccountType`, `guessCategoryIcon` |
+| `monefy-import/domain/oscar.ts` | `parseOscarDescription` |
+| `monefy-import/domain/preview.ts` | `buildMonefyImportPreview` |
+| `monefy-import/domain/plan.ts` | `buildMonefyImportPlan` |
+| `monefy-import/application/read-monefy-file.ts` | `readMonefyFile`, `ReaderTaskEither` |
+| `monefy-import/application/import-monefy.ts` | `planMonefyImport` e `importMonefy`, los dos `ReaderIO` |
+| `monefy-import/store/monefy-slice.ts` | Las tres acciones |
+| `monefy-import/ui/` | `MonefyImportModal` (cuatro pantallas, props → JSX) y su container |
+
+Decisiones:
+
+- **Leer, planear y aplicar son tres acciones.** Es el mismo reparto de `backup`
+  llevado un paso más lejos: entre leer y aplicar el usuario no solo confirma,
+  también decide (qué cuentas entran, cómo se llaman, si se usa la convención de
+  Oscar). Planear devuelve el plan sin aplicarlo, que es lo que deja enseñar
+  "N movimientos, M cuentas nuevas" antes de tocar el store — y lo que hace que
+  el test pueda comprobar que hasta el último botón no entró nada.
+- **`buildMonefyImportPlan` gana `now` y `newId` opcionales**, como
+  `buildExportPayload` ganó `now` en el paso 8a. Llamaba a `Date.now()` y a
+  `uid()` por dentro, así que su salida no se podía comparar entera; el default
+  preserva la firma de tres argumentos que usa `test/unit/monefy.test.js`.
+- **`oscar.ts` va aparte de `guess.ts`.** Las dos "adivinan", pero la convención
+  de Oscar es lo único del import que no es sobre Monefy —es cómo una persona
+  concreta anota sus compras— y la UI deja apagarla con un switch. Separarlas
+  deja claro qué se puede quitar sin tocar el parser.
+- **`parseMonefyDate` conserva su `!`.** Una fecha sin barras reventaba en el
+  legacy; TypeScript ofrecía "arreglarlo" devolviendo una fecha inventada, que
+  es peor. Un refactor no es el sitio para decidir eso.
+- **La paleta se queda importada dentro de `plan.ts`.** Es la misma fuga que
+  `computeCategoryTotals` (§9), pero aquí inyectarla sería peor: ningún llamador
+  pasaría otra cosa, así que el parámetro nacería muerto. Queda anotada en el
+  código.
+- **`IncomeTransaction` gana `store?: string | null`.** No es una decisión de
+  diseño, es que el import **siempre** escribió `store` en los ingresos y hay
+  perfiles con ese campo guardado; el tipo tiene que decir la verdad sobre el
+  dato, igual que `SyncPeer.lastSentAt` en el paso 8a. `computeKnownStores` ya lo
+  leía con `'store' in t`.
+- **El `setTimeout(…, 0)` de "Importando…" se queda en el container.** Es una
+  decisión de UI —dejar pintar el paso antes de armar el plan, que con un CSV de
+  años tarda— y ahí es donde React sabe expresarla.
+
+15 tests nuevos: 9 de casos de uso (las tres salidas de leer, y que planear no
+aplique) y 6 de UI por el container, incluidos los dos lados del switch de la
+convención de Oscar. Total: **382 tests**, con los 190 de regresión intactos. El
+legacy baja a 1030 líneas y `DesktopShell` a 19 props.
 
 ### Tests nuevos por feature
 
