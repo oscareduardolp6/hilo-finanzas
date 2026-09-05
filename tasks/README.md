@@ -15,14 +15,23 @@ Ideas y funcionalidades que queremos agregar a Hilo, una por archivo. No es un b
 | [Sincronización incremental (delta) entre dispositivos](sync-incremental.md) | 5 | Implementada |
 | [Campos de producto en transferencias marcadas como gasto](campos-producto-en-transferencia-gasto.md) | 5 | Implementada |
 | [Modo de presupuesto](budget-mode.md) | 5 | Pendiente |
+| [Versionado de la app y changelog público](versionado-y-changelog.md) | 5 | Pendiente |
+| [Métricas / analíticas de uso de la web](analiticas-web.md) | 6 | Pendiente |
 | [Importar backups de Monefy](monefy-import.md) | 6 | Implementada |
 | [Convención de Oscar en la importación de Monefy](monefy-import-oscar-convention.md) | 6 | Implementada |
+| [Validar quién pagaría por la app](validar-disposicion-a-pagar.md) | 7 | Pendiente |
 | [Reconocimiento de tickets de súper](receipt-ocr.md) | 7 | Implementada |
 | [Agregar testing](testing.md) | 8 | Implementada |
 | [Buscador de cuentas](buscador-de-cuentas.md) | 9 | Implementada |
+| [Input de voz tipo "Ramble" para registrar gastos](captura-por-voz.md) | 10 | Pendiente |
+| [Aplicación móvil nativa](app-movil-nativa.md) | 11 | Pendiente |
+| [Acceso rápido en la cortina de accesos rápidos de Android](acceso-rapido-android.md) | 12 | Pendiente |
+| [Soporte multiidioma (agregar inglés)](multiidioma.md) | 13 | Pendiente |
+| [Flujo para consolidar gastos pendientes de transferencia](consolidar-gastos-pendientes.md) | 14 | Pendiente |
 | [Caso especial para gastos de gasolina](gasolina-tracking.md) | 15 | Pendiente |
 | [Ocultar / mostrar saldos](ocultar-saldos.md) | 16 | Pendiente |
 | [Refactorizar hacia una arquitectura en capas](layered-architecture.md) | 20 | Implementada |
+| [Chat de Telegram para registrar gastos](telegram-bot.md) | 25 | Pendiente |
 
 ## Formato
 
