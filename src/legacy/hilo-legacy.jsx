@@ -2,8 +2,8 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Plus, X, ArrowRightLeft, Landmark,
   TrendingUp, MoreHorizontal,
-  ChevronLeft, ChevronRight, Settings, Receipt, LayoutGrid, Link2, Trash2,
-  Check, Layers, Search, Smartphone,
+  Settings, Receipt, LayoutGrid, Link2, Trash2,
+  Check, Layers, Smartphone,
   QrCode, Camera, Download, Upload, Copy, Share2, RefreshCw, DatabaseBackup, ScanLine,
 } from 'lucide-react';
 import QRCode from 'qrcode';
@@ -15,10 +15,9 @@ import jsQR from 'jsqr';
 import { COLORS, CATEGORY_PALETTE, ACCOUNT_SEARCH_THRESHOLD, DESKTOP_BREAKPOINT } from '../shared/design/tokens';
 import { ICONS, ICON_CHOICES, IconFor, ACCOUNT_TYPES } from '../shared/design/icons';
 import { uid } from '../shared/domain/ids';
-import { todayIso, addMonths, monthKey, monthLabel, formatDateLabel } from '../shared/domain/dates';
+import { todayIso, formatDateLabel } from '../shared/domain/dates';
 import { formatMoney } from '../shared/domain/money';
-import { normalizeForSearch, accountNameMatches } from '../shared/domain/search';
-import { groupByDate } from '../shared/domain/grouping';
+import { accountNameMatches } from '../shared/domain/search';
 import { highlightMatch } from '../shared/ui/highlight';
 import { SheetOverlay } from '../shared/ui/sheet-overlay';
 import { saveOcrSettings } from '../shared/infrastructure/indexed-db';
@@ -27,29 +26,26 @@ import { saveOcrSettings } from '../shared/infrastructure/indexed-db';
 import { AccountsContainer } from '../features/accounts/ui/containers/AccountsContainer';
 import { AccountFormContainer } from '../features/accounts/ui/containers/AccountFormContainer';
 
-/* Feature `transactions`, paso 4. El legacy ya solo consume las tiendas
-   conocidas (las piden los formularios que quedan); el alta, la edición y el
-   borrado son acciones del store, y la hoja se monta por container. */
-import { initialFormState } from '../features/transactions/domain/form';
-import { computeKnownStores } from '../features/transactions/domain/queries';
+/* Feature `transactions`, paso 4. El alta, la edición y el borrado son acciones
+   del store, y la hoja se monta por container. */
 import { AddTransactionContainer } from '../features/transactions/ui/containers/AddTransactionContainer';
 
 /* Feature `installments`, paso 5. */
 import { MsiContainer } from '../features/installments/ui/containers/MsiContainer';
 import { MsiPlanFormContainer } from '../features/installments/ui/containers/MsiPlanFormContainer';
 
-/* Feature `dashboard`, paso 6: Inicio, la dona y los totales del mes. Con ella
-   se fueron del legacy los saldos, el periodo y el avance de los planes — los
-   siete `useMemo` que le quedaban a `App` viven ahora en su container. */
+/* Feature `dashboard`, paso 6: Inicio, la dona y los totales del mes. */
 import { HomeContainer } from '../features/dashboard/ui/containers/HomeContainer';
+
+/* Feature `history`, paso 7: filtros y buscador. Con ella se van los dos
+   últimos `useMemo` de `AppBody`, que ya no deriva absolutamente nada. */
+import { HistoryContainer } from '../features/history/ui/containers/HistoryContainer';
 
 /* Componentes presentacionales compartidos por varias features: por la regla de
    dependencias no pueden vivir en ninguna de ellas. */
-import { EmptyState } from '../shared/ui/empty-state';
 import { CategoryPicker } from '../shared/ui/category-picker';
 import { StoreInput } from '../shared/ui/store-input';
 import { AccountChips } from '../shared/ui/account-chips';
-import { TransactionRow } from '../shared/ui/transaction-row';
 
 /* El estado dejó de vivir en `App`: ahora está en el store de zustand, que se
    crea por montaje. Ver src/app/store/ y agents/plans/layered-architecture.md. */
@@ -84,55 +80,6 @@ function useIsDesktop() {
     return () => mq.removeEventListener('change', handler);
   }, []);
   return isDesktop;
-}
-
-/* ------------------------------------------------------------------ */
-/* Cálculos derivados (dominio puro, sin React)                        */
-/* ------------------------------------------------------------------ */
-/* Ya solo quedan los del historial; se van con su feature en el paso 7.
-   Los totales del mes se fueron con `dashboard` en el paso 6. */
-
-export function computeHistorySuggestions(transactions, installmentPlans) {
-  const set = new Set();
-  transactions.forEach(t => {
-    if (t.store) set.add(t.store);
-    if (t.description) set.add(t.description);
-  });
-  installmentPlans.forEach(p => {
-    if (p.description) set.add(p.description);
-    if (p.store) set.add(p.store);
-  });
-  return Array.from(set).sort((a, b) => a.localeCompare(b));
-}
-
-/* Filtro del Historial: mes/todo-el-tiempo, tipo (incluye 'msi'), categoría,
-   tienda y búsqueda de texto (insensible a acentos/mayúsculas contra
-   descripción, tienda y el plan MSI vinculado). Los filtros se componen.
-   Compartido por HistoryView y HistoryViewDesktop. */
-export function filterHistoryTransactions({ transactions, installmentPlans, showAllTime, searching, q, monthCursor, filterType, filterCategory, filterStore }) {
-  let list = transactions;
-  if (!showAllTime && !searching) {
-    const key = monthKey(monthCursor);
-    list = list.filter(t => t.date && t.date.startsWith(key));
-  }
-  if (filterType === 'msi') list = list.filter(t => !!t.installmentPlanId);
-  else if (filterType !== 'all') list = list.filter(t => t.type === filterType);
-  if (filterCategory !== 'all') {
-    list = list.filter(t =>
-      (t.type === 'expense' && t.categoryId === filterCategory) ||
-      (t.type === 'income' && t.categoryId === filterCategory) ||
-      (t.type === 'transfer' && t.taggedAsExpense && t.categoryId === filterCategory)
-    );
-  }
-  if (filterStore !== 'all') list = list.filter(t => t.store === filterStore);
-  if (searching) {
-    list = list.filter(t => {
-      const plan = t.installmentPlanId ? installmentPlans.find(p => p.id === t.installmentPlanId) : null;
-      const hay = [t.description, t.store, plan && plan.description, plan && plan.store].map(normalizeForSearch).join(' ');
-      return hay.includes(q);
-    });
-  }
-  return list;
 }
 
 /* ------------------------------------------------------------------ */
@@ -970,108 +917,12 @@ function BottomNav({ active, onChange }) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Views                                                                */
+/* Desktop shell                                                       */
 /* ------------------------------------------------------------------ */
-
-function HistoryView({ transactions, accounts, categories, installmentPlans, knownStores, historySuggestions, monthCursor, onPrevMonth, onNextMonth, showAllTime, setShowAllTime, filterType, setFilterType, filterCategory, setFilterCategory, filterStore, setFilterStore, searchQuery, setSearchQuery, onOpenTxn }) {
-  const q = normalizeForSearch((searchQuery || '').trim());
-  const searching = q.length > 0;
-  const filtered = useMemo(
-    () => filterHistoryTransactions({ transactions, installmentPlans, showAllTime, searching, q, monthCursor, filterType, filterCategory, filterStore }),
-    [transactions, installmentPlans, showAllTime, searching, q, monthCursor, filterType, filterCategory, filterStore]
-  );
-
-  const groups = groupByDate(filtered);
-  const expenseCats = categories.filter(c => c.type === 'expense');
-  const typeFilters = [
-    { id: 'all', label: 'Todos' },
-    { id: 'expense', label: 'Gastos' },
-    { id: 'income', label: 'Ingresos' },
-    { id: 'transfer', label: 'Transferencias' },
-    { id: 'msi', label: 'MSI' },
-  ];
-
-  return (
-    <div className="pt-2">
-      <div className="flex items-center gap-2">
-        <button onClick={onPrevMonth} disabled={showAllTime || searching} aria-label="Mes anterior" className="w-7 h-7 rounded-full flex items-center justify-center disabled:opacity-30" style={{ backgroundColor: COLORS.surfaceAlt }}>
-          <ChevronLeft size={14} style={{ color: COLORS.textMuted }} />
-        </button>
-        <p className="text-sm font-medium flex-1 text-center" style={{ color: COLORS.text }}>{showAllTime || searching ? 'Todo el tiempo' : monthLabel(monthCursor)}</p>
-        <button onClick={onNextMonth} disabled={showAllTime || searching} aria-label="Mes siguiente" className="w-7 h-7 rounded-full flex items-center justify-center disabled:opacity-30" style={{ backgroundColor: COLORS.surfaceAlt }}>
-          <ChevronRight size={14} style={{ color: COLORS.textMuted }} />
-        </button>
-      </div>
-      {searching ? (
-        <p className="text-xs font-medium mt-2" style={{ color: COLORS.textFaint }}>Buscando en todo el tiempo</p>
-      ) : (
-        <button onClick={() => setShowAllTime(s => !s)} className="text-xs font-medium mt-2" style={{ color: COLORS.accent }}>
-          {showAllTime ? 'Ver por mes' : 'Ver todo el tiempo'}
-        </button>
-      )}
-
-      <div className="relative mt-3">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: COLORS.textMuted }} />
-        <input
-          type="search"
-          list="history-search-list"
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-          placeholder="Buscar en el historial…"
-          className="w-full pl-9 pr-9 py-2 rounded-xl text-sm outline-none"
-          style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }}
-        />
-        {searchQuery && (
-          <button onClick={() => setSearchQuery('')} aria-label="Limpiar búsqueda" className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full flex items-center justify-center" style={{ color: COLORS.textMuted }}>
-            <X size={14} />
-          </button>
-        )}
-        <datalist id="history-search-list">
-          {historySuggestions.map(s => <option key={s} value={s} />)}
-        </datalist>
-      </div>
-
-      <div className="flex gap-2 mt-3 overflow-x-auto hilo-scroll pb-1">
-        {typeFilters.map(f => (
-          <button key={f.id} onClick={() => setFilterType(f.id)} className="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium" style={{ backgroundColor: filterType === f.id ? COLORS.accent : COLORS.surfaceAlt, color: filterType === f.id ? COLORS.bg : COLORS.textMuted }}>
-            {f.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-2 gap-2 mt-3">
-        <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="w-full px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }}>
-          <option value="all">Todas las categorías</option>
-          {expenseCats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        <select value={filterStore} onChange={e => setFilterStore(e.target.value)} className="w-full px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }}>
-          <option value="all">Todas las tiendas</option>
-          {knownStores.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-      </div>
-
-      <div className="mt-4">
-        {groups.length === 0 ? (
-          <EmptyState text={searching ? 'No hay movimientos que coincidan.' : 'No hay movimientos con estos filtros.'} />
-        ) : groups.map(([label, list]) => (
-          <div key={label} className="mt-4 first:mt-0">
-            <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: COLORS.textFaint }}>{label}</p>
-            {list.map(t => <TransactionRow key={t.id} txn={t} accounts={accounts} categories={categories} plans={installmentPlans} query={searching ? searchQuery.trim() : undefined} onClick={() => onOpenTxn(t)} />)}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Desktop views                                                       */
-/* ------------------------------------------------------------------ */
-/* Árbol de componentes paralelo al de arriba, usado solo cuando useIsDesktop()
-   es true (ver DesktopShell). Aprovecha el ancho con grids multi-columna en
-   vez de reflowear las vistas móviles; mismas firmas de props que sus
-   contrapartes móviles para poder recibir los mismos datos derivados de App
-   sin transformarlos. */
+/* Las cuatro pestañas ya son features: cada una monta su container y este
+   elige la vista móvil o la de escritorio según el prop `desktop`. Lo que
+   queda aquí del árbol de escritorio es el chrome — la barra lateral y el
+   contenedor ancho —, más los modales sin migrar. */
 
 function DesktopSidebar({ active, onChange, onOpenSettings, onAddTransaction, onScanReceipt }) {
   return (
@@ -1101,96 +952,6 @@ function DesktopSidebar({ active, onChange, onOpenSettings, onAddTransaction, on
       <button onClick={onOpenSettings} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium" style={{ color: COLORS.textMuted }}>
         <Settings size={18} /> Ajustes
       </button>
-    </div>
-  );
-}
-
-function HistoryViewDesktop({ transactions, accounts, categories, installmentPlans, knownStores, historySuggestions, monthCursor, onPrevMonth, onNextMonth, showAllTime, setShowAllTime, filterType, setFilterType, filterCategory, setFilterCategory, filterStore, setFilterStore, searchQuery, setSearchQuery, onOpenTxn }) {
-  const q = normalizeForSearch((searchQuery || '').trim());
-  const searching = q.length > 0;
-  const filtered = useMemo(
-    () => filterHistoryTransactions({ transactions, installmentPlans, showAllTime, searching, q, monthCursor, filterType, filterCategory, filterStore }),
-    [transactions, installmentPlans, showAllTime, searching, q, monthCursor, filterType, filterCategory, filterStore]
-  );
-
-  const groups = groupByDate(filtered);
-  const expenseCats = categories.filter(c => c.type === 'expense');
-  const typeFilters = [
-    { id: 'all', label: 'Todos' },
-    { id: 'expense', label: 'Gastos' },
-    { id: 'income', label: 'Ingresos' },
-    { id: 'transfer', label: 'Transferencias' },
-    { id: 'msi', label: 'MSI' },
-  ];
-
-  return (
-    <div className="rounded-2xl p-6" style={{ backgroundColor: COLORS.surface }}>
-      <div className="flex items-center gap-4 flex-wrap">
-        <div className="flex items-center gap-2">
-          <button onClick={onPrevMonth} disabled={showAllTime || searching} className="w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-30" style={{ backgroundColor: COLORS.surfaceAlt }}>
-            <ChevronLeft size={15} style={{ color: COLORS.textMuted }} />
-          </button>
-          <p className="text-sm font-medium w-32 text-center" style={{ color: COLORS.text }}>{showAllTime || searching ? 'Todo el tiempo' : monthLabel(monthCursor)}</p>
-          <button onClick={onNextMonth} disabled={showAllTime || searching} className="w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-30" style={{ backgroundColor: COLORS.surfaceAlt }}>
-            <ChevronRight size={15} style={{ color: COLORS.textMuted }} />
-          </button>
-        </div>
-        {searching ? (
-          <span className="text-xs font-medium" style={{ color: COLORS.textFaint }}>Buscando en todo el tiempo</span>
-        ) : (
-          <button onClick={() => setShowAllTime(s => !s)} className="text-xs font-medium" style={{ color: COLORS.accent }}>
-            {showAllTime ? 'Ver por mes' : 'Ver todo el tiempo'}
-          </button>
-        )}
-        <div className="flex-1" />
-        <div className="relative">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: COLORS.textMuted }} />
-          <input
-            type="search"
-            list="history-search-list-desktop"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Buscar en el historial…"
-            className="pl-9 pr-9 py-2 rounded-xl text-sm outline-none w-64"
-            style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }}
-          />
-          {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full flex items-center justify-center" style={{ color: COLORS.textMuted }}>
-              <X size={14} />
-            </button>
-          )}
-          <datalist id="history-search-list-desktop">
-            {historySuggestions.map(s => <option key={s} value={s} />)}
-          </datalist>
-        </div>
-        <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }}>
-          <option value="all">Todas las categorías</option>
-          {expenseCats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        <select value={filterStore} onChange={e => setFilterStore(e.target.value)} className="px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }}>
-          <option value="all">Todas las tiendas</option>
-          {knownStores.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-      </div>
-
-      <div className="flex gap-2 mt-4">
-        {typeFilters.map(f => (
-          <button key={f.id} onClick={() => setFilterType(f.id)} className="px-3 py-1.5 rounded-full text-xs font-medium" style={{ backgroundColor: filterType === f.id ? COLORS.accent : COLORS.surfaceAlt, color: filterType === f.id ? COLORS.bg : COLORS.textMuted }}>
-            {f.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="mt-5">
-        {groups.length === 0 ? (
-          <EmptyState text={searching ? 'No hay movimientos que coincidan.' : 'No hay movimientos con estos filtros.'} />
-        ) : groups.map(([label, list]) => (
-          <div key={label} className="mt-4 first:mt-0">
-            <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: COLORS.textFaint }}>{label}</p>
-            {list.map(t => <TransactionRow key={t.id} txn={t} accounts={accounts} categories={categories} plans={installmentPlans} query={searching ? searchQuery.trim() : undefined} onClick={() => onOpenTxn(t)} />)}
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
@@ -2207,11 +1968,7 @@ function SettingsModal({ onClose, onResetTransactions, onOpenImport, onOpenSync,
 function DesktopShell(props) {
   const {
     activeTab, setActiveTab,
-    monthCursor, onPrevMonth, onNextMonth,
-    accounts, categories, installmentPlans, onOpenTxn,
-    transactions, knownStores, historySuggestions,
-    showAllTime, setShowAllTime, filterType, setFilterType, filterCategory, setFilterCategory, filterStore, setFilterStore,
-    searchQuery, setSearchQuery,
+    accounts, categories, installmentPlans, transactions,
     onOpenAddSheet, onOpenSettings,
     onCreateCategory,
     settingsOpen, onCloseSettings, onResetTransactions,
@@ -2237,28 +1994,7 @@ function DesktopShell(props) {
             <HomeContainer desktop />
           )}
           {activeTab === 'history' && (
-            <HistoryViewDesktop
-              transactions={transactions}
-              accounts={accounts}
-              categories={categories}
-              installmentPlans={installmentPlans}
-              knownStores={knownStores}
-              historySuggestions={historySuggestions}
-              monthCursor={monthCursor}
-              onPrevMonth={onPrevMonth}
-              onNextMonth={onNextMonth}
-              showAllTime={showAllTime}
-              setShowAllTime={setShowAllTime}
-              filterType={filterType}
-              setFilterType={setFilterType}
-              filterCategory={filterCategory}
-              setFilterCategory={setFilterCategory}
-              filterStore={filterStore}
-              setFilterStore={setFilterStore}
-              searchQuery={searchQuery}
-              setSearchQuery={setSearchQuery}
-              onOpenTxn={onOpenTxn}
-            />
+            <HistoryContainer desktop />
           )}
           {activeTab === 'msi' && <MsiContainer desktop />}
           {activeTab === 'accounts' && <AccountsContainer desktop />}
@@ -2344,13 +2080,13 @@ function AppBody() {
     loaded, accounts, categories, transactions, installmentPlans, tombstones,
     setAccounts, setCategories, setTransactions, setInstallmentPlans, setTombstones,
 
-    activeTab, monthCursor, showAllTime, filterType, filterCategory, filterStore, searchQuery,
-    setActiveTab, setMonthCursor, setShowAllTime, setFilterType, setFilterCategory,
-    setFilterStore, setSearchQuery,
+    /* Navegación entre pestañas. Los filtros del historial y el cursor de mes
+       siguen en el store, pero ya solo los lee el container de su feature. */
+    activeTab, setActiveTab,
 
-    /* Acciones de los slices de las features ya migradas. La hoja de movimiento
-       se monta por container, así que sus campos ya no se leen aquí. */
-    openAddSheet, openEditSheet, resetTransactions, createCategory,
+    /* Acciones de los slices de las features ya migradas. Las hojas y vistas se
+       montan por container, así que sus campos ya no se leen aquí. */
+    openAddSheet, resetTransactions, createCategory,
 
     settingsOpen,
     importModalOpen, syncModalOpen, backupModalOpen, receiptModalOpen,
@@ -2365,24 +2101,10 @@ function AppBody() {
      puro asunto de UI. */
   useToastAutoDismiss();
 
-  const knownStores = useMemo(
-    () => computeKnownStores(transactions, installmentPlans),
-    [transactions, installmentPlans]
-  );
-
-  const historySuggestions = useMemo(
-    () => computeHistorySuggestions(transactions, installmentPlans),
-    [transactions, installmentPlans]
-  );
-
   const isDesktop = useIsDesktop();
 
-  function prevMonth() { setMonthCursor(d => addMonths(d, -1)); }
-  function nextMonth() { setMonthCursor(d => addMonths(d, 1)); }
-
-  /* Los movimientos y las cuentas ya no se manejan aquí: sus altas, ediciones y
-     borrados son casos de uso en `features/<f>/application/`, que corren sus
-     slices. Lo que queda abajo es lo que todavía no se migra. */
+  /* Ya no queda un solo dato derivado aquí: los diez `useMemo` originales se
+     fueron con sus features. Lo de abajo es lo que todavía no se migra. */
 
   function openImportModal() {
     setSettingsOpen(false);
@@ -2549,26 +2271,10 @@ function AppBody() {
       <DesktopShell
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        monthCursor={monthCursor}
-        onPrevMonth={prevMonth}
-        onNextMonth={nextMonth}
         accounts={accounts}
         categories={categories}
         installmentPlans={installmentPlans}
-        onOpenTxn={openEditSheet}
         transactions={transactions}
-        knownStores={knownStores}
-        historySuggestions={historySuggestions}
-        showAllTime={showAllTime}
-        setShowAllTime={setShowAllTime}
-        filterType={filterType}
-        setFilterType={setFilterType}
-        filterCategory={filterCategory}
-        setFilterCategory={setFilterCategory}
-        filterStore={filterStore}
-        setFilterStore={setFilterStore}
-        searchQuery={searchQuery}
-        setSearchQuery={setSearchQuery}
         onOpenAddSheet={openAddSheet}
         onOpenSettings={() => setSettingsOpen(true)}
         onCreateCategory={createCategory}
@@ -2623,28 +2329,7 @@ function AppBody() {
             <HomeContainer />
           )}
           {activeTab === 'history' && (
-            <HistoryView
-              transactions={transactions}
-              accounts={accounts}
-              categories={categories}
-              installmentPlans={installmentPlans}
-              knownStores={knownStores}
-              historySuggestions={historySuggestions}
-              monthCursor={monthCursor}
-              onPrevMonth={prevMonth}
-              onNextMonth={nextMonth}
-              showAllTime={showAllTime}
-              setShowAllTime={setShowAllTime}
-              filterType={filterType}
-              setFilterType={setFilterType}
-              filterCategory={filterCategory}
-              setFilterCategory={setFilterCategory}
-              filterStore={filterStore}
-              setFilterStore={setFilterStore}
-              searchQuery={searchQuery}
-              setSearchQuery={setSearchQuery}
-              onOpenTxn={openEditSheet}
-            />
+            <HistoryContainer />
           )}
           {activeTab === 'msi' && <MsiContainer />}
           {activeTab === 'accounts' && <AccountsContainer />}

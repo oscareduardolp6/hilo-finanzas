@@ -68,22 +68,21 @@ export {
   buildDefaultInstallmentPlans,
 } from './src/shared/domain/defaults';
 
-/* → src/features/dashboard/ */
+/* ── migrado (paso 6): feature `dashboard` ── */
 export {
   computeTotalIncome,
   computeTotalExpense,
   computeCategoryTotals,
 } from './src/features/dashboard/domain/totals';
 
-/* → src/features/installments/ (el avance ya migró en el paso 4: lo necesitaba
-   el formulario de movimiento; el resto de la feature llega en el paso 5). */
+/* ── migrado (pasos 4 y 5): feature `installments` ── */
 export { computePlanProgress } from './src/features/installments/domain/progress';
 
-/* → src/features/history/ */
+/* ── migrado (paso 7): feature `history` ── */
 export {
   computeHistorySuggestions,
   filterHistoryTransactions,
-} from './src/legacy/hilo-legacy.jsx';
+} from './src/features/history/domain/filters';
 
 /* → src/features/sync/ */
 export {

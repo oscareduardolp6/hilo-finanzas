@@ -197,7 +197,7 @@ Cada paso es un commit que deja **`npm test` en verde sin haber editado nada baj
 | 4 | Feature `transactions` (en dos commits: lógica y UI) | **hecho** |
 | 5 | Feature `installments` (MSI) | **hecho** |
 | 6 | Feature `dashboard` (Home + donut + totales) | **hecho** |
-| 7 | Feature `history` (filtros + buscador) | pendiente |
+| 7 | Feature `history` (filtros + buscador) | **hecho** |
 | 8 | Feature `sync` (la más pesada: QR, cámara, delta) | pendiente |
 | 9 | Feature `backup` | pendiente |
 | 10 | Feature `monefy-import` | pendiente |
@@ -372,11 +372,30 @@ Decisiones:
 - **`showCategoryInHistory` sí es una acción del dashboard**, aunque escriba campos del historial: describe lo que pasa al tocar una porción de la dona. Va en un solo `set` — una notificación del store donde antes había un render de React con cuatro `setState`.
 - **Los planes activos los filtra el container**, con `activePlans` extraído a `installments/domain/grouping.ts`. La pantalla de MSI usa `groupPlansByStatus`, que además **ordena**; Inicio no reordena, así que compartir el predicado sin compartir el orden era la única forma de deduplicar sin cambiar lo que se ve.
 - **La fuga de `COLORS` en `computeCategoryTotals` queda a medias, a sabiendas.** El color de una categoría borrada ya entra por parámetro, pero su default sigue siendo `COLORS.textMuted` para que la llamada de dos argumentos (la de `test/unit/domain.test.js`) signifique exactamente lo mismo que antes. Cerrarla del todo obliga a devolver `color: null` y decidir el fallback en los cuatro puntos de la dona que lo pintan, o a duplicar el hex: ninguna vale dentro de un refactor cuyo contrato es no cambiar comportamiento. Queda para cuando la dona se toque por producto.
-- **Cambio de comportamiento deliberado y aditivo:** las flechas del pager eran iconos sin nombre accesible. Llevan `aria-label="Mes anterior"` / `"Mes siguiente"`, como ya hizo el paso 5 con el borrar de MSI. El pager del historial sigue sin ellos hasta el paso 7, que es cuando le toca.
+- **Cambio de comportamiento deliberado y aditivo:** las flechas del pager de Inicio eran iconos sin nombre accesible. Llevan `aria-label="Mes anterior"` / `"Mes siguiente"`, como ya hizo el paso 5 con el borrar de MSI. *(Corregido en el paso 7: la frase original decía que el pager del historial tampoco los tenía. `HistoryView` sí los traía desde antes del refactor — o sea que esto no inventó una etiqueta, alineó Inicio con lo que el historial ya hacía. La que sí le faltaba era la vista de escritorio.)*
 
 18 tests nuevos: 5 de dominio y 13 de UI por el container. Total: **292 tests**, con los 190 de regresión intactos. `DesktopShell` pierde otras 9 props.
 
 **Observación, no regresión:** en el panel de vista previa la dona de recharts no dibuja sus sectores (el SVG se dimensiona bien y la leyenda, el total y los porcentajes salen correctos, pero los `.recharts-pie-sector` quedan vacíos). Se comprobó contra el commit del paso 5 y pasa igual, así que es previo al paso 6 y ajeno a esta migración.
+
+### Detalle del paso 7 (hecho)
+
+| Módulo | Contenido |
+|---|---|
+| `history/domain/filters.ts` | `filterHistoryTransactions`, `computeHistorySuggestions`, `HISTORY_TYPE_FILTERS` |
+| `history/ui/components/` | `HistoryView`, `HistoryViewDesktop` |
+| `history/ui/containers/HistoryContainer.tsx` | Los dos últimos `useMemo` de `AppBody` y las cuatro derivaciones que cada vista repetía |
+
+Decisiones:
+
+- **`history` no tiene slice.** Sus filtros son campos del `ui-slice` y el container liga sus setters; no hay ninguna acción propia que añadir. La única acción de historial que existe vive en `dashboard` (`showCategoryInHistory`), porque el disparo es de allá. Un slice vacío por simetría sería indirección sin contenido.
+- **Las vistas dejaron de derivar.** Cada una normalizaba la búsqueda, filtraba, agrupaba por día y sacaba las categorías de gasto — las cuatro cosas, literales, en las dos. Ahora entra todo hecho por props. Es la deduplicación más grande de todo el refactor hasta ahora, y la que mejor justifica la separación renderizado/lógica: dos vistas paralelas solo son sostenibles si no piensan.
+- **`HISTORY_TYPE_FILTERS` va en `domain/`, no en `design/`.** Lleva etiquetas en español, que suena a presentación, pero lo que importa es que los ids y las etiquetas se mantengan juntos: el id `'msi'` no es un `type` de movimiento, es "tiene plan MSI vinculado", y separarlo de su etiqueta invita a tratarlo como los otros tres. El tipo `HistoryFilterType` lo deja explícito.
+- **Cambio de comportamiento deliberado y aditivo:** `HistoryViewDesktop` no tenía los `aria-label` del pager ni el de "Limpiar búsqueda"; su gemela móvil sí, desde antes del refactor. Ahora los dos árboles dicen lo mismo.
+
+**Con este paso `AppBody` deja de derivar nada.** De los diez `useMemo` originales no queda ninguno, y `DesktopShell` baja de ~60 props a 36 — las que quedan son casi todas de los modales, que se van en los pasos 8-12.
+
+28 tests nuevos: 13 de dominio (cómo se componen los filtros, y la regla de que buscar ignora el mes) y 15 de UI por el container. Total: **320 tests**, con los 190 de regresión intactos.
 
 ### Tests nuevos por feature
 
