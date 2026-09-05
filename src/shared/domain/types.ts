@@ -100,6 +100,22 @@ export type InstallmentPlan = Stamped & {
 /** Un plan tal como lo emite el formulario, sin identidad ni marcas de tiempo. */
 export type NewInstallmentPlan = Omit<InstallmentPlan, 'id' | 'createdAt' | 'updatedAt'>;
 
+/** El avance de un plan, DERIVADO (nunca se guarda): lo calcula
+ *  `features/installments/domain/progress.ts`. El tipo vive aquí y no en la
+ *  feature porque lo pintan componentes de `shared/ui` — `MsiPlanCard` y
+ *  `InstallmentPlanPicker` —, y `shared/` no puede importar de `features/`. */
+export type PlanProgress = {
+  paid: number;
+  /** Cuánto toca por pago completo. */
+  per: number;
+  /** Pagado / `per`: puede ser fraccionario (2.5 de 6). */
+  installmentsPaid: number;
+  remaining: number;
+  /** 0–1, ya acotado. */
+  pct: number;
+  isPaidOff: boolean;
+};
+
 /** Lápida de borrado, para que un merge posterior propague la eliminación. */
 export type Tombstone = {
   id: string;

@@ -3,7 +3,7 @@
 
 import type { StateCreator } from 'zustand';
 import type { TransactionFormDraft } from '../../features/transactions/domain/form';
-import type { Account, TransactionType } from '../../shared/domain/types';
+import type { Account, InstallmentPlan, TransactionType } from '../../shared/domain/types';
 import { makeSetter } from './setter';
 import type { Setter } from './setter';
 import type { HiloStore } from './index';
@@ -33,7 +33,8 @@ export type UiSlice = {
    *  seguirán en `unknown` hasta que les toque. */
   editingAccount: Account | null;
   msiModalOpen: boolean;
-  editingPlan: unknown;
+  /** El plan que se está editando, o `null` si el formulario es un alta. */
+  editingPlan: InstallmentPlan | null;
   settingsOpen: boolean;
   importModalOpen: boolean;
   syncModalOpen: boolean;
@@ -58,7 +59,7 @@ export type UiSlice = {
   setAccountModalOpen: Setter<boolean>;
   setEditingAccount: Setter<Account | null>;
   setMsiModalOpen: Setter<boolean>;
-  setEditingPlan: Setter<unknown>;
+  setEditingPlan: Setter<InstallmentPlan | null>;
   setSettingsOpen: Setter<boolean>;
   setImportModalOpen: Setter<boolean>;
   setSyncModalOpen: Setter<boolean>;

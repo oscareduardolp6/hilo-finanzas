@@ -42,9 +42,11 @@ import {
 } from '../features/transactions/domain/queries';
 import { AddTransactionContainer } from '../features/transactions/ui/containers/AddTransactionContainer';
 
-/* De la feature `installments` solo existe todavía lo que el formulario de
-   movimiento necesitaba (paso 4); el resto llega en el paso 5. */
+/* Feature `installments`, paso 5. Inicio todavía pinta su propio bloque de
+   planes (llega en el paso 6), así que sigue consumiendo el dominio. */
 import { computePlanProgress } from '../features/installments/domain/progress';
+import { MsiContainer } from '../features/installments/ui/containers/MsiContainer';
+import { MsiPlanFormContainer } from '../features/installments/ui/containers/MsiPlanFormContainer';
 
 /* Componentes presentacionales compartidos por varias features: por la regla de
    dependencias no pueden vivir en ninguna de ellas. */
@@ -53,6 +55,7 @@ import { CategoryPicker } from '../shared/ui/category-picker';
 import { StoreInput } from '../shared/ui/store-input';
 import { AccountChips } from '../shared/ui/account-chips';
 import { TransactionRow } from '../shared/ui/transaction-row';
+import { MsiPlanCard } from '../shared/ui/msi-plan-card';
 
 /* El estado dejó de vivir en `App`: ahora está en el store de zustand, que se
    crea por montaje. Ver src/app/store/ y agents/plans/layered-architecture.md. */
@@ -1044,33 +1047,6 @@ function ExpenseDonut({ data, total, onSliceClick }) {
   );
 }
 
-function MsiPlanCard({ plan, progress, categories, onClick, muted }) {
-  const cat = categories.find(c => c.id === plan.categoryId);
-  const prog = progress || { paid: 0, installmentsPaid: 0, remaining: plan.totalAmount, pct: 0, isPaidOff: false };
-  return (
-    <button onClick={onClick} className="w-full text-left p-3 rounded-xl" style={{ backgroundColor: COLORS.surface, opacity: muted ? 0.7 : 1 }}>
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-sm font-medium truncate" style={{ color: COLORS.text }}>{plan.description}</p>
-          <p className="text-xs truncate" style={{ color: COLORS.textMuted }}>{plan.store ? plan.store + ' · ' : ''}{cat ? cat.name : ''}</p>
-        </div>
-        <p className="text-xs font-mono-custom shrink-0" style={{ color: COLORS.textMuted }}>{prog.installmentsPaid.toFixed(1)}/{plan.installmentsCount}</p>
-      </div>
-      <div className="w-full h-1.5 rounded-full mt-2" style={{ backgroundColor: COLORS.surfaceAlt }}>
-        <div className="h-1.5 rounded-full" style={{ width: `${prog.pct * 100}%`, backgroundColor: prog.isPaidOff ? COLORS.income : COLORS.accent }} />
-      </div>
-      <div className="flex items-center justify-between mt-1.5">
-        <p className="text-xs" style={{ color: COLORS.textFaint }}>{formatMoney(prog.paid)} de {formatMoney(plan.totalAmount)}</p>
-        {prog.isPaidOff ? (
-          <p className="text-xs font-medium" style={{ color: COLORS.income }}>Pagado ✓</p>
-        ) : (
-          <p className="text-xs" style={{ color: COLORS.textFaint }}>Quedan {formatMoney(prog.remaining)}</p>
-        )}
-      </div>
-    </button>
-  );
-}
-
 function BottomNav({ active, onChange }) {
   return (
     <div className="flex items-center justify-around border-t px-1 py-2 shrink-0" style={{ backgroundColor: COLORS.surface, borderColor: COLORS.border }}>
@@ -1269,45 +1245,6 @@ function HistoryView({ transactions, accounts, categories, installmentPlans, kno
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-function MsiView({ plans, progress, categories, onAdd, onOpenPlan }) {
-  const active = plans.filter(p => !(progress[p.id] && progress[p.id].isPaidOff)).sort((a, b) => b.createdAt - a.createdAt);
-  const completed = plans.filter(p => progress[p.id] && progress[p.id].isPaidOff).sort((a, b) => b.createdAt - a.createdAt);
-
-  return (
-    <div className="pt-2">
-      <div className="flex items-center justify-between mb-1">
-        <p className="text-sm font-semibold font-display" style={{ color: COLORS.text }}>Compras a meses (MSI)</p>
-        <button onClick={onAdd} className="flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-full" style={{ backgroundColor: COLORS.accentSoft, color: COLORS.accent }}>
-          <Plus size={13} /> Nuevo
-        </button>
-      </div>
-      <p className="text-xs mb-3" style={{ color: COLORS.textFaint }}>Cada pago que hagas se resta del total automáticamente, aunque no sea un pago completo.</p>
-
-      {active.length === 0 && completed.length === 0 ? (
-        <EmptyState text="Aún no registras compras a meses. Usa + Nuevo, o marca una transferencia como pago de MSI." />
-      ) : (
-        <>
-          {active.length === 0 ? (
-            <EmptyState text="No tienes MSI activos por pagar." />
-          ) : (
-            <div className="space-y-2">
-              {active.map(p => <MsiPlanCard key={p.id} plan={p} progress={progress[p.id]} categories={categories} onClick={() => onOpenPlan(p)} />)}
-            </div>
-          )}
-          {completed.length > 0 && (
-            <div className="mt-5">
-              <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: COLORS.textFaint }}>Ya pagados</p>
-              <div className="space-y-2">
-                {completed.map(p => <MsiPlanCard key={p.id} plan={p} progress={progress[p.id]} categories={categories} onClick={() => onOpenPlan(p)} muted />)}
-              </div>
-            </div>
-          )}
-        </>
-      )}
     </div>
   );
 }
@@ -1541,167 +1478,9 @@ function HistoryViewDesktop({ transactions, accounts, categories, installmentPla
   );
 }
 
-function MsiViewDesktop({ plans, progress, categories, onAdd, onOpenPlan }) {
-  const active = plans.filter(p => !(progress[p.id] && progress[p.id].isPaidOff)).sort((a, b) => b.createdAt - a.createdAt);
-  const completed = plans.filter(p => progress[p.id] && progress[p.id].isPaidOff).sort((a, b) => b.createdAt - a.createdAt);
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-1">
-        <p className="text-sm font-semibold font-display" style={{ color: COLORS.text }}>Compras a meses (MSI)</p>
-        <button onClick={onAdd} className="flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-full" style={{ backgroundColor: COLORS.accentSoft, color: COLORS.accent }}>
-          <Plus size={13} /> Nuevo
-        </button>
-      </div>
-      <p className="text-xs mb-4" style={{ color: COLORS.textFaint }}>Cada pago que hagas se resta del total automáticamente, aunque no sea un pago completo.</p>
-
-      {active.length === 0 && completed.length === 0 ? (
-        <EmptyState text="Aún no registras compras a meses. Usa + Nuevo, o marca una transferencia como pago de MSI." />
-      ) : (
-        <>
-          {active.length === 0 ? (
-            <EmptyState text="No tienes MSI activos por pagar." />
-          ) : (
-            <div className="grid grid-cols-2 gap-3">
-              {active.map(p => <MsiPlanCard key={p.id} plan={p} progress={progress[p.id]} categories={categories} onClick={() => onOpenPlan(p)} />)}
-            </div>
-          )}
-          {completed.length > 0 && (
-            <div className="mt-6">
-              <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: COLORS.textFaint }}>Ya pagados</p>
-              <div className="grid grid-cols-2 gap-3">
-                {completed.map(p => <MsiPlanCard key={p.id} plan={p} progress={progress[p.id]} categories={categories} onClick={() => onOpenPlan(p)} muted />)}
-              </div>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
 /* ------------------------------------------------------------------ */
 /* Modals / sheets                                                      */
 /* ------------------------------------------------------------------ */
-
-function MsiPlanModal({ plan, progress, payments, categories, knownStores, onClose, onSave, onDelete, onCreateCategory, desktop }) {
-  const [description, setDescription] = useState(plan ? plan.description : '');
-  const [store, setStore] = useState(plan ? (plan.store || '') : '');
-  const [totalAmount, setTotalAmount] = useState(plan ? String(plan.totalAmount) : '');
-  const [installmentsCount, setInstallmentsCount] = useState(plan ? String(plan.installmentsCount) : '6');
-  const [categoryId, setCategoryId] = useState(plan ? plan.categoryId : (categories[0] ? categories[0].id : ''));
-  const [startDate, setStartDate] = useState(plan ? plan.startDate : todayIso());
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  const isValid = description.trim().length > 0 && parseFloat(totalAmount) > 0 && parseFloat(installmentsCount) > 0 && !!categoryId;
-
-  function handleNewCat(cat) {
-    // `CategoryPicker` vive ahora en shared/ui y su `onCreate` devuelve la
-    // categoría creada: el id lo pone el caso de uso, no el componente.
-    const created = onCreateCategory(cat);
-    setCategoryId(created.id);
-    return created;
-  }
-
-  return (
-    <SheetOverlay onClose={onClose} desktop={desktop}>
-      <div className="px-5 pt-4 pb-1 flex items-center justify-between">
-        <p className="text-lg font-semibold font-display" style={{ color: COLORS.text }}>{plan ? 'Editar plan MSI' : 'Nuevo plan MSI'}</p>
-        <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: COLORS.surfaceAlt }}>
-          <X size={15} style={{ color: COLORS.textMuted }} />
-        </button>
-      </div>
-
-      <div className="px-5 mt-3">
-        {plan && progress && (
-          <div className="rounded-xl p-3 mb-3" style={{ backgroundColor: COLORS.surfaceAlt }}>
-            <div className="flex items-center justify-between">
-              <p className="text-xs" style={{ color: COLORS.textMuted }}>Progreso</p>
-              <p className="text-xs font-mono-custom" style={{ color: COLORS.text }}>{progress.installmentsPaid.toFixed(1)}/{plan.installmentsCount}</p>
-            </div>
-            <div className="w-full h-2 rounded-full mt-2" style={{ backgroundColor: COLORS.elevated }}>
-              <div className="h-2 rounded-full" style={{ width: `${progress.pct * 100}%`, backgroundColor: progress.isPaidOff ? COLORS.income : COLORS.accent }} />
-            </div>
-            <p className="text-xs mt-1.5" style={{ color: COLORS.textFaint }}>{formatMoney(progress.paid)} pagado · {formatMoney(progress.remaining)} restante</p>
-          </div>
-        )}
-
-        <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>¿Qué compraste?</p>
-        <input type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="Ej. Laptop" className="w-full px-3 py-2 rounded-xl text-sm outline-none mb-3" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
-
-        <div className="mb-3">
-          <StoreInput value={store} onChange={setStore} knownStores={knownStores} />
-        </div>
-
-        <div className="grid grid-cols-2 gap-2 mb-3">
-          <div>
-            <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Monto total</p>
-            <input type="number" inputMode="decimal" value={totalAmount} onChange={e => setTotalAmount(e.target.value)} className="w-full px-3 py-2 rounded-xl text-sm outline-none font-mono-custom" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
-          </div>
-          <div>
-            <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}># de MSI</p>
-            <input type="number" inputMode="decimal" step="any" value={installmentsCount} onChange={e => setInstallmentsCount(e.target.value)} className="w-full px-3 py-2 rounded-xl text-sm outline-none font-mono-custom" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
-          </div>
-        </div>
-        {parseFloat(totalAmount) > 0 && parseFloat(installmentsCount) > 0 && (
-          <p className="text-xs -mt-2 mb-3" style={{ color: COLORS.textFaint }}>≈ {formatMoney(parseFloat(totalAmount) / parseFloat(installmentsCount))} por pago completo</p>
-        )}
-
-        <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Categoría</p>
-        <div className="mb-3">
-          <CategoryPicker categories={categories} type="expense" selectedId={categoryId} onSelect={setCategoryId} onCreate={handleNewCat} />
-        </div>
-
-        <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Fecha de compra</p>
-        <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full px-3 py-2 rounded-xl text-sm outline-none mb-4" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}`, colorScheme: 'dark' }} />
-
-        {payments && payments.length > 0 && (
-          <div className="mb-4">
-            <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: COLORS.textMuted }}>Pagos registrados</p>
-            <div className="space-y-1.5">
-              {payments.map(t => (
-                <div key={t.id} className="flex items-center justify-between px-3 py-2 rounded-lg" style={{ backgroundColor: COLORS.surfaceAlt }}>
-                  <p className="text-xs" style={{ color: COLORS.textMuted }}>{formatDateLabel(t.date)}</p>
-                  <p className="text-xs font-mono-custom" style={{ color: COLORS.text }}>{formatMoney(t.amount)}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="px-5 mt-2 mb-6">
-        {confirmDelete ? (
-          <div className="rounded-xl p-3" style={{ backgroundColor: COLORS.expenseSoft }}>
-            <p className="text-sm font-medium mb-2" style={{ color: COLORS.expense }}>
-              {payments && payments.length > 0 ? 'Esto elimina el plan. Tus pagos ya registrados se quedan, solo dejan de agruparse como MSI. ¿Continuar?' : '¿Eliminar este plan de MSI?'}
-            </p>
-            <div className="flex gap-2">
-              <button onClick={() => setConfirmDelete(false)} className="flex-1 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>Cancelar</button>
-              <button onClick={onDelete} className="flex-1 py-2 rounded-lg text-sm font-semibold" style={{ backgroundColor: COLORS.expense, color: COLORS.bg }}>Eliminar</button>
-            </div>
-          </div>
-        ) : (
-          <div className="flex gap-3">
-            {plan && (
-              <button onClick={() => setConfirmDelete(true)} className="px-4 py-3 rounded-xl" style={{ backgroundColor: COLORS.expenseSoft, color: COLORS.expense }}>
-                <Trash2 size={17} />
-              </button>
-            )}
-            <button
-              disabled={!isValid}
-              onClick={() => onSave({ id: plan ? plan.id : undefined, description: description.trim(), store: store.trim(), totalAmount: parseFloat(totalAmount) || 0, installmentsCount: parseFloat(installmentsCount) || 1, categoryId, startDate })}
-              className="flex-1 py-3 rounded-xl font-semibold text-sm disabled:opacity-40"
-              style={{ backgroundColor: COLORS.accent, color: COLORS.bg }}
-            >
-              {plan ? 'Guardar cambios' : 'Crear plan'}
-            </button>
-          </div>
-        )}
-      </div>
-    </SheetOverlay>
-  );
-}
 
 function MonefyImportModal({ existingAccounts, existingCategories, onClose, onConfirm, desktop }) {
   const [step, setStep] = useState('upload');
@@ -2718,10 +2497,8 @@ function DesktopShell(props) {
     transactions, knownStores, historySuggestions,
     showAllTime, setShowAllTime, filterType, setFilterType, filterCategory, setFilterCategory, filterStore, setFilterStore,
     searchQuery, setSearchQuery,
-    onAddPlan,
     onOpenAddSheet, onOpenSettings,
     onCreateCategory,
-    msiModalOpen, editingPlan, msiPayments, onCloseMsiModal, onSavePlan, onDeletePlan,
     settingsOpen, onCloseSettings, onResetTransactions,
     importModalOpen, onOpenImport, onCloseImportModal, onConfirmImport,
     syncModalOpen, backupModalOpen, onOpenSync, onOpenBackup, onCloseSyncModal, onCloseBackupModal, onMergeSync, onRestoreBackup,
@@ -2787,15 +2564,7 @@ function DesktopShell(props) {
               onOpenTxn={onOpenTxn}
             />
           )}
-          {activeTab === 'msi' && (
-            <MsiViewDesktop
-              plans={installmentPlans}
-              progress={planProgress}
-              categories={categories}
-              onAdd={onAddPlan}
-              onOpenPlan={onOpenMsiPlan}
-            />
-          )}
+          {activeTab === 'msi' && <MsiContainer desktop />}
           {activeTab === 'accounts' && <AccountsContainer desktop />}
         </div>
 
@@ -2806,20 +2575,7 @@ function DesktopShell(props) {
 
       <AccountFormContainer desktop />
 
-      {msiModalOpen && (
-        <MsiPlanModal
-          plan={editingPlan}
-          progress={editingPlan ? planProgress[editingPlan.id] : null}
-          payments={msiPayments}
-          categories={categories.filter(c => c.type === 'expense')}
-          knownStores={knownStores}
-          onClose={onCloseMsiModal}
-          onSave={onSavePlan}
-          onDelete={onDeletePlan}
-          onCreateCategory={onCreateCategory}
-          desktop
-        />
-      )}
+      <MsiPlanFormContainer desktop />
 
       {settingsOpen && (
         <SettingsModal onClose={onCloseSettings} onResetTransactions={onResetTransactions} onOpenImport={onOpenImport} onOpenSync={onOpenSync} onOpenBackup={onOpenBackup} ocrSettings={ocrSettings} onSaveOcrSettings={onSaveOcrSettings} desktop />
@@ -2898,11 +2654,11 @@ function AppBody() {
 
     /* Acciones de los slices de las features ya migradas. La hoja de movimiento
        se monta por container, así que sus campos ya no se leen aquí. */
-    openAddSheet, openEditSheet, resetTransactions, createCategory,
+    openAddSheet, openEditSheet, resetTransactions, createCategory, openPlanForm,
 
-    msiModalOpen, editingPlan, settingsOpen,
+    settingsOpen,
     importModalOpen, syncModalOpen, backupModalOpen, receiptModalOpen,
-    setMsiModalOpen, setEditingPlan, setSettingsOpen,
+    setSettingsOpen,
     setImportModalOpen, setSyncModalOpen, setBackupModalOpen, setReceiptModalOpen,
 
     ocrSettings, setOcrSettings, syncState, setSyncState, toast, setToast,
@@ -3117,26 +2873,6 @@ function AppBody() {
     setToast(`Se importaron ${plan.transactions.length} movimientos de Monefy`);
   }
 
-  function handleSavePlan(payload) {
-    if (payload.id) {
-      setInstallmentPlans(prev => prev.map(p => p.id === payload.id ? { ...p, ...payload, updatedAt: Date.now() } : p));
-      setToast('Plan actualizado');
-    } else {
-      setInstallmentPlans(prev => [...prev, { ...payload, id: uid('msi'), createdAt: Date.now(), updatedAt: Date.now() }]);
-      setToast('Plan creado');
-    }
-    setMsiModalOpen(false);
-    setEditingPlan(null);
-  }
-
-  function handleDeletePlan(id) {
-    setInstallmentPlans(prev => prev.filter(p => p.id !== id));
-    setTombstones(prev => [...prev, { id, deletedAt: Date.now() }]);
-    setMsiModalOpen(false);
-    setEditingPlan(null);
-    setToast('Plan eliminado');
-  }
-
   if (!loaded) {
     return (
       <div className="w-full h-screen flex items-center justify-center" style={{ backgroundColor: COLORS.bg }}>
@@ -3164,7 +2900,7 @@ function AppBody() {
         installmentPlans={installmentPlans}
         planProgress={planProgress}
         onSliceClick={handleSliceClick}
-        onOpenMsiPlan={(p) => { setEditingPlan(p); setMsiModalOpen(true); }}
+        onOpenMsiPlan={openPlanForm}
         onOpenTxn={openEditSheet}
         transactions={transactions}
         knownStores={knownStores}
@@ -3179,16 +2915,9 @@ function AppBody() {
         setFilterStore={setFilterStore}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
-        onAddPlan={() => { setEditingPlan(null); setMsiModalOpen(true); }}
         onOpenAddSheet={openAddSheet}
         onOpenSettings={() => setSettingsOpen(true)}
         onCreateCategory={createCategory}
-        msiModalOpen={msiModalOpen}
-        editingPlan={editingPlan}
-        msiPayments={editingPlan ? transactions.filter(t => t.installmentPlanId === editingPlan.id).sort((a, b) => b.date.localeCompare(a.date)) : []}
-        onCloseMsiModal={() => { setMsiModalOpen(false); setEditingPlan(null); }}
-        onSavePlan={handleSavePlan}
-        onDeletePlan={() => editingPlan && handleDeletePlan(editingPlan.id)}
         settingsOpen={settingsOpen}
         onCloseSettings={() => setSettingsOpen(false)}
         onResetTransactions={resetTransactions}
@@ -3254,7 +2983,7 @@ function AppBody() {
               onSliceClick={handleSliceClick}
               onSeeAll={() => setActiveTab('history')}
               onSeeMsi={() => setActiveTab('msi')}
-              onOpenMsiPlan={(p) => { setEditingPlan(p); setMsiModalOpen(true); }}
+              onOpenMsiPlan={openPlanForm}
               onOpenTxn={openEditSheet}
             />
           )}
@@ -3282,15 +3011,7 @@ function AppBody() {
               onOpenTxn={openEditSheet}
             />
           )}
-          {activeTab === 'msi' && (
-            <MsiView
-              plans={installmentPlans}
-              progress={planProgress}
-              categories={categories}
-              onAdd={() => { setEditingPlan(null); setMsiModalOpen(true); }}
-              onOpenPlan={(p) => { setEditingPlan(p); setMsiModalOpen(true); }}
-            />
-          )}
+          {activeTab === 'msi' && <MsiContainer />}
           {activeTab === 'accounts' && <AccountsContainer />}
         </div>
 
@@ -3318,19 +3039,7 @@ function AppBody() {
 
         <AccountFormContainer />
 
-        {msiModalOpen && (
-          <MsiPlanModal
-            plan={editingPlan}
-            progress={editingPlan ? planProgress[editingPlan.id] : null}
-            payments={editingPlan ? transactions.filter(t => t.installmentPlanId === editingPlan.id).sort((a, b) => b.date.localeCompare(a.date)) : []}
-            categories={categories.filter(c => c.type === 'expense')}
-            knownStores={knownStores}
-            onClose={() => { setMsiModalOpen(false); setEditingPlan(null); }}
-            onSave={handleSavePlan}
-            onDelete={() => editingPlan && handleDeletePlan(editingPlan.id)}
-            onCreateCategory={createCategory}
-          />
-        )}
+        <MsiPlanFormContainer />
 
         {settingsOpen && (
           <SettingsModal onClose={() => setSettingsOpen(false)} onResetTransactions={resetTransactions} onOpenImport={openImportModal} onOpenSync={openSyncModal} onOpenBackup={openBackupModal} ocrSettings={ocrSettings} onSaveOcrSettings={handleSaveOcrSettings} />

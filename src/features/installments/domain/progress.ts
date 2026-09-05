@@ -5,19 +5,9 @@
    movimiento necesita pintar el avance al elegir plan, y una feature puede
    importar el `domain/` de otra pero no su `ui/`. */
 
-import type { InstallmentPlan, Transaction } from '../../../shared/domain/types';
+import type { InstallmentPlan, PlanProgress, Transaction } from '../../../shared/domain/types';
 
-export type PlanProgress = {
-  paid: number;
-  /** Cuánto toca por pago completo. */
-  per: number;
-  /** Pagado / `per`: puede ser fraccionario (2.5 de 6). */
-  installmentsPaid: number;
-  remaining: number;
-  /** 0–1, ya acotado. */
-  pct: number;
-  isPaidOff: boolean;
-};
+export type { PlanProgress };
 
 export function computePlanProgress(
   installmentPlans: InstallmentPlan[],

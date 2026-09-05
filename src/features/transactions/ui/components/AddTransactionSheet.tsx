@@ -13,12 +13,11 @@ import { Layers, Link2, Trash2, X } from 'lucide-react';
 import { ACCOUNT_SEARCH_THRESHOLD, COLORS } from '../../../../shared/design/tokens';
 import { accountNameMatches } from '../../../../shared/domain/search';
 import type {
-  Account, Category, InstallmentPlan, NewCategory, NewInstallmentPlan, TransactionType,
+  Account, Category, InstallmentPlan, NewCategory, NewInstallmentPlan, PlanProgress, TransactionType,
 } from '../../../../shared/domain/types';
 import { AccountChipSearch } from '../../../../shared/ui/account-chips';
 import { CategoryPicker } from '../../../../shared/ui/category-picker';
 import { InstallmentPlanPicker } from '../../../../shared/ui/installment-plan-picker';
-import type { PlanProgress } from '../../../../shared/ui/installment-plan-picker';
 import { SheetOverlay } from '../../../../shared/ui/sheet-overlay';
 import { StoreInput } from '../../../../shared/ui/store-input';
 import type { TransactionFormDraft } from '../../domain/form';

@@ -195,7 +195,7 @@ Cada paso es un commit que deja **`npm test` en verde sin haber editado nada baj
 | 2 | Store: slices, `createStore` + Provider, persistencia por `subscribe`. Los 29 `useState` y los 4 `useEffect` salen de `App`; el `App` legacy pasa a leer del store y sigue bajando props | **hecho** |
 | 3 | Feature `accounts` (la más chica: valida el patrón completo de punta a punta) | **hecho** |
 | 4 | Feature `transactions` (en dos commits: lógica y UI) | **hecho** |
-| 5 | Feature `installments` (MSI) — falta todo salvo `domain/progress` y `createPlan` | pendiente |
+| 5 | Feature `installments` (MSI) | **hecho** |
 | 6 | Feature `dashboard` (Home + donut + totales) | pendiente |
 | 7 | Feature `history` (filtros + buscador) | pendiente |
 | 8 | Feature `sync` (la más pesada: QR, cámara, delta) | pendiente |
@@ -328,6 +328,29 @@ Otras decisiones:
 - **Latente, no corregido:** `createCategory` no pone `createdAt` (el alta inline nunca lo puso), mientras que `createPlan` sí. No estorba porque `recordStamp` mira `updatedAt` primero, pero es una asimetría que conviene arreglar **fuera** de un refactor, para no mezclar cambio de comportamiento con movimiento de código.
 
 27 tests nuevos: 10 de `toTransaction` (las tres ramas campo a campo), 7 de casos de uso y 10 de UI por el container. Total: **254 tests**, con los 190 de regresión intactos.
+
+### Detalle del paso 5 (hecho)
+
+La feature ya venía empezada del paso 4 (`domain/progress` y `createPlan`, que el formulario de movimiento necesitaba). Este paso la cierra.
+
+| Módulo | Contenido |
+|---|---|
+| `installments/domain/grouping.ts` | `groupPlansByStatus` y `planPayments` |
+| `installments/application/save-plan.ts` | `savePlan` y `deletePlan` (`ReaderIO`) |
+| `installments/store/` | El slice completo (5 acciones) + selectores |
+| `installments/ui/components/` | `MsiView`, `MsiViewDesktop`, `MsiPlanModal` |
+| `installments/ui/containers/` | `MsiContainer`, `MsiPlanFormContainer` |
+| `shared/ui/msi-plan-card.tsx` | `MsiPlanCard`, que Inicio también pinta |
+
+Decisiones:
+
+- **`PlanProgress` subió a `shared/domain/types.ts`.** Estaba duplicado: la versión canónica en `installments/domain/progress.ts` y una copia estructural en `shared/ui/installment-plan-picker.tsx`, porque `shared/` no puede importar de `features/`. Al llegar `MsiPlanCard` habrían sido tres. El tipo es vocabulario de dominio sin lógica, así que `shared/domain` es su sitio; la feature lo re-exporta para quien lo lea desde ahí.
+- **La partición activos/pagados salió a `domain/grouping.ts`.** Estaba duplicada literal entre `MsiView` y `MsiViewDesktop`, que es exactamente cómo un cambio se olvida en una de las dos.
+- **Las dos vistas siguen siendo dos componentes.** Se probó a factorizarlas en un cuerpo común con el layout inyectado y se descartó: contradice la decisión de [desktop-view](desktop-view.md) de mantener árboles paralelos, y es inconsistente con `accounts`. Lo único que se comparte es el dominio.
+- **Dos toasts distintos para crear un plan**, y es intencional: el formulario completo dice `'Plan creado'` y el alta inline del picker `'Plan de MSI creado'`. Venía así de antes; unificarlos es un cambio de producto, no un refactor. Hay un test que lo fija para que nadie lo "arregle" sin querer.
+- **Único cambio de comportamiento del paso, deliberado:** el botón de borrar de `MsiPlanModal` era un icono sin nombre accesible, mientras que sus hermanos de `AccountFormModal` y `AddTransactionSheet` sí lo tienen. Se le puso `aria-label="Eliminar plan"`. Es aditivo y ningún test previo lo consultaba.
+
+20 tests nuevos: 6 de agrupación, 6 de casos de uso (incluido el que fija los dos toasts) y 8 de UI por los containers. Total: **274 tests**, con los 190 de regresión intactos.
 
 ### Tests nuevos por feature
 

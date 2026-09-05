@@ -13,19 +13,11 @@ import { Plus } from 'lucide-react';
 import { COLORS } from '../design/tokens';
 import { todayIso } from '../domain/dates';
 import { formatMoney } from '../domain/money';
-import type { Category, InstallmentPlan, NewCategory, NewInstallmentPlan } from '../domain/types';
+import type {
+  Category, InstallmentPlan, NewCategory, NewInstallmentPlan, PlanProgress,
+} from '../domain/types';
 import { CategoryPicker } from './category-picker';
 import { StoreInput } from './store-input';
-
-/** Lo que el picker necesita saber del avance de un plan. Se define aquí, en
- *  términos de lo que pinta, para no depender de la feature `installments`. */
-export type PlanProgress = {
-  paid: number;
-  installmentsPaid: number;
-  remaining: number;
-  pct: number;
-  isPaidOff?: boolean;
-};
 
 export type InstallmentPlanPickerProps = {
   plans: InstallmentPlan[];
