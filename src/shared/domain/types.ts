@@ -73,6 +73,9 @@ export type IncomeTransaction = TransactionBase & {
      hizo), así que hay perfiles con ese campo guardado. El tipo tiene que
      decir la verdad sobre el dato aunque ninguna pantalla lo pinte todavía. */
   store?: string | null;
+  /** Con qué programa de beneficios (cashback/promoción de tarjeta) se ganó
+   *  este ingreso, si aplica. Ver `BenefitProgram`. */
+  benefitProgramId?: string | null;
 };
 
 export type TransferTransaction = TransactionBase & ProductDetails & {
@@ -120,19 +123,37 @@ export type PlanProgress = {
   isPaidOff: boolean;
 };
 
+/** Un programa de beneficios/recompensas (cashback, promoción de tarjeta,
+ *  cupón de comercio): quién lo da y, opcionalmente, con qué tarjeta va.
+ *  No guarda cuánto se ha ganado — eso se deriva sumando los `income` que lo
+ *  referencian (`IncomeTransaction.benefitProgramId`), igual que un plan MSI
+ *  no guarda su avance. Ver `features/benefits/domain/totals.ts`. */
+export type BenefitProgram = Stamped & {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  /** La tarjeta/cuenta a la que pertenece la promoción, si aplica. */
+  accountId?: string | null;
+};
+
+/** Un programa tal como lo emite el formulario, sin identidad ni marcas de tiempo. */
+export type NewBenefitProgram = Omit<BenefitProgram, 'id' | 'createdAt' | 'updatedAt'>;
+
 /** Lápida de borrado, para que un merge posterior propague la eliminación. */
 export type Tombstone = {
   id: string;
   deletedAt: number;
 };
 
-/** Las cinco colecciones que viven bajo `STORAGE_KEY`, y solo esas. */
+/** Las seis colecciones que viven bajo `STORAGE_KEY`, y solo esas. */
 export type DataState = {
   accounts: Account[];
   categories: Category[];
   transactions: Transaction[];
   installmentPlans: InstallmentPlan[];
   tombstones: Tombstone[];
+  benefitPrograms: BenefitProgram[];
 };
 
 /* --- Estado local del dispositivo: clave propia, NUNCA dentro de DataState --- */

@@ -2,13 +2,13 @@
    Una sola base (`hilo_finanzas`) con un solo object store (`state`) y TRES
    claves independientes:
 
-     STORAGE_KEY              → las 5 colecciones (esto es lo que se sincroniza)
+     STORAGE_KEY              → las 6 colecciones (esto es lo que se sincroniza)
      OCR_SETTINGS_STORAGE_KEY → api key + modelo del escaneo de tickets
      SYNC_STATE_STORAGE_KEY   → id y peers de ESTE dispositivo
 
    Que sean claves separadas es lo que garantiza, por construcción, que la api
    key y el estado de sync nunca viajen en un export / QR / respaldo:
-   `buildExportPayload` solo toca las 5 colecciones.
+   `buildExportPayload` solo toca las 6 colecciones.
 
    Estas funciones devuelven Promises, no `TaskEither`, a propósito: son la API
    pública histórica de Hilo (los 9 tests de `test/unit/persistence.test.js` las

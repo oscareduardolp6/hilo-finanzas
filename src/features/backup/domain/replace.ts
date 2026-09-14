@@ -17,5 +17,7 @@ export function replaceDataState(incoming: Partial<DataState>): DataState {
     transactions: incoming.transactions || [],
     installmentPlans: incoming.installmentPlans || [],
     tombstones: Array.isArray(incoming.tombstones) ? incoming.tombstones : [],
+    // Igual que `tombstones`: un respaldo previo a la feature no la trae.
+    benefitPrograms: Array.isArray(incoming.benefitPrograms) ? incoming.benefitPrograms : [],
   };
 }

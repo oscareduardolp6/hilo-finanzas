@@ -50,7 +50,13 @@ describe('ingreso', () => {
       amount: 250.5,
       accountId: 'a1',
       categoryId: 'sueldo',
+      benefitProgramId: null,
     });
+  });
+
+  it('conserva el programa de beneficios si se eligió uno', () => {
+    const t = toTransaction('income', draft({ accountId: 'a1', categoryId: 'descuentos', benefitProgramId: 'benefit_1' }), HOY);
+    expect(t).toMatchObject({ benefitProgramId: 'benefit_1' });
   });
 });
 

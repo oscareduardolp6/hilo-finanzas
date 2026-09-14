@@ -22,6 +22,7 @@ const stateWith = (overrides: Partial<DataState> = {}): DataState => ({
   transactions: [],
   installmentPlans: [],
   tombstones: [],
+  benefitPrograms: [],
   ...overrides,
 });
 
@@ -143,12 +144,15 @@ describe('guardado automático', () => {
     await flush();
 
     expect(syncStateRepository.peek()?.deviceId).toBe('dev_fijo');
+    // `benefitPrograms` se agregó después que las otras 5: cambio de
+    // comportamiento deliberado, no un test desactualizado (ver CLAUDE.md).
     expect(Object.keys(stateRepository.peek() ?? {})).toEqual([
       'accounts',
       'categories',
       'transactions',
       'installmentPlans',
       'tombstones',
+      'benefitPrograms',
     ]);
   });
 

@@ -345,6 +345,8 @@ describe('replaceDataState', () => {
 
   it('colecciones ausentes -> []', () => {
     const out = replaceDataState({});
-    expect(out).toEqual({ accounts: [], categories: [], transactions: [], installmentPlans: [], tombstones: [] });
+    // `benefitPrograms` se agregó después que las otras 5: cambio de
+    // comportamiento deliberado, no un test desactualizado (ver CLAUDE.md).
+    expect(out).toEqual({ accounts: [], categories: [], transactions: [], installmentPlans: [], tombstones: [], benefitPrograms: [] });
   });
 });

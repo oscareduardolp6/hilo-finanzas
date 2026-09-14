@@ -21,7 +21,7 @@ async function abrirAjustes({ apiKey = '', ocrFalla = false } = {}) {
     ...(ocrFalla ? { failWith: brokenPersistence() } : {}),
   });
   const stateRepository = inMemoryStateRepository({
-    initial: { accounts: [], categories: [], transactions: [gasto], installmentPlans: [], tombstones: [] },
+    initial: { accounts: [], categories: [], transactions: [gasto], installmentPlans: [], tombstones: [], benefitPrograms: [] },
   });
   const rendered = await renderFeature(<SettingsContainer />, {
     deps: { ocrSettingsRepository, stateRepository },

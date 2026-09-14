@@ -24,6 +24,7 @@ export type TransactionFormDraft = {
   toAccountId?: string;
   taggedAsExpense?: boolean;
   installmentPlanId?: string | null;
+  benefitProgramId?: string | null;
   size?: string | null;
   brand?: string | null;
   quantity?: string | null;
@@ -48,7 +49,12 @@ export function initialFormState(
     return { ...base, accountId: accounts[0] ? accounts[0].id : '', categoryId: expenseCats[0] ? expenseCats[0].id : '', installmentPlanId: null, size: '', brand: '', quantity: '' };
   }
   if (type === 'income') {
-    return { ...base, accountId: accounts[0] ? accounts[0].id : '', categoryId: incomeCats[0] ? incomeCats[0].id : '' };
+    return {
+      ...base,
+      accountId: accounts[0] ? accounts[0].id : '',
+      categoryId: incomeCats[0] ? incomeCats[0].id : '',
+      benefitProgramId: null,
+    };
   }
   // Transferencia: la segunda cuenta por defecto, o la primera si solo hay una.
   const secondAccount = accounts[1] ? accounts[1].id : (accounts[0] ? accounts[0].id : '');

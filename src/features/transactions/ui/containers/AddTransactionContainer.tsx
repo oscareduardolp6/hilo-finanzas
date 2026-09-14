@@ -29,6 +29,7 @@ export function AddTransactionContainer({ desktop }: AddTransactionContainerProp
   const categories = useHiloStore((s) => s.categories);
   const transactions = useHiloStore((s) => s.transactions);
   const installmentPlans = useHiloStore((s) => s.installmentPlans);
+  const benefitPrograms = useHiloStore((s) => s.benefitPrograms);
 
   const setForm = useHiloStore((s) => s.setForm);
   const closeSheet = useHiloStore((s) => s.closeSheet);
@@ -37,6 +38,7 @@ export function AddTransactionContainer({ desktop }: AddTransactionContainerProp
   const switchFormType = useHiloStore((s) => s.switchFormType);
   const createCategory = useHiloStore((s) => s.createCategory);
   const createPlan = useHiloStore((s) => s.createPlan);
+  const createProgram = useHiloStore((s) => s.createProgram);
 
   // `useMemo` y no selectores: ambos derivan colecciones nuevas y zustand v5
   // compara por identidad. Son los mismos memos que tenía `App`.
@@ -70,6 +72,7 @@ export function AddTransactionContainer({ desktop }: AddTransactionContainerProp
       categories={categories}
       plans={installmentPlans}
       planProgress={planProgress}
+      benefitPrograms={benefitPrograms}
       knownStores={knownStores}
       onClose={closeSheet}
       onSave={saveTransaction}
@@ -77,6 +80,7 @@ export function AddTransactionContainer({ desktop }: AddTransactionContainerProp
       onSwitchType={switchFormType}
       onCreateCategory={createCategory}
       onCreatePlan={createPlan}
+      onCreateBenefitProgram={createProgram}
       desktop={desktop}
     />
   );

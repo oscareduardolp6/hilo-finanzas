@@ -5,7 +5,7 @@
    con formulario. Nada de eso es dominio. */
 
 import { useState } from 'react';
-import { DatabaseBackup, RefreshCw, X } from 'lucide-react';
+import { DatabaseBackup, Gift, RefreshCw, X } from 'lucide-react';
 import { COLORS } from '../../../../shared/design/tokens';
 import type { OcrSettings } from '../../../../shared/domain/types';
 import { SheetOverlay } from '../../../../shared/ui/sheet-overlay';
@@ -18,13 +18,14 @@ export type SettingsModalProps = {
   onOpenImport: () => void;
   onOpenSync: () => void;
   onOpenBackup: () => void;
+  onOpenBenefits: () => void;
   onClose: () => void;
   desktop?: boolean;
 };
 
 export function SettingsModal({
   ocrSettings, onSaveOcrSettings, onResetTransactions,
-  onOpenImport, onOpenSync, onOpenBackup, onClose, desktop,
+  onOpenImport, onOpenSync, onOpenBackup, onOpenBenefits, onClose, desktop,
 }: SettingsModalProps) {
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [keyDraft, setKeyDraft] = useState((ocrSettings && ocrSettings.apiKey) || '');
@@ -55,6 +56,9 @@ export function SettingsModal({
         </button>
         <button onClick={onOpenBackup} className="w-full py-3 rounded-xl text-sm font-semibold mb-3 flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
           <DatabaseBackup size={15} /> Respaldo de datos
+        </button>
+        <button onClick={onOpenBenefits} className="w-full py-3 rounded-xl text-sm font-semibold mb-3 flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
+          <Gift size={15} /> Beneficios y promociones
         </button>
         <button onClick={onOpenImport} className="w-full py-3 rounded-xl text-sm font-semibold mb-3" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>Importar desde Monefy</button>
 

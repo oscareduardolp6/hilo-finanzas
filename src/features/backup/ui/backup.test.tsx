@@ -30,6 +30,7 @@ const importadaTxn: Transaction = {
 
 const respaldo = (): string => JSON.stringify(buildExportPayload({
   accounts: [importada], categories: [], transactions: [importadaTxn], installmentPlans: [], tombstones: [],
+  benefitPrograms: [],
 } as DataState));
 
 type Opciones = {

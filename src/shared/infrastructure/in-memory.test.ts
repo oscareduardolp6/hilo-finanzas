@@ -27,6 +27,7 @@ const emptyState: DataState = {
   transactions: [],
   installmentPlans: [],
   tombstones: [],
+  benefitPrograms: [],
 };
 
 /** Caso de uso de ejemplo: lee el estado, agrega una cuenta con id y reloj

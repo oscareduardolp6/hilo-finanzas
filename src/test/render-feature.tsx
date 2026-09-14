@@ -2,7 +2,7 @@
 
    Monta UN container dentro de un `HiloStoreProvider` con dependencias en
    memoria — nunca `<App/>`. Eso es lo que los vuelve atómicos de su feature:
-   no arrastran el donut, ni los 9 modales, ni la navegación, y cuando fallan
+   no arrastran el donut, ni los 10 modales, ni la navegación, y cuando fallan
    señalan a la feature y no "a la app".
 
    Es infraestructura de test, no de producción: por eso vive en `src/test/` y
@@ -56,6 +56,7 @@ export async function renderFeature(
         transactions: [],
         installmentPlans: [],
         tombstones: [],
+        benefitPrograms: [],
         ...options.state,
       },
     }),

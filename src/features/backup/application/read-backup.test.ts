@@ -14,7 +14,7 @@ import { readBackup } from './read-backup';
 const cuenta: Account = { id: 'aX', name: 'Importada', type: 'debito', color: '#8D5FB0', initialBalance: 0 };
 
 const estado: DataState = {
-  accounts: [cuenta], categories: [], transactions: [], installmentPlans: [], tombstones: [],
+  accounts: [cuenta], categories: [], transactions: [], installmentPlans: [], tombstones: [], benefitPrograms: [],
 };
 
 const archivo = () => new File(['da igual'], 'hilo-respaldo.json', { type: 'application/json' });

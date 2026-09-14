@@ -9,7 +9,7 @@ import type { TaskEither } from 'fp-ts/TaskEither';
 import type { HiloError } from './errors';
 import type { DataState, OcrSettings, SyncState } from './types';
 
-/** Las cinco colecciones, bajo `STORAGE_KEY`. `null` = perfil nuevo. */
+/** Las seis colecciones, bajo `STORAGE_KEY`. `null` = perfil nuevo. */
 export type StateRepository = {
   readonly load: TaskEither<HiloError, DataState | null>;
   readonly save: (state: DataState) => TaskEither<HiloError, void>;

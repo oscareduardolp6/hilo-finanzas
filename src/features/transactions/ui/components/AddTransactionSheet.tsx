@@ -13,9 +13,11 @@ import { Layers, Link2, Trash2, X } from 'lucide-react';
 import { ACCOUNT_SEARCH_THRESHOLD, COLORS } from '../../../../shared/design/tokens';
 import { accountNameMatches } from '../../../../shared/domain/search';
 import type {
-  Account, Category, InstallmentPlan, NewCategory, NewInstallmentPlan, PlanProgress, TransactionType,
+  Account, BenefitProgram, Category, InstallmentPlan, NewBenefitProgram, NewCategory, NewInstallmentPlan,
+  PlanProgress, TransactionType,
 } from '../../../../shared/domain/types';
 import { AccountChipSearch } from '../../../../shared/ui/account-chips';
+import { BenefitProgramPicker } from '../../../../shared/ui/benefit-program-picker';
 import { CategoryPicker } from '../../../../shared/ui/category-picker';
 import { InstallmentPlanPicker } from '../../../../shared/ui/installment-plan-picker';
 import { SheetOverlay } from '../../../../shared/ui/sheet-overlay';
@@ -33,6 +35,7 @@ export type AddTransactionSheetProps = {
   categories: Category[];
   plans: InstallmentPlan[];
   planProgress: Record<string, PlanProgress>;
+  benefitPrograms: BenefitProgram[];
   knownStores: string[];
   onClose: () => void;
   onSave: (form: TransactionFormDraft) => void;
@@ -40,6 +43,7 @@ export type AddTransactionSheetProps = {
   onSwitchType: (type: TransactionType) => void;
   onCreateCategory: (category: NewCategory) => Category;
   onCreatePlan: (plan: NewInstallmentPlan) => InstallmentPlan;
+  onCreateBenefitProgram: (program: NewBenefitProgram) => BenefitProgram;
   desktop?: boolean;
 };
 
@@ -52,8 +56,8 @@ const TYPE_META: Record<TransactionType, { label: string; color: string }> = {
 const TYPES: TransactionType[] = ['expense', 'income', 'transfer'];
 
 export function AddTransactionSheet({
-  formType, editingId, form, setForm, accounts, categories, plans, planProgress, knownStores,
-  onClose, onSave, onDelete, onSwitchType, onCreateCategory, onCreatePlan, desktop,
+  formType, editingId, form, setForm, accounts, categories, plans, planProgress, benefitPrograms, knownStores,
+  onClose, onSave, onDelete, onSwitchType, onCreateCategory, onCreatePlan, onCreateBenefitProgram, desktop,
 }: AddTransactionSheetProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [fromAccQuery, setFromAccQuery] = useState('');
@@ -315,6 +319,18 @@ export function AddTransactionSheet({
               <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Cantidad</p>
               <input type="text" value={form.quantity || ''} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} placeholder="Ej. 2" className="w-full px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
             </div>
+          </div>
+        )}
+        {formType === 'income' && (
+          <div>
+            <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Programa / promoción (opcional)</p>
+            <BenefitProgramPicker
+              programs={benefitPrograms}
+              accounts={accounts}
+              selectedId={form.benefitProgramId}
+              onSelect={(id) => setForm(f => ({ ...f, benefitProgramId: id }))}
+              onCreate={onCreateBenefitProgram}
+            />
           </div>
         )}
         <div>

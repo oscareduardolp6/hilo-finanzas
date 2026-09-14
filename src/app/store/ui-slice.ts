@@ -3,7 +3,7 @@
 
 import type { StateCreator } from 'zustand';
 import type { TransactionFormDraft } from '../../features/transactions/domain/form';
-import type { Account, InstallmentPlan, TransactionType } from '../../shared/domain/types';
+import type { Account, BenefitProgram, InstallmentPlan, TransactionType } from '../../shared/domain/types';
 import { makeSetter } from './setter';
 import type { Setter } from './setter';
 import type { HiloStore } from './index';
@@ -40,6 +40,9 @@ export type UiSlice = {
   syncModalOpen: boolean;
   backupModalOpen: boolean;
   receiptModalOpen: boolean;
+  benefitsModalOpen: boolean;
+  /** El programa que se está editando, o `null` si el formulario es un alta. */
+  editingBenefitProgram: BenefitProgram | null;
 
   toast: string | null;
 
@@ -65,6 +68,8 @@ export type UiSlice = {
   setSyncModalOpen: Setter<boolean>;
   setBackupModalOpen: Setter<boolean>;
   setReceiptModalOpen: Setter<boolean>;
+  setBenefitsModalOpen: Setter<boolean>;
+  setEditingBenefitProgram: Setter<BenefitProgram | null>;
 
   setToast: Setter<string | null>;
 };
@@ -100,6 +105,8 @@ export const createUiSlice: StateCreator<HiloStore, [], [], UiSlice> = (set) => 
   syncModalOpen: false,
   backupModalOpen: false,
   receiptModalOpen: false,
+  benefitsModalOpen: false,
+  editingBenefitProgram: null,
 
   toast: null,
 
@@ -125,6 +132,8 @@ export const createUiSlice: StateCreator<HiloStore, [], [], UiSlice> = (set) => 
   setSyncModalOpen: makeSetter<HiloStore, 'syncModalOpen'>(set, 'syncModalOpen'),
   setBackupModalOpen: makeSetter<HiloStore, 'backupModalOpen'>(set, 'backupModalOpen'),
   setReceiptModalOpen: makeSetter<HiloStore, 'receiptModalOpen'>(set, 'receiptModalOpen'),
+  setBenefitsModalOpen: makeSetter<HiloStore, 'benefitsModalOpen'>(set, 'benefitsModalOpen'),
+  setEditingBenefitProgram: makeSetter<HiloStore, 'editingBenefitProgram'>(set, 'editingBenefitProgram'),
 
   setToast: makeSetter<HiloStore, 'toast'>(set, 'toast'),
 });

@@ -1,6 +1,6 @@
 /* Acciones de sincronización. Único lugar de la feature que corre una mónada y
    que hace `match` del `Either`: si `receiveSync` falla, el mensaje sale como
-   toast; si va bien, entran las cinco colecciones y el punto del peer.
+   toast; si va bien, entran las seis colecciones y el punto del peer.
 
    Las tres acciones de `syncState` son transformaciones puras del dominio, sin
    caso de uso: no tocan IO ni necesitan reloj — el instante lo pone quien las

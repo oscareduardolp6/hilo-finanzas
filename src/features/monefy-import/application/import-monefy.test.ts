@@ -41,7 +41,7 @@ const planFor = (p: MonefyPreview, existingAccounts: Account[] = [], existingCat
   }), deps);
 
 const vacio = (): DataState => ({
-  accounts: [], categories: [], transactions: [], installmentPlans: [], tombstones: [],
+  accounts: [], categories: [], transactions: [], installmentPlans: [], tombstones: [], benefitPrograms: [],
 });
 
 describe('planMonefyImport', () => {

@@ -18,7 +18,7 @@ const txn = (id: string, updatedAt: number): Transaction => ({
 } as Transaction);
 
 const vacio = (): DataState => ({
-  accounts: [], categories: [], transactions: [], installmentPlans: [], tombstones: [],
+  accounts: [], categories: [], transactions: [], installmentPlans: [], tombstones: [], benefitPrograms: [],
 });
 
 const syncState: SyncState = { deviceId: 'yo', deviceName: 'Laptop', peers: {} };

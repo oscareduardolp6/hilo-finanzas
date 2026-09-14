@@ -1,4 +1,4 @@
-/* Armar un respaldo: la foto completa de las cinco colecciones, con el nombre
+/* Armar un respaldo: la foto completa de las seis colecciones, con el nombre
    de archivo fechado, y su versión de texto para pegar en otro lado.
 
    Comparte el formato con `sync` —de ahí que importe de su `domain/`— pero no

@@ -31,6 +31,7 @@ Ideas y funcionalidades que queremos agregar a Hilo, una por archivo. No es un b
 | [Flujo para consolidar gastos pendientes de transferencia](consolidar-gastos-pendientes.md) | 14 | Pendiente |
 | [Caso especial para gastos de gasolina](gasolina-tracking.md) | 15 | Pendiente |
 | [Ocultar / mostrar saldos](ocultar-saldos.md) | 16 | Pendiente |
+| [Seguimiento de beneficios y recompensas de tarjetas de crédito](beneficios-tarjetas.md) | 17 | Implementada |
 | [Refactorizar hacia una arquitectura en capas](layered-architecture.md) | 20 | Implementada |
 | [Chat de Telegram para registrar gastos](telegram-bot.md) | 25 | Pendiente |
 

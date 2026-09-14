@@ -1,4 +1,4 @@
-/* Caso de uso: guardar el blob completo de las 5 colecciones.
+/* Caso de uso: guardar el blob completo de las 6 colecciones.
 
    Este SÍ es un `ReaderTaskEither`: cuando falla, el usuario tiene que
    enterarse. El slice hace el `match` y convierte el `Left` en el toast

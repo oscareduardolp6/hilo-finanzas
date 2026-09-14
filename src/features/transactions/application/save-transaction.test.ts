@@ -35,7 +35,7 @@ describe('saveTransaction', () => {
     expect(transactions).toHaveLength(2);
     expect(transactions[1]).toEqual({
       id: 'txn_fijo', type: 'income', date: '2026-01-15', description: 'Tacos', amount: 250,
-      accountId: 'a1', categoryId: 'sueldo', createdAt: AHORA, updatedAt: AHORA,
+      accountId: 'a1', categoryId: 'sueldo', benefitProgramId: null, createdAt: AHORA, updatedAt: AHORA,
     });
   });
 

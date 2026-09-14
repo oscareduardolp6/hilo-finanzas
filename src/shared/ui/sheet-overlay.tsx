@@ -1,7 +1,7 @@
 /* El caparazón de todos los modales de Hilo.
 
    En móvil es una hoja que sube desde abajo (`absolute`, dentro del marco del
-   teléfono); en escritorio, un diálogo centrado (`fixed`). Los 9 modales solo
+   teléfono); en escritorio, un diálogo centrado (`fixed`). Los 10 modales solo
    reenvían el prop `desktop` — ninguno decide su propio posicionamiento.
 
    Vive en `shared/ui` y no en una feature porque lo usan todas. */

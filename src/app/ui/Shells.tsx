@@ -15,6 +15,7 @@ import { Toast } from '../../shared/ui/toast';
 import { AccountsContainer } from '../../features/accounts/ui/containers/AccountsContainer';
 import { AccountFormContainer } from '../../features/accounts/ui/containers/AccountFormContainer';
 import { BackupContainer } from '../../features/backup/ui/containers/BackupContainer';
+import { BenefitsContainer } from '../../features/benefits/ui/containers/BenefitsContainer';
 import { HomeContainer } from '../../features/dashboard/ui/containers/HomeContainer';
 import { HistoryContainer } from '../../features/history/ui/containers/HistoryContainer';
 import { MsiContainer } from '../../features/installments/ui/containers/MsiContainer';
@@ -43,7 +44,7 @@ function ActiveTab({ desktop }: ShellProps) {
   return null;
 }
 
-/** Las nueve hojas. Cada una decide sola si está abierta, así que montarlas
+/** Las diez hojas. Cada una decide sola si está abierta, así que montarlas
  *  siempre no cuesta nada y evita que los dos árboles se desincronicen. */
 function Sheets({ desktop }: ShellProps) {
   return (
@@ -56,6 +57,7 @@ function Sheets({ desktop }: ShellProps) {
       <ReceiptScanContainer desktop={desktop} />
       <SyncContainer desktop={desktop} />
       <BackupContainer desktop={desktop} />
+      <BenefitsContainer desktop={desktop} />
     </>
   );
 }

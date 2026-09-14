@@ -9,7 +9,7 @@
       delta borraría todo lo que no lleva. Un borrado solo viaja como lápida. */
 
 import type { DataState, Tombstone } from '../../../shared/domain/types';
-import { SYNC_COLLECTIONS, TOMBSTONE_TTL_MS, recordStamp } from './payload';
+import { OPTIONAL_SYNC_COLLECTIONS, SYNC_COLLECTIONS, TOMBSTONE_TTL_MS, recordStamp } from './payload';
 
 export type MergeStats = {
   added: number;
@@ -90,7 +90,9 @@ export function mergeDataState(
   const tombstoneMap = new Map(tombstones.map((t) => [t.id, t.deletedAt]));
   const stats: MergeStats = { added: 0, updated: 0, removed: 0 };
   const out = { tombstones } as MergeResult;
-  for (const key of SYNC_COLLECTIONS) {
+  // Las 4 colecciones originales + las agregadas después (hoy solo
+  // `benefitPrograms`): se funden igual, por `id` y lápida.
+  for (const key of [...SYNC_COLLECTIONS, ...OPTIONAL_SYNC_COLLECTIONS]) {
     const res = mergeCollection(current[key] as Record_[], incoming[key] as Record_[] | undefined, tombstoneMap);
     (out as Record<string, unknown>)[key] = res.list;
     stats.added += res.added;

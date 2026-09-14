@@ -21,7 +21,7 @@ const viejo: Transaction = {
 } as Transaction;
 
 const estado: DataState = {
-  accounts: [cuenta], categories: [], transactions: [viejo], installmentPlans: [], tombstones: [],
+  accounts: [cuenta], categories: [], transactions: [viejo], installmentPlans: [], tombstones: [], benefitPrograms: [],
 };
 
 describe('buildBackup', () => {

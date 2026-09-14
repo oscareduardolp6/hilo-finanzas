@@ -23,8 +23,8 @@ import type { HiloStoreApi } from './store';
 /** Arranca las suscripciones de guardado. Devuelve la función para cortarlas. */
 export function subscribePersistence(store: HiloStoreApi, deps: Deps): () => void {
   const unsubscribeData = store.subscribe(
-    // Las 5 colecciones + `loaded`: exactamente el array de dependencias que
-    // tenía el useEffect.
+    // Las 6 colecciones + `loaded`: exactamente el array de dependencias que
+    // tenía el useEffect (antes 5, `benefitPrograms` se sumó después).
     (state) =>
       [
         state.accounts,
@@ -32,10 +32,11 @@ export function subscribePersistence(store: HiloStoreApi, deps: Deps): () => voi
         state.transactions,
         state.installmentPlans,
         state.tombstones,
+        state.benefitPrograms,
         state.loaded,
       ] as const,
     async (current) => {
-      const loaded = current[5];
+      const loaded = current[6];
       if (!loaded) return;
       const result = await runRTE(persist(selectDataState(store.getState())), deps);
       if (E.isLeft(result)) store.getState().setToast(messageFor(result.left));

@@ -56,6 +56,7 @@ export function toTransaction(
       type: 'income',
       accountId: payload.accountId ?? '',
       categoryId: payload.categoryId ?? '',
+      benefitProgramId: payload.benefitProgramId || null,
     };
   }
 

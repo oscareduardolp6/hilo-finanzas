@@ -33,6 +33,7 @@ function SettingsSheet({ desktop }: SettingsContainerProps) {
       onOpenImport={() => openFromSettings('import')}
       onOpenSync={() => openFromSettings('sync')}
       onOpenBackup={() => openFromSettings('backup')}
+      onOpenBenefits={() => openFromSettings('benefits')}
       onClose={() => setOpen(false)}
       desktop={desktop}
     />

@@ -1,4 +1,4 @@
-/* Las 5 colecciones que se persisten, más el flag de hidratación.
+/* Las 6 colecciones que se persisten, más el flag de hidratación.
 
    Es el único estado que sale y entra de IndexedDB; todo lo demás (filtros,
    modales, borrador del formulario) es efímero y vive en `ui-slice`. */
@@ -12,6 +12,7 @@ import {
 } from '../../shared/domain/defaults';
 import type {
   Account,
+  BenefitProgram,
   Category,
   DataState,
   InstallmentPlan,
@@ -33,24 +34,27 @@ export type DataSlice = {
   transactions: Transaction[];
   installmentPlans: InstallmentPlan[];
   tombstones: Tombstone[];
+  benefitPrograms: BenefitProgram[];
 
   setAccounts: Setter<Account[]>;
   setCategories: Setter<Category[]>;
   setTransactions: Setter<Transaction[]>;
   setInstallmentPlans: Setter<InstallmentPlan[]>;
   setTombstones: Setter<Tombstone[]>;
+  setBenefitPrograms: Setter<BenefitProgram[]>;
 
   /** Corre el caso de uso `hydrate` y vuelca el resultado. */
   hydrateFromRepositories: () => Promise<void>;
 };
 
-/** Las 5 colecciones tal como se guardan, sin lo efímero. */
+/** Las 6 colecciones tal como se guardan, sin lo efímero. */
 export const selectDataState = (state: DataSlice): DataState => ({
   accounts: state.accounts,
   categories: state.categories,
   transactions: state.transactions,
   installmentPlans: state.installmentPlans,
   tombstones: state.tombstones,
+  benefitPrograms: state.benefitPrograms,
 });
 
 export const createDataSlice =
@@ -62,12 +66,14 @@ export const createDataSlice =
     transactions: buildDefaultTransactions(),
     installmentPlans: buildDefaultInstallmentPlans(),
     tombstones: [],
+    benefitPrograms: [],
 
     setAccounts: makeSetter<HiloStore, 'accounts'>(set, 'accounts'),
     setCategories: makeSetter<HiloStore, 'categories'>(set, 'categories'),
     setTransactions: makeSetter<HiloStore, 'transactions'>(set, 'transactions'),
     setInstallmentPlans: makeSetter<HiloStore, 'installmentPlans'>(set, 'installmentPlans'),
     setTombstones: makeSetter<HiloStore, 'tombstones'>(set, 'tombstones'),
+    setBenefitPrograms: makeSetter<HiloStore, 'benefitPrograms'>(set, 'benefitPrograms'),
 
     hydrateFromRepositories: async () => {
       const { data, ocrSettings, syncState } = await runRT(hydrate, deps);
@@ -83,6 +89,7 @@ export const createDataSlice =
         ...(data?.transactions ? { transactions: data.transactions } : {}),
         ...(data?.installmentPlans ? { installmentPlans: data.installmentPlans } : {}),
         ...(data?.tombstones ? { tombstones: data.tombstones } : {}),
+        ...(data?.benefitPrograms ? { benefitPrograms: data.benefitPrograms } : {}),
         ...(ocrSettings
           ? { ocrSettings: { apiKey: ocrSettings.apiKey || '', model: ocrSettings.model || '' } }
           : {}),

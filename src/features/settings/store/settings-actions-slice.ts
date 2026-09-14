@@ -14,8 +14,8 @@ import type { HiloStore } from '../../../app/store';
 import type { OcrSettings } from '../../../shared/domain/types';
 import { cleanOcrSettings, saveOcrSettings } from '../application/save-ocr-settings';
 
-/** Las tres hojas que se abren DESDE Ajustes. Abrir una cierra Ajustes. */
-export type SettingsTool = 'import' | 'sync' | 'backup';
+/** Las hojas que se abren DESDE Ajustes. Abrir una cierra Ajustes. */
+export type SettingsTool = 'import' | 'sync' | 'backup' | 'benefits';
 
 export type SettingsActionsSlice = {
   saveOcrSettings: (input: Partial<OcrSettings>) => Promise<void>;
@@ -54,6 +54,7 @@ export const createSettingsActionsSlice =
         importModalOpen: tool === 'import',
         syncModalOpen: tool === 'sync',
         backupModalOpen: tool === 'backup',
+        benefitsModalOpen: tool === 'benefits',
       });
     },
   });

@@ -8,7 +8,7 @@
 
 import { base64ToBytes, gunzipBytes } from '../../../shared/infrastructure/compression';
 import type {
-  Account, Category, DataState, InstallmentPlan, Tombstone, Transaction,
+  Account, BenefitProgram, Category, DataState, InstallmentPlan, Tombstone, Transaction,
 } from '../../../shared/domain/types';
 
 export const EXPORT_APP_ID = 'hilo-finanzas';
@@ -23,6 +23,14 @@ export const SYNC_SKEW_MARGIN_MS = 5 * 60 * 1000; // margen anti-desfase de relo
 export const SYNC_COLLECTIONS = ['accounts', 'categories', 'transactions', 'installmentPlans'] as const;
 
 export type SyncCollection = typeof SYNC_COLLECTIONS[number];
+
+/** Colecciones agregadas después del schema v1: se funden y exportan igual que
+ *  las de arriba, pero TOLERAN estar ausentes en un payload viejo (un export
+ *  previo a la feature no las trae) en vez de exigir `Array.isArray` — mismo
+ *  trato que ya recibían las lápidas antes de este tipo. */
+export const OPTIONAL_SYNC_COLLECTIONS = ['benefitPrograms'] as const;
+
+export type OptionalSyncCollection = typeof OPTIONAL_SYNC_COLLECTIONS[number];
 
 /** Marca de tiempo con la que se decide quién gana en un merge. `updatedAt` no
  *  existe en registros previos al sync, de ahí la cascada. */
@@ -88,15 +96,17 @@ export function buildExportPayload(state: DataState, { device, since, now }: Bui
       tombstones: partial
         ? (state.tombstones || []).filter((t) => (t.deletedAt || 0) > cutoff)
         : (state.tombstones || []),
+      benefitPrograms: pick<BenefitProgram>(state.benefitPrograms),
     },
   };
 }
 
-/* Valida un objeto ya parseado y devuelve las 5 colecciones normalizadas más
+/* Valida un objeto ya parseado y devuelve las 6 colecciones normalizadas más
    los metadatos del envelope. Los tres últimos (`device`, `partial`, `since`)
    faltan en exports viejos y en respaldos → null/false, y ni el merge ni el
-   replace los miran. Lanza un `Error` legible si no parece un export de Hilo:
-   el texto va tal cual a la UI, así que es contrato. */
+   replace los miran. `benefitPrograms` también falta en exports previos a la
+   feature → `[]`, igual que `tombstones`. Lanza un `Error` legible si no
+   parece un export de Hilo: el texto va tal cual a la UI, así que es contrato. */
 export function normalizeExportPayload(obj: unknown): IncomingPayload {
   const o = obj as { app?: string; data?: Record<string, unknown>; device?: { id?: unknown; name?: unknown }; exportedAt?: unknown; partial?: unknown; since?: unknown } | null;
   if (!o || o.app !== EXPORT_APP_ID || !o.data) {
@@ -115,6 +125,8 @@ export function normalizeExportPayload(obj: unknown): IncomingPayload {
     transactions: d['transactions'] as Transaction[],
     installmentPlans: d['installmentPlans'] as InstallmentPlan[],
     tombstones: Array.isArray(d['tombstones']) ? (d['tombstones'] as Tombstone[]) : [],
+    // Igual que `tombstones`: un export previo a la feature no la trae.
+    benefitPrograms: Array.isArray(d['benefitPrograms']) ? (d['benefitPrograms'] as BenefitProgram[]) : [],
     exportedAt: typeof o.exportedAt === 'string' ? o.exportedAt : null,
     device: dev,
     partial: !!o.partial,
@@ -159,5 +171,7 @@ export async function parseExportBytes(bytes: Uint8Array): Promise<IncomingPaylo
 /** Cuántos registros lleva un payload. Es lo que la UI muestra como "N
  *  registros" al preparar un delta. */
 export function countPayloadRecords(payload: ExportPayload): number {
-  return SYNC_COLLECTIONS.reduce((n, k) => n + payload.data[k].length, 0) + payload.data.tombstones.length;
+  return SYNC_COLLECTIONS.reduce((n, k) => n + payload.data[k].length, 0)
+    + payload.data.tombstones.length
+    + payload.data.benefitPrograms.length;
 }
