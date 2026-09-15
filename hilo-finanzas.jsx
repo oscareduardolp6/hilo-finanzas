@@ -442,17 +442,29 @@ export function computeKnownStores(transactions, installmentPlans) {
 
 // Sugerencias para el <datalist> del buscador de historial: lugares + descripciones ya
 // usadas + nombres/lugares de planes MSI. computeKnownStores no sirve porque no trae descripciones.
-export function computeHistorySuggestions(transactions, installmentPlans) {
-  const set = new Set();
+// Se limita a las `limit` más recientes (por fecha) para que no crezca sin tope con el historial.
+export function computeHistorySuggestions(transactions, installmentPlans, limit = 10) {
+  const latest = new Map(); // value -> [date, createdAt] más reciente visto
+  const consider = (value, date, createdAt) => {
+    if (!value) return;
+    const stamp = [date || '', createdAt || 0];
+    const prev = latest.get(value);
+    if (!prev || stamp[0] > prev[0] || (stamp[0] === prev[0] && stamp[1] > prev[1])) {
+      latest.set(value, stamp);
+    }
+  };
   transactions.forEach(t => {
-    if (t.store) set.add(t.store);
-    if (t.description) set.add(t.description);
+    consider(t.store, t.date, t.createdAt);
+    consider(t.description, t.date, t.createdAt);
   });
   installmentPlans.forEach(p => {
-    if (p.description) set.add(p.description);
-    if (p.store) set.add(p.store);
+    consider(p.store, p.startDate, p.createdAt);
+    consider(p.description, p.startDate, p.createdAt);
   });
-  return Array.from(set).sort((a, b) => a.localeCompare(b));
+  return Array.from(latest.entries())
+    .sort((a, b) => b[1][0].localeCompare(a[1][0]) || b[1][1] - a[1][1])
+    .slice(0, limit)
+    .map(([value]) => value);
 }
 
 /* Filtro del Historial: mes/todo-el-tiempo, tipo (incluye 'msi'), categoría,

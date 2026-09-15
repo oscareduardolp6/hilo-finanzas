@@ -6,7 +6,7 @@ Ideas y funcionalidades que queremos agregar a Hilo, una por archivo. No es un b
 
 | Task | Prioridad | Status |
 | --- | --- | --- |
-| [Límite al autocomplete del buscador de historial](limite-autocomplete-busqueda-historial.md) | 1 | Pendiente |
+| [Límite al autocomplete del buscador de historial](limite-autocomplete-busqueda-historial.md) | 1 | Implementada |
 | [Visualización de escritorio](desktop-view.md) | 1 | Implementada |
 | [Migrar a IndexedDB (o similar) para guardado local](local-storage-migration.md) | 2 | Implementada |
 | [Instalar como PWA](pwa-install.md) | 3 | Implementada |

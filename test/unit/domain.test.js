@@ -209,14 +209,41 @@ describe('computeKnownStores', () => {
 });
 
 describe('computeHistorySuggestions', () => {
-  it('incluye tiendas Y descripciones de transacciones y planes, dedupe y ordenado', () => {
+  it('incluye tiendas Y descripciones de transacciones y planes, dedupe y ordenado por más reciente', () => {
     const txns = [
-      { store: 'Walmart', description: 'Despensa' },
-      { description: 'Uber' },
-      { store: 'Walmart' },
+      { store: 'Walmart', description: 'Despensa', date: '2026-09-01' },
+      { description: 'Uber', date: '2026-09-05' },
+      { store: 'Walmart', date: '2026-09-03' },
     ];
-    const plans = [{ description: 'Laptop', store: 'Costco' }];
-    expect(computeHistorySuggestions(txns, plans)).toEqual(['Costco', 'Despensa', 'Laptop', 'Uber', 'Walmart']);
+    const plans = [{ description: 'Laptop', store: 'Costco', startDate: '2026-09-02' }];
+    expect(computeHistorySuggestions(txns, plans)).toEqual(['Uber', 'Walmart', 'Costco', 'Laptop', 'Despensa']);
+  });
+
+  it('se queda con la aparición más reciente de un valor repetido en distintos campos/fechas', () => {
+    const txns = [
+      { store: 'HEB', date: '2026-09-01' },
+      { description: 'HEB', date: '2026-09-10' },
+    ];
+    expect(computeHistorySuggestions(txns, [])).toEqual(['HEB']);
+  });
+
+  it('recorta al límite (default 10), priorizando lo más reciente', () => {
+    const txns = Array.from({ length: 15 }, (_, i) => ({
+      store: `Tienda ${i}`,
+      date: `2026-09-${String(i + 1).padStart(2, '0')}`,
+    }));
+    const result = computeHistorySuggestions(txns, []);
+    expect(result).toHaveLength(10);
+    expect(result).toEqual(['Tienda 14', 'Tienda 13', 'Tienda 12', 'Tienda 11', 'Tienda 10', 'Tienda 9', 'Tienda 8', 'Tienda 7', 'Tienda 6', 'Tienda 5']);
+  });
+
+  it('respeta un límite explícito distinto al default', () => {
+    const txns = [
+      { store: 'A', date: '2026-09-01' },
+      { store: 'B', date: '2026-09-02' },
+      { store: 'C', date: '2026-09-03' },
+    ];
+    expect(computeHistorySuggestions(txns, [], 2)).toEqual(['C', 'B']);
   });
 });
 
