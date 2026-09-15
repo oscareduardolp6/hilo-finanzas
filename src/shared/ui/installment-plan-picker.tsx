@@ -28,10 +28,12 @@ export type InstallmentPlanPickerProps = {
   categories: Category[];
   knownStores: string[];
   onCreateCategory: (category: NewCategory) => Category;
+  /** Modo privado: los montos se reemplazan por un placeholder. */
+  hideBalances?: boolean;
 };
 
 export function InstallmentPlanPicker({
-  plans, progress, selectedId, onSelect, onCreate, categories, knownStores, onCreateCategory,
+  plans, progress, selectedId, onSelect, onCreate, categories, knownStores, onCreateCategory, hideBalances,
 }: InstallmentPlanPickerProps) {
   const [creating, setCreating] = useState(false);
   const [description, setDescription] = useState('');
@@ -86,7 +88,7 @@ export function InstallmentPlanPicker({
                 <div className="w-full h-1.5 rounded-full mt-2" style={{ backgroundColor: COLORS.elevated }}>
                   <div className="h-1.5 rounded-full" style={{ width: `${prog.pct * 100}%`, backgroundColor: COLORS.accent }} />
                 </div>
-                <p className="text-xs mt-1" style={{ color: COLORS.textFaint }}>Quedan {formatMoney(prog.remaining)}</p>
+                <p className="text-xs mt-1" style={{ color: COLORS.textFaint }}>Quedan {formatMoney(prog.remaining, hideBalances)}</p>
               </button>
             );
           })}
@@ -115,7 +117,7 @@ export function InstallmentPlanPicker({
             </div>
           </div>
           {parseFloat(totalAmount) > 0 && parseFloat(installmentsCount) > 0 && (
-            <p className="text-xs" style={{ color: COLORS.textFaint }}>≈ {formatMoney(parseFloat(totalAmount) / parseFloat(installmentsCount))} por pago completo</p>
+            <p className="text-xs" style={{ color: COLORS.textFaint }}>≈ {formatMoney(parseFloat(totalAmount) / parseFloat(installmentsCount), hideBalances)} por pago completo</p>
           )}
           <div>
             <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Categoría</p>

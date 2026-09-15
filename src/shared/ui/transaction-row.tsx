@@ -18,10 +18,12 @@ export type TransactionRowProps = {
   plans?: InstallmentPlan[];
   /** Si viene, se resalta dentro de la descripción y la tienda. */
   query?: string | undefined;
+  /** Modo privado: el monto (y su signo) se reemplaza por un placeholder. */
+  hideBalances?: boolean;
   onClick: () => void;
 };
 
-export function TransactionRow({ txn, accounts, categories, plans, query, onClick }: TransactionRowProps) {
+export function TransactionRow({ txn, accounts, categories, plans, query, hideBalances, onClick }: TransactionRowProps) {
   const accById = (id: string | undefined) => accounts.find(a => a.id === id);
 
   if (txn.type === 'transfer') {
@@ -40,7 +42,7 @@ export function TransactionRow({ txn, accounts, categories, plans, query, onClic
           <div className="flex items-center justify-between gap-2">
             <p className="truncate text-sm font-medium" style={{ color: COLORS.text }}>{txn.description ? highlightMatch(txn.description, query) : 'Transferencia'}</p>
             <p className="font-mono-custom text-sm font-semibold shrink-0" style={{ color: txn.taggedAsExpense ? COLORS.expense : COLORS.text }}>
-              {txn.taggedAsExpense ? '-' : ''}{formatMoney(txn.amount)}
+              {!hideBalances && txn.taggedAsExpense ? '-' : ''}{formatMoney(txn.amount, hideBalances)}
             </p>
           </div>
           <p className="text-xs mt-0.5 truncate" style={{ color: COLORS.textMuted }}>{fromAcc ? fromAcc.name : '—'} → {toAcc ? toAcc.name : '—'}</p>
@@ -78,7 +80,7 @@ export function TransactionRow({ txn, accounts, categories, plans, query, onClic
         <div className="flex items-center justify-between gap-2">
           <p className="truncate text-sm font-medium" style={{ color: COLORS.text }}>{txn.description ? highlightMatch(txn.description, query) : (cat ? cat.name : 'Movimiento')}</p>
           <p className="font-mono-custom text-sm font-semibold shrink-0" style={{ color: isExpense ? COLORS.expense : COLORS.income }}>
-            {isExpense ? '-' : '+'}{formatMoney(txn.amount)}
+            {hideBalances ? '' : (isExpense ? '-' : '+')}{formatMoney(txn.amount, hideBalances)}
           </p>
         </div>
         <p className="text-xs mt-0.5 truncate" style={{ color: COLORS.textMuted }}>{cat ? cat.name : ''}{cat && acc ? ' · ' : ''}{acc ? acc.name : ''}{store ? <> · {highlightMatch(store, query)}</> : ''}</p>

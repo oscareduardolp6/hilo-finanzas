@@ -35,6 +35,7 @@ export function HistoryContainer({ desktop }: HistoryContainerProps) {
   const filterCategory = useHiloStore((s) => s.filterCategory);
   const filterStore = useHiloStore((s) => s.filterStore);
   const searchQuery = useHiloStore((s) => s.searchQuery);
+  const hideBalances = useHiloStore((s) => s.hideBalances);
 
   const setMonthCursor = useHiloStore((s) => s.setMonthCursor);
   const setShowAllTime = useHiloStore((s) => s.setShowAllTime);
@@ -94,6 +95,7 @@ export function HistoryContainer({ desktop }: HistoryContainerProps) {
       filterStore={filterStore}
       onFilterStore={setFilterStore}
       onOpenTxn={openEditSheet}
+      hideBalances={hideBalances}
     />
   );
 }

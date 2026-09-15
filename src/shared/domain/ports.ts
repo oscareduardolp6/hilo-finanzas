@@ -28,6 +28,12 @@ export type SyncStateRepository = {
   readonly save: (state: SyncState) => TaskEither<HiloError, void>;
 };
 
+/** Preferencia de "modo privado" (ocultar saldos) de ESTE dispositivo; tampoco viaja. */
+export type HideBalancesRepository = {
+  readonly load: TaskEither<HiloError, boolean | null>;
+  readonly save: (value: boolean) => TaskEither<HiloError, void>;
+};
+
 /* --- Capacidades del navegador ---------------------------------------- */
 /* Lo que antes se llamaba directo desde dentro de un componente: leer un
    archivo, copiar, compartir, bajar un JSON, pintar y escanear un QR. Como

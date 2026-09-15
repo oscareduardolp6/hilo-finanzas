@@ -46,13 +46,15 @@ export type ReceiptScanModalProps = {
   onOpenSettings: () => void;
   onClose: () => void;
   desktop?: boolean;
+  /** Modo privado: los montos del ticket se reemplazan por un placeholder. */
+  hideBalances?: boolean;
 };
 
 export function ReceiptScanModal({
   step, accounts, expenseCategories, hasApiKey, error, draft,
   store, date, rows, discounts, primaryAccountId, originAccountId, accountModes, totals,
   onFile, onStore, onDate, onPrimaryAccount, onOriginAccount, onPatchRow, onPatchDiscount,
-  onAddDiscount, onToggleAccountMode, onConfirm, onOpenSettings, onClose, desktop,
+  onAddDiscount, onToggleAccountMode, onConfirm, onOpenSettings, onClose, desktop, hideBalances,
 }: ReceiptScanModalProps) {
   const accountName = (id: string): string => {
     const a = accounts.find(x => x.id === id);
@@ -216,17 +218,17 @@ export function ReceiptScanModal({
 
           <div className="rounded-xl p-3 mb-2" style={{ backgroundColor: COLORS.surfaceAlt }}>
             <div className="flex justify-between text-xs" style={{ color: COLORS.textMuted }}>
-              <span>Suma de artículos</span><span className="font-mono-custom">{formatMoney(sumRows)}</span>
+              <span>Suma de artículos</span><span className="font-mono-custom">{formatMoney(sumRows, hideBalances)}</span>
             </div>
             <div className="flex justify-between text-xs mt-1" style={{ color: COLORS.textMuted }}>
-              <span>− Descuentos</span><span className="font-mono-custom">{formatMoney(sumDiscounts)}</span>
+              <span>− Descuentos</span><span className="font-mono-custom">{formatMoney(sumDiscounts, hideBalances)}</span>
             </div>
             <div className="flex justify-between text-sm mt-1 font-medium" style={{ color: COLORS.text }}>
-              <span>= Neto</span><span className="font-mono-custom">{formatMoney(net)}</span>
+              <span>= Neto</span><span className="font-mono-custom">{formatMoney(net, hideBalances)}</span>
             </div>
             {ticketTotal > 0 && (
               <div className="flex justify-between text-xs mt-1" style={{ color: COLORS.textFaint }}>
-                <span>Total del ticket</span><span className="font-mono-custom">{formatMoney(ticketTotal)}</span>
+                <span>Total del ticket</span><span className="font-mono-custom">{formatMoney(ticketTotal, hideBalances)}</span>
               </div>
             )}
           </div>

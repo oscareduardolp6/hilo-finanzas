@@ -19,6 +19,7 @@ export function AccountsContainer({ desktop }: AccountsContainerProps) {
   const accounts = useHiloStore(selectAccounts);
   const transactions = useHiloStore((s) => s.transactions);
   const openAccountForm = useHiloStore((s) => s.openAccountForm);
+  const hideBalances = useHiloStore((s) => s.hideBalances);
 
   // `useMemo` y no un selector: `computeBalances` devuelve un objeto nuevo cada
   // vez, y zustand v5 compara por identidad. Es el mismo memo que tenía `App`.
@@ -32,6 +33,7 @@ export function AccountsContainer({ desktop }: AccountsContainerProps) {
       balances={balances}
       onAdd={() => openAccountForm(null)}
       onEdit={(account) => openAccountForm(account)}
+      hideBalances={hideBalances}
     />
   );
 }

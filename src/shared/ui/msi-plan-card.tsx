@@ -13,9 +13,11 @@ export type MsiPlanCardProps = {
   onClick: () => void;
   /** Atenúa la tarjeta; se usa para los ya pagados. */
   muted?: boolean;
+  /** Modo privado: los montos se reemplazan por un placeholder. */
+  hideBalances?: boolean;
 };
 
-export function MsiPlanCard({ plan, progress, categories, onClick, muted }: MsiPlanCardProps) {
+export function MsiPlanCard({ plan, progress, categories, onClick, muted, hideBalances }: MsiPlanCardProps) {
   const cat = categories.find(c => c.id === plan.categoryId);
   const prog = progress || { paid: 0, installmentsPaid: 0, remaining: plan.totalAmount, pct: 0, isPaidOff: false };
   return (
@@ -31,11 +33,11 @@ export function MsiPlanCard({ plan, progress, categories, onClick, muted }: MsiP
         <div className="h-1.5 rounded-full" style={{ width: `${prog.pct * 100}%`, backgroundColor: prog.isPaidOff ? COLORS.income : COLORS.accent }} />
       </div>
       <div className="flex items-center justify-between mt-1.5">
-        <p className="text-xs" style={{ color: COLORS.textFaint }}>{formatMoney(prog.paid)} de {formatMoney(plan.totalAmount)}</p>
+        <p className="text-xs" style={{ color: COLORS.textFaint }}>{formatMoney(prog.paid, hideBalances)} de {formatMoney(plan.totalAmount, hideBalances)}</p>
         {prog.isPaidOff ? (
           <p className="text-xs font-medium" style={{ color: COLORS.income }}>Pagado ✓</p>
         ) : (
-          <p className="text-xs" style={{ color: COLORS.textFaint }}>Quedan {formatMoney(prog.remaining)}</p>
+          <p className="text-xs" style={{ color: COLORS.textFaint }}>Quedan {formatMoney(prog.remaining, hideBalances)}</p>
         )}
       </div>
     </button>

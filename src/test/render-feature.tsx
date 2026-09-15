@@ -17,6 +17,7 @@ import { HiloStoreProvider } from '../app/store-context';
 import { createHiloStore } from '../app/store';
 import type { HiloStoreApi } from '../app/store';
 import {
+  inMemoryHideBalancesRepository,
   inMemoryOcrSettingsRepository,
   inMemoryStateRepository,
   inMemorySyncStateRepository,
@@ -62,6 +63,7 @@ export async function renderFeature(
     }),
     ocrSettingsRepository: inMemoryOcrSettingsRepository(),
     syncStateRepository: inMemorySyncStateRepository(),
+    hideBalancesRepository: inMemoryHideBalancesRepository(),
     clock: () => AHORA,
     // El prefijo es opcional en el puerto (`uid()` se llama sin él en algún
     // sitio), así que el doble aquí también tiene que admitir no recibirlo.

@@ -35,6 +35,7 @@ function ReceiptScanSheet({ desktop }: ReceiptScanContainerProps) {
   const ocrSettings = useHiloStore((s) => s.ocrSettings);
   const scanReceipt = useHiloStore((s) => s.scanReceipt);
   const addReceiptTransactions = useHiloStore((s) => s.addReceiptTransactions);
+  const hideBalances = useHiloStore((s) => s.hideBalances);
 
   const expenseCategories = useMemo(() => categories.filter(c => c.type === 'expense'), [categories]);
 
@@ -122,6 +123,7 @@ function ReceiptScanSheet({ desktop }: ReceiptScanContainerProps) {
       onOpenSettings={() => { setOpen(false); setSettingsOpen(true); }}
       onClose={() => setOpen(false)}
       desktop={desktop}
+      hideBalances={hideBalances}
     />
   );
 }

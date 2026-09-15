@@ -8,15 +8,18 @@
 import * as TE from 'fp-ts/TaskEither';
 import { persistenceError } from '../domain/errors';
 import type {
+  HideBalancesRepository,
   OcrSettingsRepository,
   StateRepository,
   SyncStateRepository,
 } from '../domain/ports';
 import type { DataState, OcrSettings, SyncState } from '../domain/types';
 import {
+  loadHideBalances,
   loadOcrSettings,
   loadState,
   loadSyncState,
+  saveHideBalances,
   saveOcrSettings,
   saveState,
   saveSyncState,
@@ -38,4 +41,9 @@ export const indexedDbOcrSettingsRepository: OcrSettingsRepository = {
 export const indexedDbSyncStateRepository: SyncStateRepository = {
   load: attempt<SyncState | null>(() => loadSyncState()),
   save: (state) => attempt<void>(() => saveSyncState(state)),
+};
+
+export const indexedDbHideBalancesRepository: HideBalancesRepository = {
+  load: attempt<boolean | null>(() => loadHideBalances()),
+  save: (value) => attempt<void>(() => saveHideBalances(value)),
 };

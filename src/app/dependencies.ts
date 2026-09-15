@@ -10,8 +10,8 @@ import type { ReceiptGateway } from '../features/receipt-ocr/domain/ports';
 import { browserReceiptGateway } from '../features/receipt-ocr/infrastructure/browser-receipt-gateway';
 import { uid } from '../shared/domain/ids';
 import type {
-  Clock, ClipboardGateway, DownloadGateway, FileGateway, IdGenerator, OcrSettingsRepository,
-  QrGateway, ShareGateway, StateRepository, SyncStateRepository,
+  Clock, ClipboardGateway, DownloadGateway, FileGateway, HideBalancesRepository, IdGenerator,
+  OcrSettingsRepository, QrGateway, ShareGateway, StateRepository, SyncStateRepository,
 } from '../shared/domain/ports';
 import {
   browserClipboardGateway,
@@ -21,6 +21,7 @@ import {
 } from '../shared/infrastructure/browser';
 import { browserQrGateway } from '../shared/infrastructure/qr';
 import {
+  indexedDbHideBalancesRepository,
   indexedDbOcrSettingsRepository,
   indexedDbStateRepository,
   indexedDbSyncStateRepository,
@@ -30,6 +31,7 @@ export type Deps = {
   readonly stateRepository: StateRepository;
   readonly ocrSettingsRepository: OcrSettingsRepository;
   readonly syncStateRepository: SyncStateRepository;
+  readonly hideBalancesRepository: HideBalancesRepository;
   /* Capacidades del navegador. Antes se llamaban directo desde dentro de un
      componente; como puertos, un test puede fingir que el usuario denegó la
      cámara o que el portapapeles está bloqueado. */
@@ -53,6 +55,7 @@ export const productionDeps: Deps = {
   stateRepository: indexedDbStateRepository,
   ocrSettingsRepository: indexedDbOcrSettingsRepository,
   syncStateRepository: indexedDbSyncStateRepository,
+  hideBalancesRepository: indexedDbHideBalancesRepository,
   fileGateway: browserFileGateway,
   clipboardGateway: browserClipboardGateway,
   shareGateway: browserShareGateway,

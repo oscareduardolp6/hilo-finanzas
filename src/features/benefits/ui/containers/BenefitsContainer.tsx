@@ -26,6 +26,7 @@ function BenefitsSheet({ desktop }: BenefitsContainerProps) {
   const accounts = useHiloStore((s) => s.accounts);
   const transactions = useHiloStore((s) => s.transactions);
   const editingProgram = useHiloStore((s) => s.editingBenefitProgram);
+  const hideBalances = useHiloStore((s) => s.hideBalances);
 
   const setOpen = useHiloStore((s) => s.setBenefitsModalOpen);
   const setEditingProgram = useHiloStore((s) => s.setEditingBenefitProgram);
@@ -54,6 +55,7 @@ function BenefitsSheet({ desktop }: BenefitsContainerProps) {
       onDelete={deleteProgram}
       onClose={() => { setOpen(false); setEditingProgram(null); }}
       desktop={desktop}
+      hideBalances={hideBalances}
     />
   );
 }

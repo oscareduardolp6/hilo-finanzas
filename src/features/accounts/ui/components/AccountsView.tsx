@@ -13,9 +13,11 @@ export type AccountsViewProps = {
   balances: Balances;
   onAdd: () => void;
   onEdit: (account: Account) => void;
+  /** Modo privado: los saldos se reemplazan por un placeholder. */
+  hideBalances?: boolean;
 };
 
-export function AccountsView({ accounts, balances, onAdd, onEdit }: AccountsViewProps) {
+export function AccountsView({ accounts, balances, onAdd, onEdit, hideBalances }: AccountsViewProps) {
   const total = Object.values(balances).reduce((s, v) => s + v, 0);
   return (
     <div className="pt-2">
@@ -39,14 +41,14 @@ export function AccountsView({ accounts, balances, onAdd, onEdit }: AccountsView
                 <p className="text-sm font-medium" style={{ color: COLORS.text }}>{a.name}</p>
                 <p className="text-xs" style={{ color: COLORS.textMuted }}>{typeInfo.label}</p>
               </div>
-              <p className="font-mono-custom text-sm font-semibold" style={{ color: bal < 0 ? COLORS.expense : COLORS.text }}>{formatMoney(bal)}</p>
+              <p className="font-mono-custom text-sm font-semibold" style={{ color: bal < 0 ? COLORS.expense : COLORS.text }}>{formatMoney(bal, hideBalances)}</p>
             </button>
           );
         })}
       </div>
       <div className="mt-4 rounded-xl p-3" style={{ backgroundColor: COLORS.surfaceAlt }}>
         <p className="text-xs" style={{ color: COLORS.textMuted }}>Saldo total</p>
-        <p className="font-mono-custom font-semibold text-lg mt-0.5" style={{ color: COLORS.text }}>{formatMoney(total)}</p>
+        <p className="font-mono-custom font-semibold text-lg mt-0.5" style={{ color: COLORS.text }}>{formatMoney(total, hideBalances)}</p>
       </div>
     </div>
   );

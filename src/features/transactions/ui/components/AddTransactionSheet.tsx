@@ -45,6 +45,8 @@ export type AddTransactionSheetProps = {
   onCreatePlan: (plan: NewInstallmentPlan) => InstallmentPlan;
   onCreateBenefitProgram: (program: NewBenefitProgram) => BenefitProgram;
   desktop?: boolean;
+  /** Modo privado: los montos que muestra `InstallmentPlanPicker` se ocultan. */
+  hideBalances?: boolean;
 };
 
 const TYPE_META: Record<TransactionType, { label: string; color: string }> = {
@@ -58,6 +60,7 @@ const TYPES: TransactionType[] = ['expense', 'income', 'transfer'];
 export function AddTransactionSheet({
   formType, editingId, form, setForm, accounts, categories, plans, planProgress, benefitPrograms, knownStores,
   onClose, onSave, onDelete, onSwitchType, onCreateCategory, onCreatePlan, onCreateBenefitProgram, desktop,
+  hideBalances,
 }: AddTransactionSheetProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [fromAccQuery, setFromAccQuery] = useState('');
@@ -240,6 +243,7 @@ export function AddTransactionSheet({
                 categories={expenseCats}
                 knownStores={knownStores}
                 onCreateCategory={handleNewCategory}
+                hideBalances={hideBalances}
               />
             </div>
           )}
@@ -288,6 +292,7 @@ export function AddTransactionSheet({
                     categories={expenseCats}
                     knownStores={knownStores}
                     onCreateCategory={handleNewCategory}
+                    hideBalances={hideBalances}
                   />
                 </>
               )}

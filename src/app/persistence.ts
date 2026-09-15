@@ -14,7 +14,7 @@
 
 import * as E from 'fp-ts/Either';
 import { messageFor } from '../shared/domain/errors';
-import { persist, persistSyncState } from './application/persist';
+import { persist, persistHideBalances, persistSyncState } from './application/persist';
 import type { Deps } from './dependencies';
 import { runRTE } from './run';
 import { selectDataState } from './store';
@@ -54,9 +54,19 @@ export function subscribePersistence(store: HiloStoreApi, deps: Deps): () => voi
     },
   );
 
+  const unsubscribeHideBalances = store.subscribe(
+    (state) => state.hideBalances,
+    async (hideBalances) => {
+      // Mismo trato que el sync state: estado local del dispositivo, su
+      // fallo se ignora.
+      await runRTE(persistHideBalances(hideBalances), deps);
+    },
+  );
+
   return () => {
     unsubscribeData();
     unsubscribeSync();
+    unsubscribeHideBalances();
   };
 }
 

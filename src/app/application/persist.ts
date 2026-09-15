@@ -25,3 +25,13 @@ export const persistSyncState = (
     RTE.ask<Deps, HiloError>(),
     RTE.chainTaskEitherK((deps) => deps.syncStateRepository.save(syncState)),
   );
+
+/** El modo privado es local del dispositivo, igual que el sync state: su
+ *  fallo se ignora, no hay nada útil que decirle al usuario. */
+export const persistHideBalances = (
+  hideBalances: boolean,
+): RTE.ReaderTaskEither<Deps, HiloError, void> =>
+  pipe(
+    RTE.ask<Deps, HiloError>(),
+    RTE.chainTaskEitherK((deps) => deps.hideBalancesRepository.save(hideBalances)),
+  );

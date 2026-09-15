@@ -39,13 +39,15 @@ export type HistoryViewProps = {
   filterStore: string;
   onFilterStore: (store: string) => void;
   onOpenTxn: (txn: Transaction) => void;
+  /** Modo privado: los montos se reemplazan por un placeholder. */
+  hideBalances?: boolean;
 };
 
 export function HistoryView({
   groups, accounts, categories, expenseCategories, installmentPlans, knownStores, suggestions,
   monthCursor, onPrevMonth, onNextMonth, showAllTime, onToggleAllTime,
   searching, searchQuery, onSearchChange, filterType, onFilterType,
-  filterCategory, onFilterCategory, filterStore, onFilterStore, onOpenTxn,
+  filterCategory, onFilterCategory, filterStore, onFilterStore, onOpenTxn, hideBalances,
 }: HistoryViewProps) {
   return (
     <div className="pt-2">
@@ -112,7 +114,7 @@ export function HistoryView({
         ) : groups.map(([label, list]) => (
           <div key={label} className="mt-4 first:mt-0">
             <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: COLORS.textFaint }}>{label}</p>
-            {list.map(t => <TransactionRow key={t.id} txn={t} accounts={accounts} categories={categories} plans={installmentPlans} query={searching ? searchQuery.trim() : undefined} onClick={() => onOpenTxn(t)} />)}
+            {list.map(t => <TransactionRow key={t.id} txn={t} accounts={accounts} categories={categories} plans={installmentPlans} query={searching ? searchQuery.trim() : undefined} onClick={() => onOpenTxn(t)} hideBalances={hideBalances} />)}
           </div>
         ))}
       </div>

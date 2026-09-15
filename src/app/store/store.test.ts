@@ -9,6 +9,7 @@ import { createDeps } from '../dependencies';
 import { subscribePersistence } from '../persistence';
 import {
   brokenPersistence,
+  inMemoryHideBalancesRepository,
   inMemoryOcrSettingsRepository,
   inMemoryStateRepository,
   inMemorySyncStateRepository,
@@ -31,21 +32,23 @@ const cuenta = { id: 'acc_1', name: 'NU', type: 'debito' as const, color: '#000'
 /** Deja correr las promesas pendientes de la suscripción. */
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-function setup(options: { stored?: DataState | null; failSave?: boolean } = {}) {
+function setup(options: { stored?: DataState | null; failSave?: boolean; storedHideBalances?: boolean } = {}) {
   const stateRepository = inMemoryStateRepository(
     options.failSave ? { failWith: brokenPersistence() } : { initial: options.stored ?? null },
   );
   const syncStateRepository = inMemorySyncStateRepository();
+  const hideBalancesRepository = inMemoryHideBalancesRepository({ initial: options.storedHideBalances ?? null });
   const deps = createDeps({
     stateRepository,
     syncStateRepository,
+    hideBalancesRepository,
     ocrSettingsRepository: inMemoryOcrSettingsRepository(),
     idGenerator: () => 'dev_fijo',
     clock: () => 1_700_000_000_000,
   });
   const store = createHiloStore(deps);
   const unsubscribe = subscribePersistence(store, deps);
-  return { store, deps, stateRepository, syncStateRepository, unsubscribe };
+  return { store, deps, stateRepository, syncStateRepository, hideBalancesRepository, unsubscribe };
 }
 
 describe('hidratación', () => {
@@ -90,6 +93,22 @@ describe('hidratación', () => {
       deviceName: 'Equipo-fijo',
       peers: {},
     });
+  });
+
+  it('sin modo privado guardado, arranca con los saldos visibles', async () => {
+    const { store } = setup();
+
+    await store.getState().hydrateFromRepositories();
+
+    expect(store.getState().hideBalances).toBe(false);
+  });
+
+  it('con modo privado guardado, lo adopta', async () => {
+    const { store } = setup({ storedHideBalances: true });
+
+    await store.getState().hydrateFromRepositories();
+
+    expect(store.getState().hideBalances).toBe(true);
   });
 });
 
@@ -154,6 +173,17 @@ describe('guardado automático', () => {
       'tombstones',
       'benefitPrograms',
     ]);
+  });
+
+  it('el modo privado se guarda bajo su propia clave en cuanto cambia', async () => {
+    const { store, hideBalancesRepository } = setup();
+    await store.getState().hydrateFromRepositories();
+    await flush();
+
+    store.getState().setHideBalances(true);
+    await flush();
+
+    expect(hideBalancesRepository.peek()).toBe(true);
   });
 
   it('al cortar la suscripción deja de guardar', async () => {

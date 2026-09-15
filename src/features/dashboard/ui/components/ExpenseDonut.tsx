@@ -16,27 +16,31 @@ export type ExpenseDonutProps = {
   data: CategoryTotal[];
   total: number;
   onSliceClick: (categoryId: string) => void;
+  /** Modo privado: los montos se reemplazan por un placeholder; la forma de
+   *  la dona y los porcentajes se conservan. */
+  hideBalances?: boolean;
 };
 
 type DonutTooltipProps = {
   active?: boolean;
   payload?: { payload: CategoryTotal }[];
   total: number;
+  hideBalances?: boolean;
 };
 
-function DonutTooltip({ active, payload, total }: DonutTooltipProps) {
+function DonutTooltip({ active, payload, total, hideBalances }: DonutTooltipProps) {
   if (!active || !payload || !payload.length) return null;
   const d = payload[0]!.payload;
   const pct = total ? Math.round((d.total / total) * 100) : 0;
   return (
     <div className="rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: COLORS.elevated, border: `1px solid ${COLORS.borderStrong}`, color: COLORS.text }}>
       <p className="font-semibold" style={{ color: d.color }}>{d.name}</p>
-      <p className="font-mono-custom">{formatMoney(d.total)} · {pct}%</p>
+      <p className="font-mono-custom">{formatMoney(d.total, hideBalances)} · {pct}%</p>
     </div>
   );
 }
 
-export function ExpenseDonut({ data, total, onSliceClick }: ExpenseDonutProps) {
+export function ExpenseDonut({ data, total, onSliceClick, hideBalances }: ExpenseDonutProps) {
   if (!data.length) {
     return (
       <div className="flex flex-col items-center justify-center py-8 text-center">
@@ -57,12 +61,12 @@ export function ExpenseDonut({ data, total, onSliceClick }: ExpenseDonutProps) {
                 <Cell key={d.id} fill={d.color} style={{ cursor: 'pointer', outline: 'none' }} onClick={() => onSliceClick(d.id)} />
               ))}
             </Pie>
-            <Tooltip content={<DonutTooltip total={total} />} />
+            <Tooltip content={<DonutTooltip total={total} hideBalances={hideBalances} />} />
           </PieChart>
         </ResponsiveContainer>
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
           <span className="text-xs" style={{ color: COLORS.textMuted }}>Gastos</span>
-          <span className="font-mono-custom font-bold text-xl" style={{ color: COLORS.text }}>{formatMoney(total)}</span>
+          <span className="font-mono-custom font-bold text-xl" style={{ color: COLORS.text }}>{formatMoney(total, hideBalances)}</span>
         </div>
       </div>
       <div className="mt-2">
@@ -75,7 +79,7 @@ export function ExpenseDonut({ data, total, onSliceClick }: ExpenseDonutProps) {
               <Icon size={14} style={{ color: d.color }} />
               <span className="flex-1 text-left text-sm truncate" style={{ color: COLORS.text }}>{d.name}</span>
               <span className="text-xs" style={{ color: COLORS.textMuted }}>{pct}%</span>
-              <span className="font-mono-custom text-sm font-medium" style={{ color: COLORS.text }}>{formatMoney(d.total)}</span>
+              <span className="font-mono-custom text-sm font-medium" style={{ color: COLORS.text }}>{formatMoney(d.total, hideBalances)}</span>
             </button>
           );
         })}

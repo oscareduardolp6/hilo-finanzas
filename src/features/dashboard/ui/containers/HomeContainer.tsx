@@ -30,6 +30,7 @@ export function HomeContainer({ desktop }: HomeContainerProps) {
   const transactions = useHiloStore((s) => s.transactions);
   const installmentPlans = useHiloStore((s) => s.installmentPlans);
   const monthCursor = useHiloStore((s) => s.monthCursor);
+  const hideBalances = useHiloStore((s) => s.hideBalances);
 
   const setActiveTab = useHiloStore((s) => s.setActiveTab);
   const setMonthCursor = useHiloStore((s) => s.setMonthCursor);
@@ -86,6 +87,7 @@ export function HomeContainer({ desktop }: HomeContainerProps) {
       onSeeMsi={() => setActiveTab('msi')}
       onOpenMsiPlan={openPlanForm}
       onOpenTxn={openEditSheet}
+      hideBalances={hideBalances}
     />
   );
 }

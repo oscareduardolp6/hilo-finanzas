@@ -76,7 +76,7 @@ export const createDataSlice =
     setBenefitPrograms: makeSetter<HiloStore, 'benefitPrograms'>(set, 'benefitPrograms'),
 
     hydrateFromRepositories: async () => {
-      const { data, ocrSettings, syncState } = await runRT(hydrate, deps);
+      const { data, ocrSettings, syncState, hideBalances } = await runRT(hydrate, deps);
       // UN SOLO `set`, a propósito: el suscriptor de persistencia observa las 5
       // colecciones y `loaded` a la vez, así que esto dispara exactamente un
       // guardado — el mismo que hacía el `useEffect` original al pasar `loaded`
@@ -94,6 +94,7 @@ export const createDataSlice =
           ? { ocrSettings: { apiKey: ocrSettings.apiKey || '', model: ocrSettings.model || '' } }
           : {}),
         syncState,
+        hideBalances,
         loaded: true,
       });
     },

@@ -7,6 +7,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { screen, within } from '@testing-library/react';
+import { inMemoryHideBalancesRepository } from '../../../shared/infrastructure/in-memory';
 import type { Account, Transaction } from '../../../shared/domain/types';
 import { AHORA, renderFeature } from '../../../test/render-feature';
 import { AccountFormContainer } from './containers/AccountFormContainer';
@@ -58,6 +59,18 @@ describe('lista de cuentas', () => {
     expect(within(filaDe('Efectivo')).getByText('$1,000.00')).toBeInTheDocument();
     expect(within(filaDe('Ahorros')).getByText('$500.00')).toBeInTheDocument();
     expect(screen.getByText('$1,500.00')).toBeInTheDocument();
+  });
+
+  it('con el modo privado activo, oculta los saldos con un placeholder', async () => {
+    await renderFeature(pantalla(), {
+      state: { accounts: [efectivo, ahorros] },
+      deps: { hideBalancesRepository: inMemoryHideBalancesRepository({ initial: true }) },
+    });
+
+    expect(within(filaDe('Efectivo')).getByText('$••••')).toBeInTheDocument();
+    expect(within(filaDe('Ahorros')).getByText('$••••')).toBeInTheDocument();
+    expect(screen.queryByText('$1,000.00')).not.toBeInTheDocument();
+    expect(screen.queryByText('$500.00')).not.toBeInTheDocument();
   });
 
   it('en escritorio pinta la variante en rejilla, con los mismos datos', async () => {

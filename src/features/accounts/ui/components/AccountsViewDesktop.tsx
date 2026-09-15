@@ -9,7 +9,7 @@ import { COLORS } from '../../../../shared/design/tokens';
 import { formatMoney } from '../../../../shared/domain/money';
 import type { AccountsViewProps } from './AccountsView';
 
-export function AccountsViewDesktop({ accounts, balances, onAdd, onEdit }: AccountsViewProps) {
+export function AccountsViewDesktop({ accounts, balances, onAdd, onEdit, hideBalances }: AccountsViewProps) {
   const total = Object.values(balances).reduce((s, v) => s + v, 0);
   return (
     <div>
@@ -31,14 +31,14 @@ export function AccountsViewDesktop({ accounts, balances, onAdd, onEdit }: Accou
               </div>
               <p className="text-sm font-medium" style={{ color: COLORS.text }}>{a.name}</p>
               <p className="text-xs mt-0.5" style={{ color: COLORS.textMuted }}>{typeInfo.label}</p>
-              <p className="font-mono-custom text-lg font-semibold mt-3" style={{ color: bal < 0 ? COLORS.expense : COLORS.text }}>{formatMoney(bal)}</p>
+              <p className="font-mono-custom text-lg font-semibold mt-3" style={{ color: bal < 0 ? COLORS.expense : COLORS.text }}>{formatMoney(bal, hideBalances)}</p>
             </button>
           );
         })}
       </div>
       <div className="mt-6 rounded-xl p-4 inline-block" style={{ backgroundColor: COLORS.surfaceAlt }}>
         <p className="text-xs" style={{ color: COLORS.textMuted }}>Saldo total</p>
-        <p className="font-mono-custom font-semibold text-lg mt-0.5" style={{ color: COLORS.text }}>{formatMoney(total)}</p>
+        <p className="font-mono-custom font-semibold text-lg mt-0.5" style={{ color: COLORS.text }}>{formatMoney(total, hideBalances)}</p>
       </div>
     </div>
   );

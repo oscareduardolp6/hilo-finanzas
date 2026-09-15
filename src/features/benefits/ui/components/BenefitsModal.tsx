@@ -27,10 +27,13 @@ export type BenefitsModalProps = {
   onDelete: (id: string) => void;
   onClose: () => void;
   desktop?: boolean;
+  /** Modo privado: los totales de ahorro se reemplazan por un placeholder. */
+  hideBalances?: boolean;
 };
 
 export function BenefitsModal({
   programs, accounts, totalsThisMonth, totalsLast6Months, editingProgram, onStartEdit, onSave, onDelete, onClose, desktop,
+  hideBalances,
 }: BenefitsModalProps) {
   const [creatingNew, setCreatingNew] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -123,11 +126,11 @@ export function BenefitsModal({
                   </div>
                   <div className="flex items-center justify-between text-xs">
                     <span style={{ color: COLORS.textFaint }}>Este mes</span>
-                    <span className="font-mono-custom" style={{ color: COLORS.income }}>{formatMoney(totalsThisMonth[p.id] || 0)}</span>
+                    <span className="font-mono-custom" style={{ color: COLORS.income }}>{formatMoney(totalsThisMonth[p.id] || 0, hideBalances)}</span>
                   </div>
                   <div className="flex items-center justify-between text-xs mt-0.5">
                     <span style={{ color: COLORS.textFaint }}>Últimos 6 meses</span>
-                    <span className="font-mono-custom" style={{ color: COLORS.income }}>{formatMoney(totalsLast6Months[p.id] || 0)}</span>
+                    <span className="font-mono-custom" style={{ color: COLORS.income }}>{formatMoney(totalsLast6Months[p.id] || 0, hideBalances)}</span>
                   </div>
                 </div>
               );

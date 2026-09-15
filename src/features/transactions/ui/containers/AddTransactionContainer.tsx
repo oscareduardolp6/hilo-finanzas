@@ -30,6 +30,7 @@ export function AddTransactionContainer({ desktop }: AddTransactionContainerProp
   const transactions = useHiloStore((s) => s.transactions);
   const installmentPlans = useHiloStore((s) => s.installmentPlans);
   const benefitPrograms = useHiloStore((s) => s.benefitPrograms);
+  const hideBalances = useHiloStore((s) => s.hideBalances);
 
   const setForm = useHiloStore((s) => s.setForm);
   const closeSheet = useHiloStore((s) => s.closeSheet);
@@ -82,6 +83,7 @@ export function AddTransactionContainer({ desktop }: AddTransactionContainerProp
       onCreatePlan={createPlan}
       onCreateBenefitProgram={createProgram}
       desktop={desktop}
+      hideBalances={hideBalances}
     />
   );
 }

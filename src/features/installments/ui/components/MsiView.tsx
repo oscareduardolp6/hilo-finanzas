@@ -18,9 +18,11 @@ export type MsiViewProps = {
   categories: Category[];
   onAdd: () => void;
   onOpenPlan: (plan: InstallmentPlan) => void;
+  /** Modo privado: los montos se reemplazan por un placeholder. */
+  hideBalances?: boolean;
 };
 
-export function MsiView({ plans, progress, categories, onAdd, onOpenPlan }: MsiViewProps) {
+export function MsiView({ plans, progress, categories, onAdd, onOpenPlan, hideBalances }: MsiViewProps) {
   const { active, completed } = groupPlansByStatus(plans, progress);
 
   return (
@@ -41,14 +43,14 @@ export function MsiView({ plans, progress, categories, onAdd, onOpenPlan }: MsiV
             <EmptyState text="No tienes MSI activos por pagar." />
           ) : (
             <div className="space-y-2">
-              {active.map(p => <MsiPlanCard key={p.id} plan={p} progress={progress[p.id]} categories={categories} onClick={() => onOpenPlan(p)} />)}
+              {active.map(p => <MsiPlanCard key={p.id} plan={p} progress={progress[p.id]} categories={categories} onClick={() => onOpenPlan(p)} hideBalances={hideBalances} />)}
             </div>
           )}
           {completed.length > 0 && (
             <div className="mt-5">
               <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: COLORS.textFaint }}>Ya pagados</p>
               <div className="space-y-2">
-                {completed.map(p => <MsiPlanCard key={p.id} plan={p} progress={progress[p.id]} categories={categories} onClick={() => onOpenPlan(p)} muted />)}
+                {completed.map(p => <MsiPlanCard key={p.id} plan={p} progress={progress[p.id]} categories={categories} onClick={() => onOpenPlan(p)} muted hideBalances={hideBalances} />)}
               </div>
             </div>
           )}

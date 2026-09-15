@@ -29,10 +29,13 @@ export type MsiPlanModalProps = {
   onDelete: () => void;
   onCreateCategory: (category: NewCategory) => Category;
   desktop?: boolean;
+  /** Modo privado: los montos se reemplazan por un placeholder. */
+  hideBalances?: boolean;
 };
 
 export function MsiPlanModal({
   plan, progress, payments, categories, knownStores, onClose, onSave, onDelete, onCreateCategory, desktop,
+  hideBalances,
 }: MsiPlanModalProps) {
   const [description, setDescription] = useState(plan ? plan.description : '');
   const [store, setStore] = useState(plan ? (plan.store || '') : '');
@@ -69,7 +72,7 @@ export function MsiPlanModal({
             <div className="w-full h-2 rounded-full mt-2" style={{ backgroundColor: COLORS.elevated }}>
               <div className="h-2 rounded-full" style={{ width: `${progress.pct * 100}%`, backgroundColor: progress.isPaidOff ? COLORS.income : COLORS.accent }} />
             </div>
-            <p className="text-xs mt-1.5" style={{ color: COLORS.textFaint }}>{formatMoney(progress.paid)} pagado · {formatMoney(progress.remaining)} restante</p>
+            <p className="text-xs mt-1.5" style={{ color: COLORS.textFaint }}>{formatMoney(progress.paid, hideBalances)} pagado · {formatMoney(progress.remaining, hideBalances)} restante</p>
           </div>
         )}
 
@@ -92,7 +95,7 @@ export function MsiPlanModal({
           </div>
         </div>
         {parseFloat(totalAmount) > 0 && parseFloat(installmentsCount) > 0 && (
-          <p className="text-xs -mt-2 mb-3" style={{ color: COLORS.textFaint }}>≈ {formatMoney(parseFloat(totalAmount) / parseFloat(installmentsCount))} por pago completo</p>
+          <p className="text-xs -mt-2 mb-3" style={{ color: COLORS.textFaint }}>≈ {formatMoney(parseFloat(totalAmount) / parseFloat(installmentsCount), hideBalances)} por pago completo</p>
         )}
 
         <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Categoría</p>
@@ -110,7 +113,7 @@ export function MsiPlanModal({
               {payments.map(t => (
                 <div key={t.id} className="flex items-center justify-between px-3 py-2 rounded-lg" style={{ backgroundColor: COLORS.surfaceAlt }}>
                   <p className="text-xs" style={{ color: COLORS.textMuted }}>{formatDateLabel(t.date)}</p>
-                  <p className="text-xs font-mono-custom" style={{ color: COLORS.text }}>{formatMoney(t.amount)}</p>
+                  <p className="text-xs font-mono-custom" style={{ color: COLORS.text }}>{formatMoney(t.amount, hideBalances)}</p>
                 </div>
               ))}
             </div>

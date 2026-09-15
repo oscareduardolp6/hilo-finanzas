@@ -1,14 +1,15 @@
 /* La capa física de persistencia: IndexedDB nativo, sin librería envolvente.
-   Una sola base (`hilo_finanzas`) con un solo object store (`state`) y TRES
+   Una sola base (`hilo_finanzas`) con un solo object store (`state`) y CUATRO
    claves independientes:
 
-     STORAGE_KEY              → las 6 colecciones (esto es lo que se sincroniza)
-     OCR_SETTINGS_STORAGE_KEY → api key + modelo del escaneo de tickets
-     SYNC_STATE_STORAGE_KEY   → id y peers de ESTE dispositivo
+     STORAGE_KEY               → las 6 colecciones (esto es lo que se sincroniza)
+     OCR_SETTINGS_STORAGE_KEY  → api key + modelo del escaneo de tickets
+     SYNC_STATE_STORAGE_KEY    → id y peers de ESTE dispositivo
+     HIDE_BALANCES_STORAGE_KEY → preferencia de "modo privado" de ESTE dispositivo
 
    Que sean claves separadas es lo que garantiza, por construcción, que la api
-   key y el estado de sync nunca viajen en un export / QR / respaldo:
-   `buildExportPayload` solo toca las 6 colecciones.
+   key, el estado de sync y el modo privado nunca viajen en un export / QR /
+   respaldo: `buildExportPayload` solo toca las 6 colecciones.
 
    Estas funciones devuelven Promises, no `TaskEither`, a propósito: son la API
    pública histórica de Hilo (los 9 tests de `test/unit/persistence.test.js` las
@@ -21,6 +22,7 @@ import type { DataState, OcrSettings, SyncState, SyncPeer } from '../domain/type
 export const STORAGE_KEY = 'hilo_finanzas_data_v1';
 export const OCR_SETTINGS_STORAGE_KEY = 'hilo_receipt_ocr_settings';
 export const SYNC_STATE_STORAGE_KEY = 'hilo_sync_state_v1';
+export const HIDE_BALANCES_STORAGE_KEY = 'hilo_hide_balances_v1';
 
 /** Peers sin intercambio en un año se podan al guardar. */
 export const PEER_TTL_MS = 365 * 864e5;
@@ -116,4 +118,12 @@ export function saveSyncState(next: SyncState): Promise<void> {
   }
   const clean: SyncState = { deviceId: next.deviceId, deviceName: next.deviceName || '', peers };
   return putKey(SYNC_STATE_STORAGE_KEY, clean);
+}
+
+export function loadHideBalances(): Promise<boolean | null> {
+  return getKey<boolean>(HIDE_BALANCES_STORAGE_KEY);
+}
+
+export function saveHideBalances(value: boolean): Promise<void> {
+  return putKey(HIDE_BALANCES_STORAGE_KEY, value);
 }

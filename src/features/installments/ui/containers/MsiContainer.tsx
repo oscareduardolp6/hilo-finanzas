@@ -16,6 +16,7 @@ export function MsiContainer({ desktop }: MsiContainerProps) {
   const transactions = useHiloStore((s) => s.transactions);
   const categories = useHiloStore((s) => s.categories);
   const openPlanForm = useHiloStore((s) => s.openPlanForm);
+  const hideBalances = useHiloStore((s) => s.hideBalances);
 
   // `useMemo` y no un selector: `computePlanProgress` devuelve un objeto nuevo
   // y zustand v5 compara por identidad.
@@ -30,6 +31,7 @@ export function MsiContainer({ desktop }: MsiContainerProps) {
       categories={categories}
       onAdd={() => openPlanForm(null)}
       onOpenPlan={(plan) => openPlanForm(plan)}
+      hideBalances={hideBalances}
     />
   );
 }

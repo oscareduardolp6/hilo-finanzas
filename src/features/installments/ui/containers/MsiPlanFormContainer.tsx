@@ -22,6 +22,7 @@ export function MsiPlanFormContainer({ desktop }: MsiPlanFormContainerProps) {
   const plans = useHiloStore((s) => s.installmentPlans);
   const transactions = useHiloStore((s) => s.transactions);
   const categories = useHiloStore((s) => s.categories);
+  const hideBalances = useHiloStore((s) => s.hideBalances);
 
   const savePlan = useHiloStore((s) => s.savePlan);
   const deletePlan = useHiloStore((s) => s.deletePlan);
@@ -50,6 +51,7 @@ export function MsiPlanFormContainer({ desktop }: MsiPlanFormContainerProps) {
       onDelete={() => plan && deletePlan(plan.id)}
       onCreateCategory={createCategory}
       desktop={desktop}
+      hideBalances={hideBalances}
     />
   );
 }

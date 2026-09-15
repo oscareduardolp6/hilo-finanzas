@@ -8,9 +8,10 @@
 
    Cada lectura se recupera por separado, con su propio fallback, porque cada
    una significa algo distinto cuando falta:
-     - estado      → `null`, y el store conserva la semilla de demo
-     - config OCR  → `null`, y queda la config vacía
-     - sync state  → `makeSyncState()`, un dispositivo recién bautizado */
+     - estado        → `null`, y el store conserva la semilla de demo
+     - config OCR    → `null`, y queda la config vacía
+     - sync state    → `makeSyncState()`, un dispositivo recién bautizado
+     - modo privado  → `false`, los saldos se ven por defecto */
 
 import { sequenceS } from 'fp-ts/Apply';
 import * as RT from 'fp-ts/ReaderTask';
@@ -28,6 +29,8 @@ export type HydratedState = {
   ocrSettings: OcrSettings | null;
   /** Siempre presente: si no había, se bautiza uno nuevo. */
   syncState: SyncState;
+  /** Siempre presente: si no había, se asume `false` (saldos visibles). */
+  hideBalances: boolean;
 };
 
 /** Lee un puerto y absorbe su error con un valor por defecto. */
@@ -46,8 +49,9 @@ export const hydrate: RT.ReaderTask<Deps, HydratedState> = pipe(
     data: readOr<DataState | null>((d) => d.stateRepository.load, null),
     ocrSettings: readOr<OcrSettings | null>((d) => d.ocrSettingsRepository.load, null),
     storedSync: readOr<SyncState | null>((d) => d.syncStateRepository.load, null),
+    storedHideBalances: readOr<boolean | null>((d) => d.hideBalancesRepository.load, null),
   }),
-  RT.chain(({ data, ocrSettings, storedSync }) => (deps: Deps) => async (): Promise<HydratedState> => ({
+  RT.chain(({ data, ocrSettings, storedSync, storedHideBalances }) => (deps: Deps) => async (): Promise<HydratedState> => ({
     data,
     ocrSettings,
     // Un sync state escrito por una versión vieja puede no traer `peers`.
@@ -57,5 +61,6 @@ export const hydrate: RT.ReaderTask<Deps, HydratedState> = pipe(
       storedSync && storedSync.deviceId
         ? { ...storedSync, peers: storedSync.peers ?? {} }
         : makeSyncState(deps.idGenerator),
+    hideBalances: storedHideBalances ?? false,
   })),
 );

@@ -40,18 +40,21 @@ export type HomeViewProps = {
   onSeeMsi: () => void;
   onOpenMsiPlan: (plan: InstallmentPlan) => void;
   onOpenTxn: (txn: Transaction) => void;
+  /** Modo privado: todo monto se reemplaza por un placeholder. */
+  hideBalances?: boolean;
 };
 
 export function HomeView({
   monthCursor, onPrevMonth, onNextMonth, totalBalance, totalIncome, totalExpense,
   categoryTotals, accounts, balances, recentTxns, categories, installmentPlans,
   activePlans, planProgress, onSliceClick, onSeeAll, onSeeMsi, onOpenMsiPlan, onOpenTxn,
+  hideBalances,
 }: HomeViewProps) {
   return (
     <div className="pt-2">
       <div className="rounded-2xl p-5" style={{ backgroundColor: COLORS.surface }}>
         <p className="text-xs" style={{ color: COLORS.textMuted }}>Saldo total</p>
-        <p className="font-mono-custom font-bold text-3xl mt-1" style={{ color: COLORS.text }}>{formatMoney(totalBalance)}</p>
+        <p className="font-mono-custom font-bold text-3xl mt-1" style={{ color: COLORS.text }}>{formatMoney(totalBalance, hideBalances)}</p>
         <div className="flex items-center gap-2 mt-4">
           <button onClick={onPrevMonth} aria-label="Mes anterior" className="w-7 h-7 rounded-full flex items-center justify-center" style={{ backgroundColor: COLORS.surfaceAlt }}>
             <ChevronLeft size={14} style={{ color: COLORS.textMuted }} />
@@ -67,21 +70,21 @@ export function HomeView({
               <ArrowUpRight size={13} style={{ color: COLORS.income }} />
               <span className="text-xs" style={{ color: COLORS.income }}>Ingresos</span>
             </div>
-            <p className="font-mono-custom font-semibold mt-1" style={{ color: COLORS.income }}>{formatMoney(totalIncome)}</p>
+            <p className="font-mono-custom font-semibold mt-1" style={{ color: COLORS.income }}>{formatMoney(totalIncome, hideBalances)}</p>
           </div>
           <div className="rounded-xl p-3" style={{ backgroundColor: COLORS.expenseSoft }}>
             <div className="flex items-center gap-1">
               <ArrowDownRight size={13} style={{ color: COLORS.expense }} />
               <span className="text-xs" style={{ color: COLORS.expense }}>Gastos</span>
             </div>
-            <p className="font-mono-custom font-semibold mt-1" style={{ color: COLORS.expense }}>{formatMoney(totalExpense)}</p>
+            <p className="font-mono-custom font-semibold mt-1" style={{ color: COLORS.expense }}>{formatMoney(totalExpense, hideBalances)}</p>
           </div>
         </div>
       </div>
 
       <div className="rounded-2xl p-5 mt-4" style={{ backgroundColor: COLORS.surface }}>
         <p className="text-sm font-semibold font-display mb-2" style={{ color: COLORS.text }}>Gastos por categoría</p>
-        <ExpenseDonut data={categoryTotals} total={totalExpense} onSliceClick={onSliceClick} />
+        <ExpenseDonut data={categoryTotals} total={totalExpense} onSliceClick={onSliceClick} hideBalances={hideBalances} />
       </div>
 
       <div className="mt-5">
@@ -96,7 +99,7 @@ export function HomeView({
                   <TypeIcon size={15} style={{ color: a.color }} />
                 </div>
                 <p className="text-xs" style={{ color: COLORS.textMuted }}>{a.name}</p>
-                <p className="font-mono-custom text-sm font-semibold mt-0.5" style={{ color: bal < 0 ? COLORS.expense : COLORS.text }}>{formatMoney(bal)}</p>
+                <p className="font-mono-custom text-sm font-semibold mt-0.5" style={{ color: bal < 0 ? COLORS.expense : COLORS.text }}>{formatMoney(bal, hideBalances)}</p>
               </div>
             );
           })}
@@ -111,7 +114,7 @@ export function HomeView({
           </div>
           <div className="space-y-2">
             {activePlans.slice(0, 3).map(p => (
-              <MsiPlanCard key={p.id} plan={p} progress={planProgress[p.id]} categories={categories} onClick={() => onOpenMsiPlan(p)} />
+              <MsiPlanCard key={p.id} plan={p} progress={planProgress[p.id]} categories={categories} onClick={() => onOpenMsiPlan(p)} hideBalances={hideBalances} />
             ))}
           </div>
         </div>
@@ -126,7 +129,7 @@ export function HomeView({
           <EmptyState text="Aún no hay movimientos este mes." />
         ) : (
           <div>
-            {recentTxns.map(t => <TransactionRow key={t.id} txn={t} accounts={accounts} categories={categories} plans={installmentPlans} onClick={() => onOpenTxn(t)} />)}
+            {recentTxns.map(t => <TransactionRow key={t.id} txn={t} accounts={accounts} categories={categories} plans={installmentPlans} onClick={() => onOpenTxn(t)} hideBalances={hideBalances} />)}
           </div>
         )}
       </div>

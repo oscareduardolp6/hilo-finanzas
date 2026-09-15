@@ -9,8 +9,8 @@ import * as TE from 'fp-ts/TaskEither';
 import { persistenceError } from '../domain/errors';
 import type { HiloError } from '../domain/errors';
 import type {
-  ClipboardGateway, DownloadGateway, FileGateway, OcrSettingsRepository, QrGateway,
-  ShareGateway, StateRepository, SyncStateRepository,
+  ClipboardGateway, DownloadGateway, FileGateway, HideBalancesRepository, OcrSettingsRepository,
+  QrGateway, ShareGateway, StateRepository, SyncStateRepository,
 } from '../domain/ports';
 import type { DataState, OcrSettings, SyncState } from '../domain/types';
 
@@ -75,6 +75,12 @@ export function inMemorySyncStateRepository(
   options: InMemoryOptions<SyncState> = {},
 ): InMemoryRepository<SyncState, SyncStateRepository> {
   return makeRepository<SyncState, SyncState>(options, (state) => state);
+}
+
+export function inMemoryHideBalancesRepository(
+  options: InMemoryOptions<boolean> = {},
+): InMemoryRepository<boolean, HideBalancesRepository> {
+  return makeRepository<boolean, boolean>(options, (value) => value);
 }
 
 /** Atajo para el caso más común en tests: "la persistencia está caída". */

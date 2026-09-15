@@ -1,7 +1,7 @@
 /* La barra lateral de escritorio: la misma navegación que `BottomNav`, más los
    dos accesos rápidos y Ajustes. Componente de renderizado puro. */
 
-import { Plus, ScanLine, Settings } from 'lucide-react';
+import { Eye, EyeOff, Plus, ScanLine, Settings } from 'lucide-react';
 import { COLORS } from '../../shared/design/tokens';
 import { NAV_ITEMS } from './nav';
 
@@ -11,9 +11,14 @@ export type DesktopSidebarProps = {
   onOpenSettings: () => void;
   onAddTransaction: () => void;
   onScanReceipt: () => void;
+  /** Modo privado: oculta saldos y montos con un placeholder. */
+  hideBalances: boolean;
+  onToggleHideBalances: () => void;
 };
 
-export function DesktopSidebar({ active, onChange, onOpenSettings, onAddTransaction, onScanReceipt }: DesktopSidebarProps) {
+export function DesktopSidebar({
+  active, onChange, onOpenSettings, onAddTransaction, onScanReceipt, hideBalances, onToggleHideBalances,
+}: DesktopSidebarProps) {
   return (
     <div className="w-60 shrink-0 h-full flex flex-col border-r px-4 py-6" style={{ backgroundColor: COLORS.surface, borderColor: COLORS.border }}>
       <div className="px-2 mb-8">
@@ -38,6 +43,9 @@ export function DesktopSidebar({ active, onChange, onOpenSettings, onAddTransact
           );
         })}
       </nav>
+      <button onClick={onToggleHideBalances} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium" style={{ color: COLORS.textMuted }}>
+        {hideBalances ? <EyeOff size={18} /> : <Eye size={18} />} {hideBalances ? 'Mostrar saldos' : 'Ocultar saldos'}
+      </button>
       <button onClick={onOpenSettings} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium" style={{ color: COLORS.textMuted }}>
         <Settings size={18} /> Ajustes
       </button>

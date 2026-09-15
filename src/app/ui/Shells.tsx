@@ -8,7 +8,7 @@
    Esa lista compartida es `<Sheets/>`: si se añade una hoja, aparece en los dos
    árboles o en ninguno. */
 
-import { Plus, ScanLine, Settings } from 'lucide-react';
+import { Eye, EyeOff, Plus, ScanLine, Settings } from 'lucide-react';
 import { COLORS } from '../../shared/design/tokens';
 import { GlobalStyles } from '../../shared/ui/global-styles';
 import { Toast } from '../../shared/ui/toast';
@@ -69,6 +69,8 @@ export function DesktopShell() {
   const setSettingsOpen = useHiloStore((s) => s.setSettingsOpen);
   const setReceiptModalOpen = useHiloStore((s) => s.setReceiptModalOpen);
   const toast = useHiloStore((s) => s.toast);
+  const hideBalances = useHiloStore((s) => s.hideBalances);
+  const setHideBalances = useHiloStore((s) => s.setHideBalances);
 
   return (
     <div className="w-full h-screen flex" style={{ backgroundColor: COLORS.bg, fontFamily: "'Inter', sans-serif" }}>
@@ -79,6 +81,8 @@ export function DesktopShell() {
         onOpenSettings={() => setSettingsOpen(true)}
         onAddTransaction={() => openAddSheet('expense')}
         onScanReceipt={() => setReceiptModalOpen(true)}
+        hideBalances={hideBalances}
+        onToggleHideBalances={() => setHideBalances(!hideBalances)}
       />
 
       <div className="flex-1 h-full overflow-y-auto hilo-scroll relative">
@@ -102,6 +106,8 @@ export function MobileShell() {
   const setSettingsOpen = useHiloStore((s) => s.setSettingsOpen);
   const setReceiptModalOpen = useHiloStore((s) => s.setReceiptModalOpen);
   const toast = useHiloStore((s) => s.toast);
+  const hideBalances = useHiloStore((s) => s.hideBalances);
+  const setHideBalances = useHiloStore((s) => s.setHideBalances);
 
   return (
     <div className="w-full h-screen flex justify-center" style={{ backgroundColor: COLORS.bg }}>
@@ -113,9 +119,14 @@ export function MobileShell() {
             <h1 className="text-xl font-semibold font-display leading-tight" style={{ color: COLORS.text }}>Hilo</h1>
             <p className="text-xs" style={{ color: COLORS.textMuted }}>Control de gastos</p>
           </div>
-          <button onClick={() => setSettingsOpen(true)} aria-label="Abrir ajustes" className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: COLORS.surfaceAlt }}>
-            <Settings size={16} style={{ color: COLORS.textMuted }} />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={() => setHideBalances(!hideBalances)} aria-label={hideBalances ? 'Mostrar saldos' : 'Ocultar saldos'} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ backgroundColor: COLORS.surfaceAlt }}>
+              {hideBalances ? <EyeOff size={16} style={{ color: COLORS.textMuted }} /> : <Eye size={16} style={{ color: COLORS.textMuted }} />}
+            </button>
+            <button onClick={() => setSettingsOpen(true)} aria-label="Abrir ajustes" className="w-9 h-9 rounded-full flex items-center justify-center" style={{ backgroundColor: COLORS.surfaceAlt }}>
+              <Settings size={16} style={{ color: COLORS.textMuted }} />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto hilo-scroll px-5 pb-24">
