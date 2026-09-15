@@ -87,21 +87,36 @@ export function filterHistoryTransactions({
   return list;
 }
 
-/** Lo que ofrece el `<datalist>` del buscador: todo lo que el usuario ya
- *  escribió alguna vez como tienda o descripción, incluidas las de los planes. */
+/** Lo que ofrece el `<datalist>` del buscador: las `limit` tiendas/descripciones
+ *  usadas más recientemente (movimientos y planes incluidos), no todo el
+ *  historial — sin tope la lista crece para siempre y ahoga lo relevante con
+ *  sugerencias viejas. Sigue el mismo criterio de recencia que
+ *  `computeRecentTxns` (fecha, `createdAt` como desempate). */
 export function computeHistorySuggestions(
   transactions: Transaction[],
   installmentPlans: InstallmentPlan[],
+  limit = 10,
 ): string[] {
-  const set = new Set<string>();
+  const latest = new Map<string, [string, number]>(); // valor -> [fecha, createdAt] más reciente visto
+  const consider = (value: string | null | undefined, date: string | undefined, createdAt: number | undefined) => {
+    if (!value) return;
+    const stamp: [string, number] = [date || '', createdAt || 0];
+    const prev = latest.get(value);
+    if (!prev || stamp[0] > prev[0] || (stamp[0] === prev[0] && stamp[1] > prev[1])) {
+      latest.set(value, stamp);
+    }
+  };
   transactions.forEach(t => {
     const x = loose(t);
-    if (x.store) set.add(x.store);
-    if (x.description) set.add(x.description);
+    consider(x.store, t.date, t.createdAt);
+    consider(x.description, t.date, t.createdAt);
   });
   installmentPlans.forEach(p => {
-    if (p.description) set.add(p.description);
-    if (p.store) set.add(p.store);
+    consider(p.store, p.startDate, p.createdAt);
+    consider(p.description, p.startDate, p.createdAt);
   });
-  return Array.from(set).sort((a, b) => a.localeCompare(b));
+  return Array.from(latest.entries())
+    .sort((a, b) => b[1][0].localeCompare(a[1][0]) || b[1][1] - a[1][1])
+    .slice(0, limit)
+    .map(([value]) => value);
 }

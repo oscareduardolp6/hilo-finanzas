@@ -131,18 +131,49 @@ describe('búsqueda', () => {
 });
 
 describe('computeHistorySuggestions', () => {
-  it('junta tiendas y descripciones de movimientos y planes, sin repetir y ordenadas', () => {
+  it('junta tiendas y descripciones de movimientos y planes, sin repetir, ordenadas por más reciente', () => {
     const txns = [
       gasto('t1', '2026-01-01', { description: 'Tacos', store: 'Walmart' }),
       gasto('t2', '2026-01-02', { description: 'Tacos', store: 'Oxxo' }),
     ];
 
+    // plan.startDate es '2026-01-01', así que su tienda/descripción quedan
+    // empatadas con t1 y antes que t2 (2026-01-02, la más reciente).
     expect(computeHistorySuggestions(txns, [plan])).toEqual([
-      'Audífonos inalámbricos', 'Oxxo', 'Tacos', 'Walmart',
+      'Tacos', 'Oxxo', 'Walmart', 'Audífonos inalámbricos',
     ]);
   });
 
   it('sin datos, ninguna sugerencia', () => {
     expect(computeHistorySuggestions([], [])).toEqual([]);
+  });
+
+  it('se queda con la aparición más reciente de un valor repetido en distintos campos/fechas', () => {
+    const txns = [
+      gasto('t1', '2026-01-01', { store: 'HEB', description: '' }),
+      gasto('t2', '2026-01-10', { description: 'HEB', store: null }),
+    ];
+    expect(computeHistorySuggestions(txns, [])).toEqual(['HEB']);
+  });
+
+  it('recorta al límite (default 10), priorizando lo más reciente', () => {
+    const txns = Array.from({ length: 15 }, (_, i) =>
+      gasto(`t${i}`, `2026-09-${String(i + 1).padStart(2, '0')}`, { store: `Tienda ${i}`, description: '' }),
+    );
+    const result = computeHistorySuggestions(txns, []);
+    expect(result).toHaveLength(10);
+    expect(result).toEqual([
+      'Tienda 14', 'Tienda 13', 'Tienda 12', 'Tienda 11', 'Tienda 10',
+      'Tienda 9', 'Tienda 8', 'Tienda 7', 'Tienda 6', 'Tienda 5',
+    ]);
+  });
+
+  it('respeta un límite explícito distinto al default', () => {
+    const txns = [
+      gasto('a', '2026-09-01', { store: 'A', description: '' }),
+      gasto('b', '2026-09-02', { store: 'B', description: '' }),
+      gasto('c', '2026-09-03', { store: 'C', description: '' }),
+    ];
+    expect(computeHistorySuggestions(txns, [], 2)).toEqual(['C', 'B']);
   });
 });
