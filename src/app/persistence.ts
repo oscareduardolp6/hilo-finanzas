@@ -44,7 +44,13 @@ export function subscribePersistence(store: HiloStoreApi, deps: Deps): () => voi
     async () => {
       if (!store.getState().loaded) return;
       const result = await runRTE(persist(selectDataState(store.getState())), deps);
-      if (E.isLeft(result)) store.getState().setToast(messageFor(result.left));
+      if (E.isLeft(result)) {
+        // El toast es un texto fijo (contrato de test, ver errors.ts); la causa
+        // real de un PersistenceError solo se ve aquí, en la consola.
+        // eslint-disable-next-line no-console
+        console.error('Fallo al guardar en Firestore:', result.left);
+        store.getState().setToast(messageFor(result.left));
+      }
     },
     { equalityFn: shallowArrayEqual },
   );
