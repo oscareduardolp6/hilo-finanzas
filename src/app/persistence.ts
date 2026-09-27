@@ -1,15 +1,23 @@
 /* El guardado automático, que antes era un `useEffect` de `App`.
 
-   Reproduce tres detalles del efecto original que es fácil perder:
+   Dos detalles a propósito:
 
    1. **No guarda mientras `!loaded`**, para no pisar los datos del usuario con
       la semilla de demo antes de haberlos leído.
-   2. **Sí guarda en el instante en que `loaded` pasa a true.** El efecto
-      original tenía `loaded` en su array de dependencias, así que al terminar
-      la hidratación disparaba un guardado aunque no hubiera cambiado nada —
-      es lo que hace que un perfil nuevo persista la semilla de demo.
-      `hydrateFromRepositories` hace un solo `set`, así que aquí llega como un
-      único disparo.
+   2. **NO guarda solo porque `loaded` pase a true.** Antes sí lo hacía (así
+      persistía la semilla de demo en un perfil nuevo, sobre IndexedDB) — pero
+      con Firestore como fuente compartida entre dispositivos, ese disparo es
+      peligroso: si este dispositivo hidrata con Firestore vacío (perfil
+      nuevo, o simplemente porque el guardado de OTRO dispositivo — por
+      ejemplo, un restore de respaldo — todavía no había llegado), autoguardar
+      la semilla de demo pisa ese dato real. `loaded` deliberadamente NO está
+      en el array que vigila `subscribe`: si Firestore vino vacío, las 6
+      colecciones se quedan en sus mismas referencias de siempre (el `set` de
+      `hydrateFromRepositories` no las toca), así que no hay "cambio" que
+      dispare un guardado — la demo se ve en pantalla pero no se escribe a
+      Firestore hasta el primer cambio real del usuario (o hasta que
+      `migrateToFirestore` suba algo, que se guarda aparte, sin pasar por esta
+      suscripción).
    3. **Un fallo se convierte en toast**, no en excepción silenciosa. */
 
 import * as E from 'fp-ts/Either';
@@ -23,8 +31,7 @@ import type { HiloStoreApi } from './store';
 /** Arranca las suscripciones de guardado. Devuelve la función para cortarlas. */
 export function subscribePersistence(store: HiloStoreApi, deps: Deps): () => void {
   const unsubscribeData = store.subscribe(
-    // Las 6 colecciones + `loaded`: exactamente el array de dependencias que
-    // tenía el useEffect (antes 5, `benefitPrograms` se sumó después).
+    // Las 6 colecciones, a propósito SIN `loaded` — ver el comentario de arriba.
     (state) =>
       [
         state.accounts,
@@ -33,11 +40,9 @@ export function subscribePersistence(store: HiloStoreApi, deps: Deps): () => voi
         state.installmentPlans,
         state.tombstones,
         state.benefitPrograms,
-        state.loaded,
       ] as const,
-    async (current) => {
-      const loaded = current[6];
-      if (!loaded) return;
+    async () => {
+      if (!store.getState().loaded) return;
       const result = await runRTE(persist(selectDataState(store.getState())), deps);
       if (E.isLeft(result)) store.getState().setToast(messageFor(result.left));
     },

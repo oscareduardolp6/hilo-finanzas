@@ -112,16 +112,28 @@ describe('guardado automático', () => {
     expect(stateRepository.peek()).toBeNull();
   });
 
-  it('guarda en cuanto termina la hidratación, aunque no haya cambiado nada', async () => {
+  it('si Firestore está vacío, NO autoguarda la semilla de demo al terminar de hidratar', async () => {
     const { store, stateRepository } = setup();
 
     await store.getState().hydrateFromRepositories();
     await flush();
 
-    // El efecto original tenía `loaded` en sus dependencias, así que persistía
-    // la semilla de demo en un perfil nuevo. Ese disparo se conserva.
-    expect(stateRepository.peek()).not.toBeNull();
-    expect(stateRepository.peek()?.accounts).toHaveLength(3);
+    // Antes se guardaba solo porque `loaded` pasaba a true (venía de cuando
+    // era IndexedDB local). Con Firestore compartido entre dispositivos eso
+    // es peligroso: pisaría el dato real de otro dispositivo si este llega a
+    // leer Firestore vacío por una carrera (p. ej. a medio restaurar un
+    // respaldo en otro lado). La demo se ve en pantalla pero no se escribe
+    // hasta el primer cambio real.
+    expect(stateRepository.peek()).toBeNull();
+  });
+
+  it('con datos guardados, la hidratación sí los re-persiste (hay un cambio real)', async () => {
+    const { store, stateRepository } = setup({ stored: stateWith({ accounts: [cuenta] }) });
+
+    await store.getState().hydrateFromRepositories();
+    await flush();
+
+    expect(stateRepository.peek()?.accounts).toEqual([cuenta]);
   });
 
   it('guarda cada cambio posterior', async () => {
@@ -140,12 +152,18 @@ describe('guardado automático', () => {
 
     await store.getState().hydrateFromRepositories();
     await flush();
+    // La carga también falla con `failSave`, pero eso se traga en silencio
+    // (ver hydrate.ts) y sin un cambio real ya no hay autoguardado al
+    // hidratar — hace falta un cambio de verdad para que el guardado (y su
+    // fallo) se dispare.
+    store.getState().setAccounts([cuenta]);
+    await flush();
 
     expect(store.getState().toast).toBe('No se pudo guardar el cambio localmente');
   });
 
   it('el blob guardado trae exactamente las 6 colecciones, nada de estado local', async () => {
-    const { store, stateRepository } = setup();
+    const { store, stateRepository } = setup({ stored: stateWith({ accounts: [cuenta] }) });
 
     await store.getState().hydrateFromRepositories();
     await flush();
