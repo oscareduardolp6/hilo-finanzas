@@ -162,21 +162,3 @@ export type OcrSettings = {
   apiKey: string;
   model: string;
 };
-
-/* Los dos sellos admiten `null` además de faltar: al escribir uno, el otro se
-   conserva como `?? null` desde antes del refactor, y eso es lo que hay
-   guardado en los IndexedDB de los usuarios. El tipo tiene que decir la
-   verdad sobre el dato, no sobre lo que nos gustaría. */
-export type SyncPeer = {
-  name?: string;
-  /** Hasta aquí YO le mandé mis datos (gobierna el delta; avanza manualmente). */
-  lastSentAt?: number | null;
-  /** Hasta aquí incorporé lo suyo (informativo; avanza solo al recibir). */
-  lastReceivedAt?: number | null;
-};
-
-export type SyncState = {
-  deviceId: string;
-  deviceName: string;
-  peers: Record<string, SyncPeer>;
-};

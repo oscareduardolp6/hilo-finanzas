@@ -11,8 +11,8 @@ import * as TE from 'fp-ts/TaskEither';
 import type { Deps } from '../../../app/dependencies';
 import { invalidPayload } from '../../../shared/domain/errors';
 import type { HiloError } from '../../../shared/domain/errors';
-import { parseExportText } from '../../sync/domain/payload';
-import type { IncomingPayload } from '../../sync/domain/payload';
+import { parseExportText } from '../../../shared/domain/export-payload';
+import type { IncomingPayload } from '../../../shared/domain/export-payload';
 
 /* Los mensajes ya vienen en español desde el gateway y desde `parseExportText`
    ('No se pudo leer el archivo.', 'Esto no parece un export de Hilo.'), y son

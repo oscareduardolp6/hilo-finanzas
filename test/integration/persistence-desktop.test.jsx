@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import App, { saveState } from '../../hilo-finanzas.jsx';
+import App, {
+  saveState, createDeps, indexedDbStateRepository, fakeAuthGateway,
+} from '../../hilo-finanzas.jsx';
 import { renderApp, openAddSheet, gotoTab, seedState } from './helpers.jsx';
 
 const TODAY = new Date().toISOString().slice(0, 10);
@@ -84,7 +86,11 @@ describe('layout de escritorio', () => {
 
     await seedState(oneAccount);
     const user = userEvent.setup();
-    render(<App />);
+    const deps = createDeps({
+      stateRepository: indexedDbStateRepository,
+      authGateway: fakeAuthGateway({ uid: 'test-uid', email: 'test@example.com', displayName: 'Test' }),
+    });
+    render(<App deps={deps} />);
 
     expect(await screen.findByText('Nueva transacción')).toBeInTheDocument();
     // el saldo total (1000) se muestra igual que en móvil

@@ -1,31 +1,24 @@
-/* La capa física de persistencia: IndexedDB nativo, sin librería envolvente.
-   Una sola base (`hilo_finanzas`) con un solo object store (`state`) y CUATRO
-   claves independientes:
+/* La capa física de persistencia LOCAL: IndexedDB nativo, sin librería
+   envolvente. Desde que `StateRepository` pasó a estar respaldado por
+   Firestore (ver `shared/infrastructure/firestore-state-repository.ts`), lo
+   que queda aquí son las claves puramente locales de este dispositivo, que
+   nunca deben viajar a la nube:
 
-     STORAGE_KEY               → las 6 colecciones (esto es lo que se sincroniza)
+     STORAGE_KEY               → snapshot histórico de las 6 colecciones (ya no
+                                  se escribe; solo lo lee la migración inicial
+                                  a Firestore, ver `app/application/migrate-to-firestore.ts`)
      OCR_SETTINGS_STORAGE_KEY  → api key + modelo del escaneo de tickets
-     SYNC_STATE_STORAGE_KEY    → id y peers de ESTE dispositivo
      HIDE_BALANCES_STORAGE_KEY → preferencia de "modo privado" de ESTE dispositivo
-
-   Que sean claves separadas es lo que garantiza, por construcción, que la api
-   key, el estado de sync y el modo privado nunca viajen en un export / QR /
-   respaldo: `buildExportPayload` solo toca las 6 colecciones.
 
    Estas funciones devuelven Promises, no `TaskEither`, a propósito: son la API
    pública histórica de Hilo (los 9 tests de `test/unit/persistence.test.js` las
    llaman así). Los puertos monádicos las envuelven en `repositories.ts`. */
 
-import { uid } from '../domain/ids';
-import type { IdGenerator } from '../domain/ports';
-import type { DataState, OcrSettings, SyncState, SyncPeer } from '../domain/types';
+import type { DataState, OcrSettings } from '../domain/types';
 
 export const STORAGE_KEY = 'hilo_finanzas_data_v1';
 export const OCR_SETTINGS_STORAGE_KEY = 'hilo_receipt_ocr_settings';
-export const SYNC_STATE_STORAGE_KEY = 'hilo_sync_state_v1';
 export const HIDE_BALANCES_STORAGE_KEY = 'hilo_hide_balances_v1';
-
-/** Peers sin intercambio en un año se podan al guardar. */
-export const PEER_TTL_MS = 365 * 864e5;
 
 const DB_NAME = 'hilo_finanzas';
 const DB_VERSION = 1;
@@ -95,29 +88,6 @@ export async function saveOcrSettings(next: Partial<OcrSettings> | null): Promis
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
-}
-
-/** Estado de sync inicial de un dispositivo que nunca se ha sincronizado.
- *  El generador es inyectable para poder fijar el id en test; llamarla sin
- *  argumentos usa `uid`, que es como la invocan los tests existentes. */
-export function makeSyncState(generateId: IdGenerator = uid): SyncState {
-  const id = generateId('dev');
-  return { deviceId: id, deviceName: 'Equipo-' + id.slice(-4), peers: {} };
-}
-
-export function loadSyncState(): Promise<SyncState | null> {
-  return getKey<SyncState>(SYNC_STATE_STORAGE_KEY);
-}
-
-/** Poda los peers inactivos antes de guardar. */
-export function saveSyncState(next: SyncState): Promise<void> {
-  const cutoff = Date.now() - PEER_TTL_MS;
-  const peers: Record<string, SyncPeer> = {};
-  for (const [id, p] of Object.entries((next && next.peers) || {})) {
-    if (Math.max(p.lastSentAt || 0, p.lastReceivedAt || 0) >= cutoff) peers[id] = p;
-  }
-  const clean: SyncState = { deviceId: next.deviceId, deviceName: next.deviceName || '', peers };
-  return putKey(SYNC_STATE_STORAGE_KEY, clean);
 }
 
 export function loadHideBalances(): Promise<boolean | null> {

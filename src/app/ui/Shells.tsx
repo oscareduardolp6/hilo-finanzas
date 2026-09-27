@@ -23,7 +23,6 @@ import { MsiPlanFormContainer } from '../../features/installments/ui/containers/
 import { MonefyImportContainer } from '../../features/monefy-import/ui/containers/MonefyImportContainer';
 import { ReceiptScanContainer } from '../../features/receipt-ocr/ui/containers/ReceiptScanContainer';
 import { SettingsContainer } from '../../features/settings/ui/containers/SettingsContainer';
-import { SyncContainer } from '../../features/sync/ui/containers/SyncContainer';
 import { AddTransactionContainer } from '../../features/transactions/ui/containers/AddTransactionContainer';
 import { useHiloStore } from '../store-context';
 import { BottomNav } from './BottomNav';
@@ -44,7 +43,7 @@ function ActiveTab({ desktop }: ShellProps) {
   return null;
 }
 
-/** Las diez hojas. Cada una decide sola si está abierta, así que montarlas
+/** Las nueve hojas. Cada una decide sola si está abierta, así que montarlas
  *  siempre no cuesta nada y evita que los dos árboles se desincronicen. */
 function Sheets({ desktop }: ShellProps) {
   return (
@@ -55,7 +54,6 @@ function Sheets({ desktop }: ShellProps) {
       <SettingsContainer desktop={desktop} />
       <MonefyImportContainer desktop={desktop} />
       <ReceiptScanContainer desktop={desktop} />
-      <SyncContainer desktop={desktop} />
       <BackupContainer desktop={desktop} />
       <BenefitsContainer desktop={desktop} />
     </>

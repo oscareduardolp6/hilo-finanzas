@@ -34,17 +34,19 @@ export { highlightMatch } from './src/shared/ui/highlight';
 export {
   STORAGE_KEY,
   OCR_SETTINGS_STORAGE_KEY,
-  SYNC_STATE_STORAGE_KEY,
-  PEER_TTL_MS,
   openDb,
   loadState,
   saveState,
   loadOcrSettings,
   saveOcrSettings,
-  makeSyncState,
-  loadSyncState,
-  saveSyncState,
 } from './src/shared/infrastructure/indexed-db';
+
+/* ── backend Firebase (ver tasks/backend-sync.md): utilidades que
+   `test/integration/helpers.jsx` necesita para montar `<App/>` con sesión ya
+   resuelta y sin tocar Firestore/IndexedDB de verdad ── */
+export { createDeps } from './src/app/dependencies';
+export { indexedDbStateRepository } from './src/shared/infrastructure/repositories';
+export { fakeAuthGateway } from './src/shared/infrastructure/in-memory';
 
 /* ── migrado (paso 3): feature `accounts` ── */
 export {
@@ -84,26 +86,19 @@ export {
   filterHistoryTransactions,
 } from './src/features/history/domain/filters';
 
-/* ── migrado (paso 8): feature `sync` ── */
+/* ── formato de export/respaldo (paso 8; reubicado a shared/ al borrar la
+   sincronización manual, ver tasks/backend-sync.md) ── */
 export {
   EXPORT_APP_ID,
   EXPORT_SCHEMA,
   EXPORT_TEXT_PREFIX,
-  QR_BYTE_LIMIT,
   TOMBSTONE_TTL_MS,
-  SYNC_SKEW_MARGIN_MS,
   SYNC_COLLECTIONS,
   recordStamp,
   buildExportPayload,
   normalizeExportPayload,
   parseExportText,
-  parseExportBytes,
-} from './src/features/sync/domain/payload';
-export {
-  mergeCollection,
-  mergeTombstones,
-  mergeDataState,
-} from './src/features/sync/domain/merge';
+} from './src/shared/domain/export-payload';
 
 /* ── migrado (paso 9): feature `backup` ── */
 export { replaceDataState } from './src/features/backup/domain/replace';

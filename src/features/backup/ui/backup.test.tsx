@@ -13,7 +13,7 @@ import {
   fakeClipboardGateway, fakeDownloadGateway, fakeFileGateway, fakeGatewayLog, fakeShareGateway,
 } from '../../../shared/infrastructure/in-memory';
 import { renderFeature } from '../../../test/render-feature';
-import { buildExportPayload } from '../../sync/domain/payload';
+import { buildExportPayload } from '../../../shared/domain/export-payload';
 import { BackupContainer } from './containers/BackupContainer';
 
 const local: Account = { id: 'viejo', name: 'Cuenta Vieja', type: 'efectivo', color: '#C9A24B', initialBalance: 50 };

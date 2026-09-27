@@ -5,13 +5,8 @@ import {
   saveState,
   loadOcrSettings,
   saveOcrSettings,
-  makeSyncState,
-  loadSyncState,
-  saveSyncState,
   STORAGE_KEY,
   OCR_SETTINGS_STORAGE_KEY,
-  SYNC_STATE_STORAGE_KEY,
-  PEER_TTL_MS,
 } from '../../hilo-finanzas.jsx';
 
 afterEach(() => vi.useRealTimers());
@@ -71,55 +66,5 @@ describe('loadOcrSettings / saveOcrSettings', () => {
     expect(JSON.stringify(mainBlob)).not.toContain('sk-secreta');
     // y vive bajo su propia clave
     expect(await rawGet(OCR_SETTINGS_STORAGE_KEY)).toEqual({ apiKey: 'sk-secreta', model: 'claude' });
-  });
-});
-
-/* ------------------------------------------------------------------ */
-/* Sync state local — clave aparte, con poda de peers                 */
-/* ------------------------------------------------------------------ */
-
-describe('makeSyncState / loadSyncState / saveSyncState', () => {
-  it('makeSyncState genera deviceId y un deviceName derivado', () => {
-    const s = makeSyncState();
-    expect(s.deviceId).toMatch(/^dev_/);
-    expect(s.deviceName).toBe('Equipo-' + s.deviceId.slice(-4));
-    expect(s.peers).toEqual({});
-  });
-
-  // Sin fake timers: rompen los callbacks async de fake-indexeddb. Se usan
-  // marcas de tiempo relativas al Date.now() real.
-  it('round-trip conservando peers recientes', async () => {
-    const now = Date.now();
-    const state = {
-      deviceId: 'dev_abc', deviceName: 'Mi Laptop',
-      peers: { p1: { name: 'Tel', lastSentAt: now - 1000, lastReceivedAt: now - 500 } },
-    };
-    await saveSyncState(state);
-    const back = await loadSyncState();
-    expect(back.deviceId).toBe('dev_abc');
-    expect(back.deviceName).toBe('Mi Laptop');
-    expect(back.peers.p1).toBeTruthy();
-  });
-
-  it('poda peers sin intercambio en más de PEER_TTL_MS', async () => {
-    const now = Date.now();
-    const state = {
-      deviceId: 'dev_abc', deviceName: 'x',
-      peers: {
-        viejo: { name: 'V', lastSentAt: now - PEER_TTL_MS - 60_000, lastReceivedAt: 0 },
-        fresco: { name: 'F', lastSentAt: 0, lastReceivedAt: now - 1000 },
-      },
-    };
-    await saveSyncState(state);
-    const back = await loadSyncState();
-    expect(Object.keys(back.peers)).toEqual(['fresco']);
-  });
-
-  it('el sync state no toca el blob STORAGE_KEY y vive bajo su propia clave', async () => {
-    await saveState({ accounts: [], categories: [], transactions: [], installmentPlans: [], tombstones: [] });
-    await saveSyncState({ deviceId: 'dev_marca', deviceName: 'n', peers: {} });
-    const mainBlob = await rawGet(STORAGE_KEY);
-    expect(JSON.stringify(mainBlob)).not.toContain('dev_marca');
-    expect(await rawGet(SYNC_STATE_STORAGE_KEY)).toMatchObject({ deviceId: 'dev_marca' });
   });
 });

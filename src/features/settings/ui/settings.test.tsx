@@ -68,7 +68,6 @@ describe('config de escaneo', () => {
 
 describe('abrir otras hojas', () => {
   it.each([
-    ['Sincronizar dispositivos', 'syncModalOpen'],
     ['Respaldo de datos', 'backupModalOpen'],
     ['Importar desde Monefy', 'importModalOpen'],
   ] as const)('%s cierra Ajustes y abre la suya', async (boton, campo) => {
@@ -79,6 +78,18 @@ describe('abrir otras hojas', () => {
     const state = store.getState();
     expect(state.settingsOpen).toBe(false);
     expect(state[campo]).toBe(true);
+  });
+});
+
+describe('cerrar sesión', () => {
+  it('llama a signOut del gateway de auth', async () => {
+    const { user, deps } = await abrirAjustes();
+    let loggedOut = false;
+    deps.authGateway.onAuthStateChanged((u) => { if (u === null) loggedOut = true; });
+
+    await user.click(screen.getByRole('button', { name: 'Cerrar sesión' }));
+
+    expect(loggedOut).toBe(true);
   });
 });
 

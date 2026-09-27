@@ -1,0 +1,12 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Un documento por usuario (`users/{uid}`) con el blob completo de las 6
+    // colecciones. Bloqueado a que el uid de la sesión coincida con el uid
+    // del documento: nadie más puede leer ni escribir, aunque conozca el
+    // `apiKey` del proyecto (no es secreto, ver README.md).
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}

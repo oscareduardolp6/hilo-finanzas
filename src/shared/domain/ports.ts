@@ -7,25 +7,21 @@
 
 import type { TaskEither } from 'fp-ts/TaskEither';
 import type { HiloError } from './errors';
-import type { DataState, OcrSettings, SyncState } from './types';
+import type { DataState, OcrSettings } from './types';
 
-/** Las seis colecciones, bajo `STORAGE_KEY`. `null` = perfil nuevo. */
+/** Las seis colecciones. `null` = perfil nuevo (o sin sesión). Implementada
+ *  hoy sobre Firestore, un documento por usuario — ver
+ *  `shared/infrastructure/firestore-state-repository.ts`. */
 export type StateRepository = {
   readonly load: TaskEither<HiloError, DataState | null>;
   readonly save: (state: DataState) => TaskEither<HiloError, void>;
 };
 
-/** Clave propia: nunca entra al blob de sync / QR / respaldo. */
+/** Clave propia: nunca entra al blob de datos ni a Firestore. */
 export type OcrSettingsRepository = {
   readonly load: TaskEither<HiloError, OcrSettings | null>;
   /** `null` (o todo vacío) borra la entrada en vez de guardar una vacía. */
   readonly save: (settings: OcrSettings | null) => TaskEither<HiloError, void>;
-};
-
-/** Estado de sync LOCAL de este dispositivo; tampoco viaja. */
-export type SyncStateRepository = {
-  readonly load: TaskEither<HiloError, SyncState | null>;
-  readonly save: (state: SyncState) => TaskEither<HiloError, void>;
 };
 
 /** Preferencia de "modo privado" (ocultar saldos) de ESTE dispositivo; tampoco viaja. */
@@ -58,20 +54,23 @@ export type DownloadGateway = {
   readonly json: (payload: unknown, fileName: string) => void;
 };
 
-/** Una sesión de cámara en curso. Se cancela al cambiar de pestaña o cerrar. */
-export type QrScanSession = {
-  readonly result: Promise<Uint8Array>;
-  readonly cancel: () => void;
+/** El usuario autenticado, en el vocabulario angosto de Hilo (no el `User` de
+ *  Firebase completo). */
+export type AuthUser = {
+  readonly uid: string;
+  readonly email: string | null;
+  readonly displayName: string | null;
 };
 
-/* El `HTMLVideoElement` en la firma es deliberado: la cámara tiene que pintarse
-   en algún sitio y ese sitio lo decide la UI. Es el único puerto que toca el
-   DOM, y a cambio el bucle de escaneo sale del componente. */
-export type QrGateway = {
-  /** Data URL con el QR. Si los bytes caben o no en uno lo decide quien
-   *  llama: el límite es un concepto de Hilo, no del navegador. */
-  readonly encode: (bytes: Uint8Array) => Promise<string>;
-  readonly scan: (video: HTMLVideoElement) => QrScanSession;
+/* Sesión de Google, fuera del store de zustand a propósito — ver
+   `app/auth-context.tsx`. Sus fallos no se modelan como `TaskEither`: son
+   imperativos (como `ShareGateway`), y sus errores importan poco (si el login
+   falla, `onAuthStateChanged` simplemente nunca entrega un usuario). */
+export type AuthGateway = {
+  readonly signInWithGoogle: () => Promise<void>;
+  readonly signOut: () => Promise<void>;
+  /** Devuelve la función para desuscribirse. */
+  readonly onAuthStateChanged: (cb: (user: AuthUser | null) => void) => () => void;
 };
 
 /** Inyectados para que los casos de uso sean deterministas en test. */

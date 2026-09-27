@@ -20,8 +20,6 @@ import { createCategoriesSlice } from '../../features/categories/store/categorie
 import type { CategoriesSlice } from '../../features/categories/store/categories-slice';
 import { createDashboardSlice } from '../../features/dashboard/store/dashboard-slice';
 import type { DashboardSlice } from '../../features/dashboard/store/dashboard-slice';
-import { createSyncSlice } from '../../features/sync/store/sync-slice';
-import type { SyncSlice } from '../../features/sync/store/sync-slice';
 import { createMonefySlice } from '../../features/monefy-import/store/monefy-slice';
 import type { MonefySlice } from '../../features/monefy-import/store/monefy-slice';
 import { createSettingsActionsSlice } from '../../features/settings/store/settings-actions-slice';
@@ -51,7 +49,6 @@ export type HiloStore = DataSlice &
   CategoriesSlice &
   InstallmentsSlice &
   DashboardSlice &
-  SyncSlice &
   BackupSlice &
   MonefySlice &
   ReceiptSlice &
@@ -71,7 +68,6 @@ export const createHiloStore = (deps: Deps) =>
       ...createCategoriesSlice(deps)(...args),
       ...createInstallmentsSlice(deps)(...args),
       ...createDashboardSlice(...args),
-      ...createSyncSlice(deps)(...args),
       ...createBackupSlice(deps)(...args),
       ...createMonefySlice(deps)(...args),
       ...createReceiptSlice(deps)(...args),
@@ -83,6 +79,6 @@ export const createHiloStore = (deps: Deps) =>
 export { selectDataState } from './data-slice';
 export type {
   DataSlice, UiSlice, SettingsSlice, AccountsSlice, TransactionsSlice, CategoriesSlice,
-  InstallmentsSlice, DashboardSlice, SyncSlice, BackupSlice, MonefySlice, ReceiptSlice,
+  InstallmentsSlice, DashboardSlice, BackupSlice, MonefySlice, ReceiptSlice,
   SettingsActionsSlice, BenefitsSlice,
 };

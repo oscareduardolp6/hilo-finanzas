@@ -16,17 +16,7 @@ export const persist = (state: DataState): RTE.ReaderTaskEither<Deps, HiloError,
     RTE.chainTaskEitherK((deps) => deps.stateRepository.save(state)),
   );
 
-/** El estado de sync es local del dispositivo y su fallo se ignora, igual que
- *  en el `useEffect` original (`.catch(() => {})`). */
-export const persistSyncState = (
-  syncState: Parameters<Deps['syncStateRepository']['save']>[0],
-): RTE.ReaderTaskEither<Deps, HiloError, void> =>
-  pipe(
-    RTE.ask<Deps, HiloError>(),
-    RTE.chainTaskEitherK((deps) => deps.syncStateRepository.save(syncState)),
-  );
-
-/** El modo privado es local del dispositivo, igual que el sync state: su
+/** El modo privado es local del dispositivo: su
  *  fallo se ignora, no hay nada útil que decirle al usuario. */
 export const persistHideBalances = (
   hideBalances: boolean,

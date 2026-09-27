@@ -1,21 +1,35 @@
-/* La raíz de Hilo. Después del refactor son 30 líneas: monta el store, espera a
-   la hidratación y elige uno de los dos árboles.
+/* La raíz de Hilo: resuelve la sesión de Google, monta el store, espera a la
+   hidratación y elige uno de los dos árboles.
 
    El store se construye POR MONTAJE (ver `store-context.tsx`), así que cada
    `render(<App/>)` arranca limpio — la misma semántica que cuando el estado
-   vivía en los 29 `useState` de este componente. */
+   vivía en los 29 `useState` de este componente.
+
+   `deps` es una prop opcional — igual que ya lo era en `HiloStoreProvider` —
+   para poder inyectar un `authGateway`/`stateRepository` de mentira en test
+   (ver `test/integration/helpers.jsx`), sin que producción tenga que pasar
+   nada. */
 
 import { COLORS } from '../shared/design/tokens';
 import { useIsDesktop } from '../shared/ui/use-is-desktop';
+import { AuthGate } from './auth-context';
+import { productionDeps } from './dependencies';
+import type { Deps } from './dependencies';
 import { HiloStoreProvider, useHiloStore } from './store-context';
 import { useToastAutoDismiss } from './use-toast-auto-dismiss';
 import { DesktopShell, MobileShell } from './ui/Shells';
 
-export default function App() {
+export type AppProps = {
+  deps?: Deps;
+};
+
+export default function App({ deps = productionDeps }: AppProps = {}) {
   return (
-    <HiloStoreProvider>
-      <AppBody />
-    </HiloStoreProvider>
+    <AuthGate deps={deps}>
+      <HiloStoreProvider deps={deps}>
+        <AppBody />
+      </HiloStoreProvider>
+    </AuthGate>
   );
 }
 

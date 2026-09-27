@@ -19,31 +19,6 @@ async function openSettings(user) {
   await screen.findByText('Ajustes');
 }
 
-describe('Sincronización: recibir por texto pegado', () => {
-  it('funde el payload entrante y lo refleja en la app', async () => {
-    await seedState({ accounts: [{ id: 'acc1', name: 'Local', type: 'efectivo', color: '#C9A24B', initialBalance: 100 }] });
-    const user = await renderApp();
-
-    await openSettings(user);
-    await user.click(screen.getByRole('button', { name: /Sincronizar dispositivos/ }));
-    await screen.findByText('Sincronizar dispositivos');
-    await user.click(screen.getByRole('button', { name: 'Recibir' }));
-
-    const box = screen.getByPlaceholderText(/pega aquí el texto/i);
-    await user.click(box);
-    await user.paste(JSON.stringify(buildExportPayload(incoming)));
-
-    await user.click(screen.getByRole('button', { name: /Combinar/ }));
-
-    expect(await screen.findByText(/Sincronizado.*2 nuevos, 0 actualizados, 0 borrados/)).toBeInTheDocument();
-
-    await gotoTab(user, 'Historial');
-    expect(await screen.findByText('Ingreso sincronizado')).toBeInTheDocument();
-    await gotoTab(user, 'Cuentas');
-    expect(await screen.findByText('Cuenta Importada')).toBeInTheDocument();
-  });
-});
-
 describe('Respaldo: restaurar reemplazando todo', () => {
   it('carga un archivo de respaldo y reemplaza el estado', async () => {
     await seedState({

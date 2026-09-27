@@ -5,6 +5,19 @@ import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, beforeEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 
+/* `shared/infrastructure/firebase.ts` llama `getAuth`/`getFirestore` al
+   importarse (composition root vía `dependencies.ts`), y el SDK de Firebase
+   revienta si `apiKey` falta — no hace falta que sea un proyecto real: ningún
+   test toca la red (todo repositorio/gateway real se sobreescribe por uno en
+   memoria vía `createDeps`/`renderFeature`), solo necesita pasar la
+   validación local al inicializar. */
+vi.stubEnv('VITE_FIREBASE_API_KEY', 'test-api-key');
+vi.stubEnv('VITE_FIREBASE_AUTH_DOMAIN', 'test.firebaseapp.com');
+vi.stubEnv('VITE_FIREBASE_PROJECT_ID', 'test-project');
+vi.stubEnv('VITE_FIREBASE_STORAGE_BUCKET', 'test-project.appspot.com');
+vi.stubEnv('VITE_FIREBASE_MESSAGING_SENDER_ID', '000000000000');
+vi.stubEnv('VITE_FIREBASE_APP_ID', '1:000000000000:web:0000000000000000000000');
+
 /* La implementación de Blob de jsdom es incompleta (sin `.stream()` ni, a veces,
    `.arrayBuffer()`), y `gzipString`/`gunzipBytes` la usan para el texto/QR de
    sincronización. En un navegador real existe. Usamos la Blob/File nativas de
@@ -63,6 +76,20 @@ const realWarn = console.warn;
 console.warn = (...args) => {
   if (typeof args[0] === 'string' && args[0].includes('width(0) and height(0) of chart')) return;
   realWarn(...args);
+};
+
+/* `shared/infrastructure/auth.ts` llama `getRedirectResult` al importarse, y
+   siempre falla en jsdom/Node ("operation-not-supported-in-this-environment"
+   — el redirect de Firebase Auth necesita un navegador real). El error ya se
+   atrapa con `.catch()` y no rompe ningún test; solo se filtra el log para no
+   ensuciar la salida en cada archivo. */
+const realError = console.error;
+console.error = (...args) => {
+  if (
+    typeof args[0] === 'string' &&
+    args[0].includes('Error al completar el login con Google')
+  ) return;
+  realError(...args);
 };
 
 beforeEach(() => {

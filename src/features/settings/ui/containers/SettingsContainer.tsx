@@ -5,6 +5,7 @@
    demás, para que el "¿seguro?" de borrar movimientos no siga esperando al
    reabrir la hoja. */
 
+import { useAuth } from '../../../../app/auth-context';
 import { useHiloStore } from '../../../../app/store-context';
 import { SettingsModal } from '../components/SettingsModal';
 
@@ -24,6 +25,7 @@ function SettingsSheet({ desktop }: SettingsContainerProps) {
   const saveOcrSettings = useHiloStore((s) => s.saveOcrSettings);
   const openFromSettings = useHiloStore((s) => s.openFromSettings);
   const resetTransactions = useHiloStore((s) => s.resetTransactions);
+  const { signOut } = useAuth();
 
   return (
     <SettingsModal
@@ -31,9 +33,9 @@ function SettingsSheet({ desktop }: SettingsContainerProps) {
       onSaveOcrSettings={(settings) => void saveOcrSettings(settings)}
       onResetTransactions={resetTransactions}
       onOpenImport={() => openFromSettings('import')}
-      onOpenSync={() => openFromSettings('sync')}
       onOpenBackup={() => openFromSettings('backup')}
       onOpenBenefits={() => openFromSettings('benefits')}
+      onSignOut={signOut}
       onClose={() => setOpen(false)}
       desktop={desktop}
     />

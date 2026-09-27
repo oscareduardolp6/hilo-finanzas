@@ -12,7 +12,6 @@ import {
   inMemoryHideBalancesRepository,
   inMemoryOcrSettingsRepository,
   inMemoryStateRepository,
-  inMemorySyncStateRepository,
 } from '../../shared/infrastructure/in-memory';
 import type { DataState } from '../../shared/domain/types';
 import { createHiloStore } from './index';
@@ -36,11 +35,12 @@ function setup(options: { stored?: DataState | null; failSave?: boolean; storedH
   const stateRepository = inMemoryStateRepository(
     options.failSave ? { failWith: brokenPersistence() } : { initial: options.stored ?? null },
   );
-  const syncStateRepository = inMemorySyncStateRepository();
   const hideBalancesRepository = inMemoryHideBalancesRepository({ initial: options.storedHideBalances ?? null });
   const deps = createDeps({
     stateRepository,
-    syncStateRepository,
+    // Un dispositivo sin snapshot local que migrar: así `migrateToFirestore`
+    // no toca el IndexedDB real (fake-indexeddb) en ningún test de este archivo.
+    legacyLocalStateRepository: inMemoryStateRepository({ initial: null }),
     hideBalancesRepository,
     ocrSettingsRepository: inMemoryOcrSettingsRepository(),
     idGenerator: () => 'dev_fijo',
@@ -48,7 +48,7 @@ function setup(options: { stored?: DataState | null; failSave?: boolean; storedH
   });
   const store = createHiloStore(deps);
   const unsubscribe = subscribePersistence(store, deps);
-  return { store, deps, stateRepository, syncStateRepository, hideBalancesRepository, unsubscribe };
+  return { store, deps, stateRepository, hideBalancesRepository, unsubscribe };
 }
 
 describe('hidratación', () => {
@@ -81,18 +81,6 @@ describe('hidratación', () => {
 
     expect(store.getState().tombstones).toEqual([]);
     expect(store.getState().accounts).toEqual([cuenta]);
-  });
-
-  it('bautiza un dispositivo si no había sync state', async () => {
-    const { store } = setup();
-
-    await store.getState().hydrateFromRepositories();
-
-    expect(store.getState().syncState).toEqual({
-      deviceId: 'dev_fijo',
-      deviceName: 'Equipo-fijo',
-      peers: {},
-    });
   });
 
   it('sin modo privado guardado, arranca con los saldos visibles', async () => {
@@ -156,13 +144,12 @@ describe('guardado automático', () => {
     expect(store.getState().toast).toBe('No se pudo guardar el cambio localmente');
   });
 
-  it('el sync state se guarda bajo su propia clave, no dentro del blob', async () => {
-    const { store, stateRepository, syncStateRepository } = setup();
+  it('el blob guardado trae exactamente las 6 colecciones, nada de estado local', async () => {
+    const { store, stateRepository } = setup();
 
     await store.getState().hydrateFromRepositories();
     await flush();
 
-    expect(syncStateRepository.peek()?.deviceId).toBe('dev_fijo');
     // `benefitPrograms` se agregó después que las otras 5: cambio de
     // comportamiento deliberado, no un test desactualizado (ver CLAUDE.md).
     expect(Object.keys(stateRepository.peek() ?? {})).toEqual([

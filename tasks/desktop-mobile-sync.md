@@ -5,6 +5,8 @@ priority: 4
 
 # Sincronizar escritorio y móvil
 
+> **Reemplazada.** `SyncModal` (QR / archivo / texto, descrito abajo) se borró al pasar a un backend real con Firestore — ver [tasks/backend-sync.md](backend-sync.md). Este archivo queda como registro histórico de por qué existió y cómo funcionaba; `BackupModal`, la otra mitad de esta tarea, sigue existiendo tal cual.
+
 Una vez que cada dispositivo guarde sus datos de forma independiente (ver [local-storage-migration.md](local-storage-migration.md)), el problema que sigue es que esos datos quedan aislados: lo que registras en el celular no aparece en la compu, y viceversa.
 
 ## Idea

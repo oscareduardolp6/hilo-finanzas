@@ -10,28 +10,35 @@ import type { ReceiptGateway } from '../features/receipt-ocr/domain/ports';
 import { browserReceiptGateway } from '../features/receipt-ocr/infrastructure/browser-receipt-gateway';
 import { uid } from '../shared/domain/ids';
 import type {
-  Clock, ClipboardGateway, DownloadGateway, FileGateway, HideBalancesRepository, IdGenerator,
-  OcrSettingsRepository, QrGateway, ShareGateway, StateRepository, SyncStateRepository,
+  AuthGateway, Clock, ClipboardGateway, DownloadGateway, FileGateway, HideBalancesRepository,
+  IdGenerator, OcrSettingsRepository, ShareGateway, StateRepository,
 } from '../shared/domain/ports';
+import { browserAuthGateway } from '../shared/infrastructure/auth';
 import {
   browserClipboardGateway,
   browserDownloadGateway,
   browserFileGateway,
   browserShareGateway,
 } from '../shared/infrastructure/browser';
-import { browserQrGateway } from '../shared/infrastructure/qr';
 import {
+  firestoreStateRepository,
   indexedDbHideBalancesRepository,
   indexedDbOcrSettingsRepository,
   indexedDbStateRepository,
-  indexedDbSyncStateRepository,
 } from '../shared/infrastructure/repositories';
 
 export type Deps = {
   readonly stateRepository: StateRepository;
+  /** El snapshot local previo a Firestore, de ESTE dispositivo — usado solo
+   *  una vez por `migrate-to-firestore.ts` al iniciar sesión, nunca por el
+   *  guardado normal. Ver "Migración de datos existentes" en
+   *  `agents/plans/backend-sync.md`. */
+  readonly legacyLocalStateRepository: StateRepository;
   readonly ocrSettingsRepository: OcrSettingsRepository;
-  readonly syncStateRepository: SyncStateRepository;
   readonly hideBalancesRepository: HideBalancesRepository;
+  /** Sesión de Google. Vive en `Deps` para que `AuthGate` (fuera del store,
+   *  ver `app/auth-context.tsx`) también pueda inyectarse en test. */
+  readonly authGateway: AuthGateway;
   /* Capacidades del navegador. Antes se llamaban directo desde dentro de un
      componente; como puertos, un test puede fingir que el usuario denegó la
      cámara o que el portapapeles está bloqueado. */
@@ -39,7 +46,6 @@ export type Deps = {
   readonly clipboardGateway: ClipboardGateway;
   readonly shareGateway: ShareGateway;
   readonly downloadGateway: DownloadGateway;
-  readonly qrGateway: QrGateway;
   /* El único adaptador que sale a la red: reescala la foto del ticket y la
      manda a la API de visión de Anthropic. Su puerto vive en la feature y no
      en `shared/`, porque sus tipos son de ahí. */
@@ -52,15 +58,15 @@ export type Deps = {
 
 /** Las dependencias reales del navegador. */
 export const productionDeps: Deps = {
-  stateRepository: indexedDbStateRepository,
+  stateRepository: firestoreStateRepository,
+  legacyLocalStateRepository: indexedDbStateRepository,
   ocrSettingsRepository: indexedDbOcrSettingsRepository,
-  syncStateRepository: indexedDbSyncStateRepository,
   hideBalancesRepository: indexedDbHideBalancesRepository,
+  authGateway: browserAuthGateway,
   fileGateway: browserFileGateway,
   clipboardGateway: browserClipboardGateway,
   shareGateway: browserShareGateway,
   downloadGateway: browserDownloadGateway,
-  qrGateway: browserQrGateway,
   receiptGateway: browserReceiptGateway,
   clock: () => Date.now(),
   idGenerator: uid,

@@ -9,10 +9,10 @@ import * as TE from 'fp-ts/TaskEither';
 import { persistenceError } from '../domain/errors';
 import type { HiloError } from '../domain/errors';
 import type {
-  ClipboardGateway, DownloadGateway, FileGateway, HideBalancesRepository, OcrSettingsRepository,
-  QrGateway, ShareGateway, StateRepository, SyncStateRepository,
+  AuthGateway, AuthUser, ClipboardGateway, DownloadGateway, FileGateway, HideBalancesRepository,
+  OcrSettingsRepository, ShareGateway, StateRepository,
 } from '../domain/ports';
-import type { DataState, OcrSettings, SyncState } from '../domain/types';
+import type { DataState, OcrSettings } from '../domain/types';
 
 export type InMemoryOptions<A> = {
   /** Contenido inicial. `null` (por defecto) = perfil nuevo. */
@@ -71,12 +71,6 @@ export function inMemoryOcrSettingsRepository(
   );
 }
 
-export function inMemorySyncStateRepository(
-  options: InMemoryOptions<SyncState> = {},
-): InMemoryRepository<SyncState, SyncStateRepository> {
-  return makeRepository<SyncState, SyncState>(options, (state) => state);
-}
-
 export function inMemoryHideBalancesRepository(
   options: InMemoryOptions<boolean> = {},
 ): InMemoryRepository<boolean, HideBalancesRepository> {
@@ -127,12 +121,27 @@ export const fakeDownloadGateway = (log: FakeGatewayLog): DownloadGateway => ({
   json: (payload, fileName) => { log.downloaded.push({ payload, fileName }); },
 });
 
-/** QR de mentira: codifica a un data URL falso y escanea lo que se le diga.
- *  `scanResult` puede ser bytes (éxito) o un Error (cámara denegada). */
-export const fakeQrGateway = (scanResult: Uint8Array | Error = new Error('sin cámara')): QrGateway => ({
-  encode: async (bytes) => `data:image/png;base64,qr-de-${bytes.length}-bytes`,
-  scan: () => ({
-    result: scanResult instanceof Error ? Promise.reject(scanResult) : Promise.resolve(scanResult),
-    cancel: () => {},
-  }),
-});
+/** Sesión de Google de mentira: `initialUser` decide si `AuthGate` arranca
+ *  logueado o en la pantalla de login. `signInWithGoogle`/`signOut` mueven el
+ *  usuario "actual" y avisan a todo suscriptor de `onAuthStateChanged`, igual
+ *  que haría el SDK real. */
+export function fakeAuthGateway(initialUser: AuthUser | null = null): AuthGateway {
+  let current = initialUser;
+  const listeners = new Set<(user: AuthUser | null) => void>();
+  const notify = () => listeners.forEach((cb) => cb(current));
+  return {
+    signInWithGoogle: async () => {
+      current = current ?? { uid: 'test-uid', email: 'test@example.com', displayName: 'Test' };
+      notify();
+    },
+    signOut: async () => {
+      current = null;
+      notify();
+    },
+    onAuthStateChanged: (cb) => {
+      listeners.add(cb);
+      cb(current);
+      return () => listeners.delete(cb);
+    },
+  };
+}

@@ -11,22 +11,29 @@
 import { render, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
+import { AuthContext } from '../app/auth-context';
 import { createDeps } from '../app/dependencies';
 import type { Deps } from '../app/dependencies';
 import { HiloStoreProvider } from '../app/store-context';
 import { createHiloStore } from '../app/store';
 import type { HiloStoreApi } from '../app/store';
 import {
+  fakeAuthGateway,
   inMemoryHideBalancesRepository,
   inMemoryOcrSettingsRepository,
   inMemoryStateRepository,
-  inMemorySyncStateRepository,
 } from '../shared/infrastructure/in-memory';
+import type { AuthUser } from '../shared/domain/ports';
 import type { DataState } from '../shared/domain/types';
 
 /** Reloj fijo: cualquier `createdAt`/`updatedAt` que escriba un caso de uso
  *  durante el test es comparable con `toEqual`. */
 export const AHORA = 1_700_000_000_000;
+
+/** Usuario fijo: los containers ya asumen sesión iniciada (`AuthGate` vive
+ *  por encima de `HiloStoreProvider`, nunca dentro de la feature bajo
+ *  prueba). */
+const TEST_USER: AuthUser = { uid: 'test-uid', email: 'test@example.com', displayName: 'Test' };
 
 export type RenderFeatureOptions = {
   /** Estado inicial "en IndexedDB". Lo que no se pase va vacío. */
@@ -61,9 +68,13 @@ export async function renderFeature(
         ...options.state,
       },
     }),
+    // Nunca real: nada en un test de feature debe tocar el IndexedDB local
+    // de verdad. Como `stateRepository` de arriba nunca hidrata a `null`,
+    // `migrateToFirestore` no llega a leer esto, pero se deja explícito.
+    legacyLocalStateRepository: inMemoryStateRepository({ initial: null }),
     ocrSettingsRepository: inMemoryOcrSettingsRepository(),
-    syncStateRepository: inMemorySyncStateRepository(),
     hideBalancesRepository: inMemoryHideBalancesRepository(),
+    authGateway: fakeAuthGateway(TEST_USER),
     clock: () => AHORA,
     // El prefijo es opcional en el puerto (`uid()` se llama sin él en algún
     // sitio), así que el doble aquí también tiene que admitir no recibirlo.
@@ -75,9 +86,11 @@ export async function renderFeature(
   const user = userEvent.setup();
 
   const { container } = render(
-    <HiloStoreProvider deps={deps} store={store}>
-      {ui}
-    </HiloStoreProvider>,
+    <AuthContext.Provider value={{ user: TEST_USER, signOut: () => void deps.authGateway.signOut() }}>
+      <HiloStoreProvider deps={deps} store={store}>
+        {ui}
+      </HiloStoreProvider>
+    </AuthContext.Provider>,
   );
 
   // El Provider hidrata en un efecto; sin esperar, el primer assert correría

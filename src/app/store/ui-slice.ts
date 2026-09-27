@@ -37,7 +37,6 @@ export type UiSlice = {
   editingPlan: InstallmentPlan | null;
   settingsOpen: boolean;
   importModalOpen: boolean;
-  syncModalOpen: boolean;
   backupModalOpen: boolean;
   receiptModalOpen: boolean;
   benefitsModalOpen: boolean;
@@ -65,7 +64,6 @@ export type UiSlice = {
   setEditingPlan: Setter<InstallmentPlan | null>;
   setSettingsOpen: Setter<boolean>;
   setImportModalOpen: Setter<boolean>;
-  setSyncModalOpen: Setter<boolean>;
   setBackupModalOpen: Setter<boolean>;
   setReceiptModalOpen: Setter<boolean>;
   setBenefitsModalOpen: Setter<boolean>;
@@ -102,7 +100,6 @@ export const createUiSlice: StateCreator<HiloStore, [], [], UiSlice> = (set) => 
   editingPlan: null,
   settingsOpen: false,
   importModalOpen: false,
-  syncModalOpen: false,
   backupModalOpen: false,
   receiptModalOpen: false,
   benefitsModalOpen: false,
@@ -129,7 +126,6 @@ export const createUiSlice: StateCreator<HiloStore, [], [], UiSlice> = (set) => 
   setEditingPlan: makeSetter<HiloStore, 'editingPlan'>(set, 'editingPlan'),
   setSettingsOpen: makeSetter<HiloStore, 'settingsOpen'>(set, 'settingsOpen'),
   setImportModalOpen: makeSetter<HiloStore, 'importModalOpen'>(set, 'importModalOpen'),
-  setSyncModalOpen: makeSetter<HiloStore, 'syncModalOpen'>(set, 'syncModalOpen'),
   setBackupModalOpen: makeSetter<HiloStore, 'backupModalOpen'>(set, 'backupModalOpen'),
   setReceiptModalOpen: makeSetter<HiloStore, 'receiptModalOpen'>(set, 'receiptModalOpen'),
   setBenefitsModalOpen: makeSetter<HiloStore, 'benefitsModalOpen'>(set, 'benefitsModalOpen'),

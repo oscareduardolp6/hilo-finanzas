@@ -6,7 +6,7 @@ import { createDeps } from '../../../app/dependencies';
 import { runR, runRT } from '../../../app/run';
 import type { Account, DataState, Transaction } from '../../../shared/domain/types';
 import { base64ToBytes, gunzipBytes } from '../../../shared/infrastructure/compression';
-import { EXPORT_TEXT_PREFIX } from '../../sync/domain/payload';
+import { EXPORT_TEXT_PREFIX } from '../../../shared/domain/export-payload';
 import { backupText, buildBackup } from './build-backup';
 
 // 2026-09-05T00:00:00 local; el nombre del archivo usa el reloj LOCAL a

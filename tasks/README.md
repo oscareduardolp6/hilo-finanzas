@@ -9,6 +9,7 @@ Ideas y funcionalidades que queremos agregar a Hilo, una por archivo. No es un b
 | [Límite al autocomplete del buscador de historial](limite-autocomplete-busqueda-historial.md) | 1 | Implementada |
 | [Visualización de escritorio](desktop-view.md) | 1 | Implementada |
 | [Migrar a IndexedDB (o similar) para guardado local](local-storage-migration.md) | 2 | Implementada |
+| [Sincronización automática con backend (Firebase)](backend-sync.md) | 2 | Implementada |
 | [Instalar como PWA](pwa-install.md) | 3 | Implementada |
 | [Buscador en el historial](buscador-historial.md) | 3 | Implementada |
 | [Conservar el monto al cambiar entre gasto / ingreso / transferencia](cantidad-persiste-al-cambiar-tipo.md) | 4 | Implementada |

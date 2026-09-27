@@ -8,7 +8,7 @@ import { createDeps } from '../../../app/dependencies';
 import { runRTE } from '../../../app/run';
 import type { Account, DataState } from '../../../shared/domain/types';
 import { fakeFileGateway, fakeGatewayLog } from '../../../shared/infrastructure/in-memory';
-import { buildExportPayload } from '../../sync/domain/payload';
+import { buildExportPayload } from '../../../shared/domain/export-payload';
 import { readBackup } from './read-backup';
 
 const cuenta: Account = { id: 'aX', name: 'Importada', type: 'debito', color: '#8D5FB0', initialBalance: 0 };

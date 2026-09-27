@@ -12,8 +12,8 @@ import type { Deps } from '../../../app/dependencies';
 import type { DataState } from '../../../shared/domain/types';
 import { bytesToBase64, gzipString, supportsCompression } from '../../../shared/infrastructure/compression';
 import { exportFileName } from '../../../shared/infrastructure/download';
-import { EXPORT_TEXT_PREFIX, buildExportPayload } from '../../sync/domain/payload';
-import type { ExportPayload } from '../../sync/domain/payload';
+import { EXPORT_TEXT_PREFIX, buildExportPayload } from '../../../shared/domain/export-payload';
+import type { ExportPayload } from '../../../shared/domain/export-payload';
 
 export type Backup = {
   readonly payload: ExportPayload;

@@ -5,7 +5,7 @@
    con formulario. Nada de eso es dominio. */
 
 import { useState } from 'react';
-import { DatabaseBackup, Gift, RefreshCw, X } from 'lucide-react';
+import { DatabaseBackup, Gift, LogOut, X } from 'lucide-react';
 import { COLORS } from '../../../../shared/design/tokens';
 import type { OcrSettings } from '../../../../shared/domain/types';
 import { SheetOverlay } from '../../../../shared/ui/sheet-overlay';
@@ -16,16 +16,16 @@ export type SettingsModalProps = {
   onSaveOcrSettings: (settings: OcrSettings) => void;
   onResetTransactions: () => void;
   onOpenImport: () => void;
-  onOpenSync: () => void;
   onOpenBackup: () => void;
   onOpenBenefits: () => void;
+  onSignOut: () => void;
   onClose: () => void;
   desktop?: boolean;
 };
 
 export function SettingsModal({
   ocrSettings, onSaveOcrSettings, onResetTransactions,
-  onOpenImport, onOpenSync, onOpenBackup, onOpenBenefits, onClose, desktop,
+  onOpenImport, onOpenBackup, onOpenBenefits, onSignOut, onClose, desktop,
 }: SettingsModalProps) {
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [keyDraft, setKeyDraft] = useState((ocrSettings && ocrSettings.apiKey) || '');
@@ -51,9 +51,6 @@ export function SettingsModal({
           <p className="text-sm font-medium mb-1" style={{ color: COLORS.text }}>Sobre la trazabilidad</p>
           <p className="text-xs leading-relaxed" style={{ color: COLORS.textMuted }}>Cuando marcas una transferencia como gasto, el monto cuenta en tus reportes por categoría, pero no resta de tu saldo total: el dinero sigue siendo tuyo hasta que de verdad pagas la tarjeta de crédito.</p>
         </div>
-        <button onClick={onOpenSync} className="w-full py-3 rounded-xl text-sm font-semibold mb-3 flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
-          <RefreshCw size={15} /> Sincronizar dispositivos
-        </button>
         <button onClick={onOpenBackup} className="w-full py-3 rounded-xl text-sm font-semibold mb-3 flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
           <DatabaseBackup size={15} /> Respaldo de datos
         </button>
@@ -61,6 +58,9 @@ export function SettingsModal({
           <Gift size={15} /> Beneficios y promociones
         </button>
         <button onClick={onOpenImport} className="w-full py-3 rounded-xl text-sm font-semibold mb-3" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>Importar desde Monefy</button>
+        <button onClick={onSignOut} className="w-full py-3 rounded-xl text-sm font-semibold mb-3 flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
+          <LogOut size={15} /> Cerrar sesión
+        </button>
 
         <div className="rounded-xl p-3 mb-3" style={{ backgroundColor: COLORS.surfaceAlt }}>
           <p className="text-sm font-medium mb-1" style={{ color: COLORS.text }}>Escaneo de tickets (IA)</p>

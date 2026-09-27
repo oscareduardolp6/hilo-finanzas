@@ -5,6 +5,8 @@ priority: 5
 
 # Sincronización incremental (delta) entre dispositivos
 
+> **Reemplazada.** Todo lo descrito aquí (`SyncModal`, deltas, `SyncStateRepository`) se borró al pasar a un backend real con Firestore — ver [tasks/backend-sync.md](backend-sync.md). Queda como registro histórico.
+
 Continuación de [desktop-mobile-sync.md](desktop-mobile-sync.md).
 
 ## Problema

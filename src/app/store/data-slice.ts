@@ -20,6 +20,7 @@ import type {
   Transaction,
 } from '../../shared/domain/types';
 import { hydrate } from '../application/hydrate';
+import { migrateToFirestore } from '../application/migrate-to-firestore';
 import type { Deps } from '../dependencies';
 import { runRT } from '../run';
 import { makeSetter } from './setter';
@@ -76,7 +77,10 @@ export const createDataSlice =
     setBenefitPrograms: makeSetter<HiloStore, 'benefitPrograms'>(set, 'benefitPrograms'),
 
     hydrateFromRepositories: async () => {
-      const { data, ocrSettings, syncState, hideBalances } = await runRT(hydrate, deps);
+      // Siembra Firestore con el snapshot local si hace falta, ANTES de leer
+      // — así `hydrate` ya ve el dato recién migrado en el primer arranque.
+      await runRT(migrateToFirestore, deps);
+      const { data, ocrSettings, hideBalances } = await runRT(hydrate, deps);
       // UN SOLO `set`, a propósito: el suscriptor de persistencia observa las 5
       // colecciones y `loaded` a la vez, así que esto dispara exactamente un
       // guardado — el mismo que hacía el `useEffect` original al pasar `loaded`
@@ -93,7 +97,6 @@ export const createDataSlice =
         ...(ocrSettings
           ? { ocrSettings: { apiKey: ocrSettings.apiKey || '', model: ocrSettings.model || '' } }
           : {}),
-        syncState,
         hideBalances,
         loaded: true,
       });

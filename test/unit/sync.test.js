@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   buildExportPayload,
   normalizeExportPayload,
@@ -7,16 +7,9 @@ import {
   base64ToBytes,
   gzipString,
   gunzipBytes,
-  mergeCollection,
-  mergeTombstones,
-  mergeDataState,
   replaceDataState,
   EXPORT_TEXT_PREFIX,
-  SYNC_SKEW_MARGIN_MS,
-  TOMBSTONE_TTL_MS,
 } from '../../hilo-finanzas.jsx';
-
-afterEach(() => vi.useRealTimers());
 
 const emptyState = { accounts: [], categories: [], transactions: [], installmentPlans: [], tombstones: [] };
 
@@ -29,7 +22,7 @@ function stateWith(overrides) {
 /* ------------------------------------------------------------------ */
 
 describe('buildExportPayload', () => {
-  it('sin opciones -> foto completa (partial:false, since:null)', () => {
+  it('siempre la foto completa (partial:false, since:null)', () => {
     const state = stateWith({
       accounts: [{ id: 'a', createdAt: 1 }],
       transactions: [{ id: 't', createdAt: 1 }],
@@ -48,37 +41,6 @@ describe('buildExportPayload', () => {
   it('copia el device tal cual', () => {
     const p = buildExportPayload(emptyState, { device: { id: 'dev1', name: 'Laptop' } });
     expect(p.device).toEqual({ id: 'dev1', name: 'Laptop' });
-  });
-
-  it('con `since` finito -> delta: sólo registros con recordStamp > since - margen', () => {
-    const since = 1_000_000;
-    const state = stateWith({
-      transactions: [
-        { id: 'viejo', updatedAt: since - SYNC_SKEW_MARGIN_MS - 1 },       // fuera
-        { id: 'enElMargen', updatedAt: since - SYNC_SKEW_MARGIN_MS + 1 },  // dentro (margen anti-desfase)
-        { id: 'nuevo', updatedAt: since + 5000 },                          // dentro
-      ],
-      tombstones: [
-        { id: 'tExcl', deletedAt: since - SYNC_SKEW_MARGIN_MS - 1 },
-        { id: 'tIncl', deletedAt: since + 1 },
-      ],
-    });
-    const p = buildExportPayload(state, { since });
-    expect(p.partial).toBe(true);
-    expect(p.since).toBe(since);
-    expect(p.data.transactions.map(t => t.id)).toEqual(['enElMargen', 'nuevo']);
-    expect(p.data.tombstones.map(t => t.id)).toEqual(['tIncl']);
-  });
-
-  it('delta usa recordStamp (createdAt si no hay updatedAt)', () => {
-    const since = 1_000_000;
-    const state = stateWith({
-      accounts: [
-        { id: 'a1', createdAt: since - SYNC_SKEW_MARGIN_MS - 10 },
-        { id: 'a2', createdAt: since + 10 },
-      ],
-    });
-    expect(buildExportPayload(state, { since }).data.accounts.map(a => a.id)).toEqual(['a2']);
   });
 });
 
@@ -195,142 +157,8 @@ describe('gzip <-> gunzip', () => {
 });
 
 /* ------------------------------------------------------------------ */
-/* mergeCollection                                                     */
+/* replaceDataState                                                    */
 /* ------------------------------------------------------------------ */
-
-describe('mergeCollection', () => {
-  const noTombstones = new Map();
-
-  it('registro nuevo -> added++', () => {
-    const res = mergeCollection([{ id: 'a', updatedAt: 1 }], [{ id: 'b', updatedAt: 1 }], noTombstones);
-    expect(res.added).toBe(1);
-    expect(res.updated).toBe(0);
-    expect(res.list.map(r => r.id).sort()).toEqual(['a', 'b']);
-  });
-
-  it('entrante más nuevo -> reemplaza y updated++', () => {
-    const res = mergeCollection([{ id: 'a', updatedAt: 1, v: 'old' }], [{ id: 'a', updatedAt: 2, v: 'new' }], noTombstones);
-    expect(res.updated).toBe(1);
-    expect(res.list[0].v).toBe('new');
-  });
-
-  it('empate de recordStamp -> gana el entrante pero NO cuenta como updated', () => {
-    const res = mergeCollection([{ id: 'a', updatedAt: 5, v: 'local' }], [{ id: 'a', updatedAt: 5, v: 'incoming' }], noTombstones);
-    expect(res.updated).toBe(0);
-    expect(res.list[0].v).toBe('incoming');
-  });
-
-  it('entrante más viejo -> se queda el actual', () => {
-    const res = mergeCollection([{ id: 'a', updatedAt: 10, v: 'local' }], [{ id: 'a', updatedAt: 3, v: 'incoming' }], noTombstones);
-    expect(res.updated).toBe(0);
-    expect(res.list[0].v).toBe('local');
-  });
-
-  it('tombstone posterior a la última edición -> excluye y removed++', () => {
-    const tomb = new Map([['a', 100]]);
-    const res = mergeCollection([{ id: 'a', updatedAt: 50 }], [], tomb);
-    expect(res.removed).toBe(1);
-    expect(res.list).toEqual([]);
-  });
-
-  it('tombstone anterior a la edición -> el registro sobrevive', () => {
-    const tomb = new Map([['a', 10]]);
-    const res = mergeCollection([{ id: 'a', updatedAt: 50 }], [], tomb);
-    expect(res.removed).toBe(0);
-    expect(res.list).toHaveLength(1);
-  });
-});
-
-/* ------------------------------------------------------------------ */
-/* mergeTombstones                                                     */
-/* ------------------------------------------------------------------ */
-
-describe('mergeTombstones', () => {
-  it('dedupe por id quedándose el deletedAt mayor', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 0, 1));
-    const now = Date.now();
-    const out = mergeTombstones(
-      [{ id: 'a', deletedAt: now - 1000 }],
-      [{ id: 'a', deletedAt: now - 10 }, { id: 'b', deletedAt: now - 5 }],
-    );
-    const byId = Object.fromEntries(out.map(t => [t.id, t.deletedAt]));
-    expect(byId.a).toBe(now - 10);
-    expect(byId.b).toBe(now - 5);
-  });
-
-  it('descarta entradas más viejas que el TTL', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 0, 1));
-    const now = Date.now();
-    const out = mergeTombstones(
-      [{ id: 'viejo', deletedAt: now - TOMBSTONE_TTL_MS - 1000 }],
-      [{ id: 'fresco', deletedAt: now - 1000 }],
-    );
-    expect(out.map(t => t.id)).toEqual(['fresco']);
-  });
-
-  it('ignora entradas sin id o sin deletedAt numérico', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 0, 1));
-    const now = Date.now();
-    const out = mergeTombstones(
-      [{ deletedAt: now }, { id: 'x' }, { id: 'y', deletedAt: 'ayer' }, null],
-      [{ id: 'ok', deletedAt: now - 1 }],
-    );
-    expect(out.map(t => t.id)).toEqual(['ok']);
-  });
-});
-
-/* ------------------------------------------------------------------ */
-/* mergeDataState / replaceDataState                                  */
-/* ------------------------------------------------------------------ */
-
-describe('mergeDataState', () => {
-  it('funde las 4 colecciones + tombstones y agrega stats', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 0, 1));
-    const now = Date.now();
-    const current = stateWith({
-      accounts: [{ id: 'acc1', updatedAt: now - 100, name: 'viejo' }],
-      transactions: [{ id: 'txn1', updatedAt: now - 100 }, { id: 'txn2', updatedAt: now - 100 }],
-    });
-    const incoming = {
-      accounts: [{ id: 'acc1', updatedAt: now, name: 'nuevo' }, { id: 'acc2', updatedAt: now }],
-      categories: [], transactions: [], installmentPlans: [],
-      tombstones: [{ id: 'txn2', deletedAt: now }],
-    };
-    const merged = mergeDataState(current, incoming);
-    expect(merged.accounts.find(a => a.id === 'acc1').name).toBe('nuevo');
-    expect(merged.accounts.map(a => a.id).sort()).toEqual(['acc1', 'acc2']);
-    expect(merged.transactions.map(t => t.id)).toEqual(['txn1']); // txn2 con tombstone
-    expect(merged.stats).toMatchObject({ added: 1, updated: 1, removed: 1 });
-  });
-
-  it('un payload parcial se funde igual que uno completo (la ausencia no borra)', () => {
-    const current = stateWith({
-      transactions: [{ id: 'a', updatedAt: 1 }, { id: 'b', updatedAt: 1 }],
-    });
-    const partialIncoming = {
-      accounts: [], categories: [], installmentPlans: [], tombstones: [],
-      transactions: [{ id: 'b', updatedAt: 5, changed: true }], // 'a' no viene
-    };
-    const merged = mergeDataState(current, partialIncoming);
-    expect(merged.transactions.map(t => t.id).sort()).toEqual(['a', 'b']);
-    expect(merged.transactions.find(t => t.id === 'b').changed).toBe(true);
-  });
-
-  it('convergencia: merge(A, export(B)) y merge(B, export(A)) dan el mismo conjunto de ids', () => {
-    const A = stateWith({ transactions: [{ id: 'x', updatedAt: 10 }, { id: 'y', updatedAt: 1 }] });
-    const B = stateWith({ transactions: [{ id: 'y', updatedAt: 20 }, { id: 'z', updatedAt: 5 }] });
-    const ab = mergeDataState(A, buildExportPayload(B).data);
-    const ba = mergeDataState(B, buildExportPayload(A).data);
-    expect(ab.transactions.map(t => t.id).sort()).toEqual(ba.transactions.map(t => t.id).sort());
-    // last-write-wins determinista sobre 'y'
-    expect(ab.transactions.find(t => t.id === 'y').updatedAt).toBe(20);
-    expect(ba.transactions.find(t => t.id === 'y').updatedAt).toBe(20);
-  });
-});
 
 describe('replaceDataState', () => {
   it('reemplazo total', () => {
