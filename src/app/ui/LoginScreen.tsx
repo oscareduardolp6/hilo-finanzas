@@ -6,9 +6,10 @@ import { COLORS } from '../../shared/design/tokens';
 
 export type LoginScreenProps = {
   onSignIn: () => void;
+  error?: string | null;
 };
 
-export function LoginScreen({ onSignIn }: LoginScreenProps) {
+export function LoginScreen({ onSignIn, error }: LoginScreenProps) {
   return (
     <div className="w-full h-screen flex items-center justify-center" style={{ backgroundColor: COLORS.bg }}>
       <div className="text-center px-6">
@@ -21,6 +22,9 @@ export function LoginScreen({ onSignIn }: LoginScreenProps) {
         >
           <LogIn size={16} /> Iniciar sesión con Google
         </button>
+        {error && (
+          <p className="text-xs mt-4 max-w-xs mx-auto" style={{ color: COLORS.textFaint }}>{error}</p>
+        )}
       </div>
     </div>
   );

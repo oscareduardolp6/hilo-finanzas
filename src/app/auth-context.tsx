@@ -49,6 +49,14 @@ export type AuthGateProps = {
 
 export function AuthGate({ deps, children }: AuthGateProps) {
   const [status, setStatus] = useState<Status>({ kind: 'resolving' });
+  const [signInError, setSignInError] = useState<string | null>(null);
+
+  const handleSignIn = () => {
+    setSignInError(null);
+    deps.authGateway.signInWithGoogle().catch((e) => {
+      setSignInError(e instanceof Error ? e.message : String(e));
+    });
+  };
 
   useEffect(() => {
     try {
@@ -81,7 +89,7 @@ export function AuthGate({ deps, children }: AuthGateProps) {
   }
 
   if (status.kind === 'loggedOut') {
-    return <LoginScreen onSignIn={() => void deps.authGateway.signInWithGoogle()} />;
+    return <LoginScreen onSignIn={handleSignIn} error={signInError} />;
   }
 
   return (
