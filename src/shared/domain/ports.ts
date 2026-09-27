@@ -64,13 +64,21 @@ export type AuthUser = {
 
 /* Sesión de Google, fuera del store de zustand a propósito — ver
    `app/auth-context.tsx`. Sus fallos no se modelan como `TaskEither`: son
-   imperativos (como `ShareGateway`), y sus errores importan poco (si el login
-   falla, `onAuthStateChanged` simplemente nunca entrega un usuario). */
+   imperativos (como `ShareGateway`). `onError` existe porque un fallo de
+   `signInWithGoogle()` no siempre pasa por su propia promesa: en el flujo de
+   redirect (PWA instalada) el resultado se resuelve después de recargar la
+   página, en un punto donde ya nadie espera esa promesa original — sin este
+   canal, ese error solo llegaría a la consola y el usuario se queda viendo
+   el botón de login sin ninguna pista. */
 export type AuthGateway = {
   readonly signInWithGoogle: () => Promise<void>;
   readonly signOut: () => Promise<void>;
-  /** Devuelve la función para desuscribirse. */
-  readonly onAuthStateChanged: (cb: (user: AuthUser | null) => void) => () => void;
+  /** Devuelve la función para desuscribirse. `onError` es opcional: solo lo
+   *  usa la implementación real, para el caso de arriba. */
+  readonly onAuthStateChanged: (
+    cb: (user: AuthUser | null) => void,
+    onError?: (message: string) => void,
+  ) => () => void;
 };
 
 /** Inyectados para que los casos de uso sean deterministas en test. */

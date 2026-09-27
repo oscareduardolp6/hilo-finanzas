@@ -71,4 +71,25 @@ describe('AuthGate', () => {
 
     expect(await screen.findByText(/No se pudo conectar con Firebase/)).toBeInTheDocument();
   });
+
+  it('si el login por redirect falla (PWA instalada), muestra el error en la pantalla de login en vez de solo la consola', async () => {
+    const redirectFailGateway: AuthGateway = {
+      signInWithGoogle: async () => {},
+      signOut: async () => {},
+      onAuthStateChanged: (cb, onError) => {
+        cb(null);
+        onError?.('Firebase: Error (auth/web-storage-unsupported).');
+        return () => {};
+      },
+    };
+    const deps = createDeps({ authGateway: redirectFailGateway });
+
+    render(
+      <AuthGate deps={deps}>
+        <Hijo />
+      </AuthGate>,
+    );
+
+    expect(await screen.findByText(/auth\/web-storage-unsupported/)).toBeInTheDocument();
+  });
 });

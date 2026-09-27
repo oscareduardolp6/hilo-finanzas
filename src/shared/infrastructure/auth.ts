@@ -32,12 +32,13 @@ const toAuthUser = (user: User): AuthUser => ({
 });
 
 let redirectChecked = false;
-function ensureRedirectChecked(): void {
+function ensureRedirectChecked(onError?: (message: string) => void): void {
   if (redirectChecked) return;
   redirectChecked = true;
   void getRedirectResult(auth()).catch((e) => {
     // eslint-disable-next-line no-console
     console.error('Error al completar el login con Google:', e);
+    onError?.(e instanceof Error ? e.message : String(e));
   });
 }
 
@@ -53,8 +54,8 @@ export const browserAuthGateway: AuthGateway = {
     }
   },
   signOut: () => firebaseSignOut(auth()),
-  onAuthStateChanged: (cb) => {
-    ensureRedirectChecked();
+  onAuthStateChanged: (cb, onError) => {
+    ensureRedirectChecked(onError);
     return onAuthStateChanged(auth(), (user) => cb(user ? toAuthUser(user) : null));
   },
 };

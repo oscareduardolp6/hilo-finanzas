@@ -60,9 +60,12 @@ export function AuthGate({ deps, children }: AuthGateProps) {
 
   useEffect(() => {
     try {
-      return deps.authGateway.onAuthStateChanged((user) => {
-        setStatus(user ? { kind: 'ready', user } : { kind: 'loggedOut' });
-      });
+      return deps.authGateway.onAuthStateChanged(
+        (user) => {
+          setStatus(user ? { kind: 'ready', user } : { kind: 'loggedOut' });
+        },
+        (message) => setSignInError(message),
+      );
     } catch (e) {
       setStatus({ kind: 'error', message: e instanceof Error ? e.message : String(e) });
       return undefined;
