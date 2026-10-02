@@ -19,6 +19,7 @@ import type {
 import { AccountChipSearch } from '../../../../shared/ui/account-chips';
 import { BenefitProgramPicker } from '../../../../shared/ui/benefit-program-picker';
 import { CategoryPicker } from '../../../../shared/ui/category-picker';
+import { DateInput } from '../../../../shared/ui/date-input';
 import { InstallmentPlanPicker } from '../../../../shared/ui/installment-plan-picker';
 import { SheetOverlay } from '../../../../shared/ui/sheet-overlay';
 import { StoreInput } from '../../../../shared/ui/store-input';
@@ -340,7 +341,7 @@ export function AddTransactionSheet({
         )}
         <div>
           <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Fecha</p>
-          <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} className="w-full px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}`, colorScheme: 'dark' }} />
+          <DateInput value={form.date} onChange={d => setForm(f => ({ ...f, date: d }))} className="w-full px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}` }} />
         </div>
       </div>
 
