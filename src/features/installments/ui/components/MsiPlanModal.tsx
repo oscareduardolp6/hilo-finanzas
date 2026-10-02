@@ -12,6 +12,7 @@ import type {
   Category, InstallmentPlan, NewCategory, PlanProgress, Transaction,
 } from '../../../../shared/domain/types';
 import { CategoryPicker } from '../../../../shared/ui/category-picker';
+import { DateInput } from '../../../../shared/ui/date-input';
 import { SheetOverlay } from '../../../../shared/ui/sheet-overlay';
 import { StoreInput } from '../../../../shared/ui/store-input';
 import type { PlanInput } from '../../application/save-plan';
@@ -104,7 +105,7 @@ export function MsiPlanModal({
         </div>
 
         <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Fecha de compra</p>
-        <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full px-3 py-2 rounded-xl text-sm outline-none mb-4" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}`, colorScheme: 'dark' }} />
+        <DateInput value={startDate} onChange={setStartDate} className="w-full px-3 py-2 rounded-xl text-sm outline-none mb-4" style={{ backgroundColor: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}` }} />
 
         {payments && payments.length > 0 && (
           <div className="mb-4">

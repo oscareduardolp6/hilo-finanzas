@@ -10,6 +10,7 @@ import { COLORS } from '../../../../shared/design/tokens';
 import { formatMoney } from '../../../../shared/domain/money';
 import type { Account, Category } from '../../../../shared/domain/types';
 import { AccountChips } from '../../../../shared/ui/account-chips';
+import { DateInput } from '../../../../shared/ui/date-input';
 import { SheetOverlay } from '../../../../shared/ui/sheet-overlay';
 import type { ReceiptDiscount, ReceiptDraft, ReceiptRow } from '../../domain/draft';
 import { rowAccountId } from '../../domain/review';
@@ -124,7 +125,7 @@ export function ReceiptScanModal({
             </div>
             <div>
               <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Fecha</p>
-              <input type="date" value={date} onChange={e => onDate(e.target.value)} className="w-full px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}`, colorScheme: 'dark' }} />
+              <DateInput value={date} onChange={onDate} className="w-full px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}` }} />
             </div>
           </div>
 

@@ -69,7 +69,7 @@ Lo que **no** es de ninguna vive fuera:
 - `src/shared/domain/` — el modelo (`types.ts`), los puertos (incl. `AuthGateway`), `HiloError`, el formato de export/respaldo (`export-payload.ts`) y los helpers puros (`ids`, `dates`, `money`, `search`, `grouping`, y `defaults` con la semilla de demo).
 - `src/shared/design/` — `COLORS`, `CATEGORY_PALETTE`, `ICONS`, `ACCOUNT_TYPES`.
 - `src/shared/infrastructure/` — Firebase (`firebase.ts`, `auth.ts`) y los repositorios (incl. `firestoreStateRepository`), IndexedDB (ahora solo local: OCR, modo privado, y el snapshot histórico que lee la migración), compresión, descarga, imagen, los gateways del navegador y sus dobles en memoria.
-- `src/shared/ui/` — los presentacionales que usan dos o más features (`SheetOverlay`, `Toast`, `GlobalStyles`, `EmptyState`, `CategoryPicker`, `BenefitProgramPicker`, `StoreInput`, `AccountChips`, `InstallmentPlanPicker`, `TransactionRow`, `MsiPlanCard`, `highlightMatch`, `useIsDesktop`). Es la única ubicación que la regla de dependencias permite para un componente compartido.
+- `src/shared/ui/` — los presentacionales que usan dos o más features (`SheetOverlay`, `Toast`, `GlobalStyles`, `EmptyState`, `CategoryPicker`, `BenefitProgramPicker`, `StoreInput`, `DateInput`, `AccountChips`, `InstallmentPlanPicker`, `TransactionRow`, `MsiPlanCard`, `highlightMatch`, `useIsDesktop`). Es la única ubicación que la regla de dependencias permite para un componente compartido.
 - `src/app/` — `App.tsx`, `auth-context.tsx` (`AuthGate`, la sesión de Google), el store y sus slices de campos, `dependencies.ts` (composition root), `persistence.ts`, `run.ts`, `application/migrate-to-firestore.ts` y el cascarón de `ui/` (navegación, los dos árboles, `LoginScreen`).
 
 ### Desktop layout

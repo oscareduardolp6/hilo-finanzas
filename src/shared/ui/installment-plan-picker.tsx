@@ -17,6 +17,7 @@ import type {
   Category, InstallmentPlan, NewCategory, NewInstallmentPlan, PlanProgress,
 } from '../domain/types';
 import { CategoryPicker } from './category-picker';
+import { DateInput } from './date-input';
 import { StoreInput } from './store-input';
 
 export type InstallmentPlanPickerProps = {
@@ -125,7 +126,7 @@ export function InstallmentPlanPicker({
           </div>
           <div>
             <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Fecha de compra</p>
-            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ backgroundColor: COLORS.elevated, color: COLORS.text, border: `1px solid ${COLORS.border}`, colorScheme: 'dark' }} />
+            <DateInput value={startDate} onChange={setStartDate} className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ backgroundColor: COLORS.elevated, border: `1px solid ${COLORS.border}` }} />
           </div>
           <div className="flex gap-2">
             <button onClick={() => setCreating(false)} className="flex-1 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: COLORS.elevated, color: COLORS.text }}>Cancelar</button>
