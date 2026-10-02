@@ -16,7 +16,7 @@ export function HistoryViewDesktop({
   groups, accounts, categories, expenseCategories, installmentPlans, knownStores, suggestions,
   monthCursor, onPrevMonth, onNextMonth, showAllTime, onToggleAllTime,
   searching, searchQuery, onSearchChange, filterType, onFilterType,
-  filterCategory, onFilterCategory, filterStore, onFilterStore, onOpenTxn, hideBalances,
+  filterCategory, onFilterCategory, filterStore, onFilterStore, filterAccount, onFilterAccount, onOpenTxn, hideBalances,
 }: HistoryViewProps) {
   return (
     <div className="rounded-2xl p-6" style={{ backgroundColor: COLORS.surface }}>
@@ -65,6 +65,10 @@ export function HistoryViewDesktop({
         <select value={filterStore} onChange={e => onFilterStore(e.target.value)} className="px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }}>
           <option value="all">Todas las tiendas</option>
           {knownStores.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={filterAccount} onChange={e => onFilterAccount(e.target.value)} aria-label="Cuenta" className="px-3 py-2 rounded-xl text-sm outline-none" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text, border: `1px solid ${COLORS.border}` }}>
+          <option value="all">Todas las cuentas</option>
+          {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
       </div>
 

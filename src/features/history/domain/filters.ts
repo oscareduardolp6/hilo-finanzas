@@ -1,5 +1,5 @@
-/* El filtro del historial: mes / todo-el-tiempo, tipo, categoría, tienda y
-   búsqueda de texto. Los cinco se componen, y el orden importa poco salvo por
+/* El filtro del historial: mes / todo-el-tiempo, tipo, categoría, cuenta,
+   tienda y búsqueda de texto. Todos se componen, y el orden importa poco salvo por
    uno: **mientras hay búsqueda, el filtro de mes no se aplica**. Buscar es
    siempre en todo el tiempo; si no, el resultado dependería de en qué mes
    estabas parado cuando empezaste a escribir. */
@@ -31,6 +31,9 @@ export type HistoryFilter = {
   filterType: string;
   filterCategory: string;
   filterStore: string;
+  /** `'all'` o el id de una cuenta. Opcional: los llamadores previos al filtro
+   *  de cuenta no lo pasan y significa "todas". */
+  filterAccount?: string;
 };
 
 /* Los campos se leen con acceso laxo por la misma razón de siempre: hay
@@ -44,6 +47,9 @@ type LooseTransaction = {
   description?: string | null;
   categoryId?: string | null;
   taggedAsExpense?: boolean;
+  accountId?: string;
+  fromAccountId?: string;
+  toAccountId?: string;
   installmentPlanId?: string | null;
 };
 
@@ -51,7 +57,7 @@ const loose = (t: Transaction): LooseTransaction => t as LooseTransaction;
 
 export function filterHistoryTransactions({
   transactions, installmentPlans, showAllTime, searching, q, monthCursor,
-  filterType, filterCategory, filterStore,
+  filterType, filterCategory, filterStore, filterAccount = 'all',
 }: HistoryFilter): Transaction[] {
   let list = transactions;
   if (!showAllTime && !searching) {
@@ -69,6 +75,16 @@ export function filterHistoryTransactions({
         // Una transferencia solo entra por categoría si cuenta como gasto.
         (x.type === 'transfer' && !!x.taggedAsExpense && x.categoryId === filterCategory)
       );
+    });
+  }
+  if (filterAccount !== 'all') {
+    list = list.filter(t => {
+      const x = loose(t);
+      // Una transferencia toca a las dos cuentas: aparece en la de origen y en la
+      // de destino.
+      return x.type === 'transfer'
+        ? x.fromAccountId === filterAccount || x.toAccountId === filterAccount
+        : x.accountId === filterAccount;
     });
   }
   if (filterStore !== 'all') list = list.filter(t => loose(t).store === filterStore);

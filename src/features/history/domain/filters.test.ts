@@ -45,6 +45,33 @@ describe('mes vs. todo el tiempo', () => {
   });
 });
 
+describe('filtro de cuenta', () => {
+  const txns = [
+    gasto('gasto-a1', '2026-01-05', { accountId: 'a1' }),
+    gasto('gasto-a2', '2026-01-06', { accountId: 'a2' }),
+    { id: 'ingreso-a2', type: 'income', date: '2026-01-07', amount: 1, description: 'x', accountId: 'a2', categoryId: 's' } as Transaction,
+    { id: 'transf-a1-a2', type: 'transfer', date: '2026-01-08', amount: 1, description: 'x', fromAccountId: 'a1', toAccountId: 'a2' } as Transaction,
+    { id: 'transf-a3-a1', type: 'transfer', date: '2026-01-09', amount: 1, description: 'x', fromAccountId: 'a3', toAccountId: 'a1' } as Transaction,
+  ];
+
+  it('sin filtro (o "all") deja pasar todo', () => {
+    expect(filterHistoryTransactions({ ...base, transactions: txns })).toHaveLength(5);
+    expect(filterHistoryTransactions({ ...base, transactions: txns, filterAccount: 'all' })).toHaveLength(5);
+  });
+
+  it('gastos e ingresos entran por su cuenta; una transferencia, por origen o destino', () => {
+    expect(ids(filterHistoryTransactions({ ...base, transactions: txns, filterAccount: 'a1' })))
+      .toEqual(['gasto-a1', 'transf-a1-a2', 'transf-a3-a1']);
+    expect(ids(filterHistoryTransactions({ ...base, transactions: txns, filterAccount: 'a2' })))
+      .toEqual(['gasto-a2', 'ingreso-a2', 'transf-a1-a2']);
+  });
+
+  it('se compone con el tipo', () => {
+    expect(ids(filterHistoryTransactions({ ...base, transactions: txns, filterAccount: 'a2', filterType: 'income' })))
+      .toEqual(['ingreso-a2']);
+  });
+});
+
 describe('los filtros se componen', () => {
   const txns = [
     gasto('comida-walmart', '2026-01-05', { store: 'Walmart' }),

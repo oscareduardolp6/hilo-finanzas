@@ -19,6 +19,7 @@ export type UiSlice = {
   filterType: string;
   filterCategory: string;
   filterStore: string;
+  filterAccount: string;
   /** Efímero como los demás filtros: no se hidrata ni se persiste. */
   searchQuery: string;
 
@@ -51,6 +52,7 @@ export type UiSlice = {
   setFilterType: Setter<string>;
   setFilterCategory: Setter<string>;
   setFilterStore: Setter<string>;
+  setFilterAccount: Setter<string>;
   setSearchQuery: Setter<string>;
 
   setSheetOpen: Setter<boolean>;
@@ -87,6 +89,7 @@ export const createUiSlice: StateCreator<HiloStore, [], [], UiSlice> = (set) => 
   filterType: 'all',
   filterCategory: 'all',
   filterStore: 'all',
+  filterAccount: 'all',
   searchQuery: '',
 
   sheetOpen: false,
@@ -113,6 +116,7 @@ export const createUiSlice: StateCreator<HiloStore, [], [], UiSlice> = (set) => 
   setFilterType: makeSetter<HiloStore, 'filterType'>(set, 'filterType'),
   setFilterCategory: makeSetter<HiloStore, 'filterCategory'>(set, 'filterCategory'),
   setFilterStore: makeSetter<HiloStore, 'filterStore'>(set, 'filterStore'),
+  setFilterAccount: makeSetter<HiloStore, 'filterAccount'>(set, 'filterAccount'),
   setSearchQuery: makeSetter<HiloStore, 'searchQuery'>(set, 'searchQuery'),
 
   setSheetOpen: makeSetter<HiloStore, 'sheetOpen'>(set, 'sheetOpen'),

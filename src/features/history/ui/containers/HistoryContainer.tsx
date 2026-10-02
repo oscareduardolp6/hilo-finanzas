@@ -34,6 +34,7 @@ export function HistoryContainer({ desktop }: HistoryContainerProps) {
   const filterType = useHiloStore((s) => s.filterType);
   const filterCategory = useHiloStore((s) => s.filterCategory);
   const filterStore = useHiloStore((s) => s.filterStore);
+  const filterAccount = useHiloStore((s) => s.filterAccount);
   const searchQuery = useHiloStore((s) => s.searchQuery);
   const hideBalances = useHiloStore((s) => s.hideBalances);
 
@@ -42,6 +43,7 @@ export function HistoryContainer({ desktop }: HistoryContainerProps) {
   const setFilterType = useHiloStore((s) => s.setFilterType);
   const setFilterCategory = useHiloStore((s) => s.setFilterCategory);
   const setFilterStore = useHiloStore((s) => s.setFilterStore);
+  const setFilterAccount = useHiloStore((s) => s.setFilterAccount);
   const setSearchQuery = useHiloStore((s) => s.setSearchQuery);
   const openEditSheet = useHiloStore((s) => s.openEditSheet);
 
@@ -51,9 +53,9 @@ export function HistoryContainer({ desktop }: HistoryContainerProps) {
   const filtered = useMemo(
     () => filterHistoryTransactions({
       transactions, installmentPlans, showAllTime, searching, q, monthCursor,
-      filterType, filterCategory, filterStore,
+      filterType, filterCategory, filterStore, filterAccount,
     }),
-    [transactions, installmentPlans, showAllTime, searching, q, monthCursor, filterType, filterCategory, filterStore],
+    [transactions, installmentPlans, showAllTime, searching, q, monthCursor, filterType, filterCategory, filterStore, filterAccount],
   );
 
   const groups = useMemo(() => groupByDate(filtered), [filtered]);
@@ -94,6 +96,8 @@ export function HistoryContainer({ desktop }: HistoryContainerProps) {
       onFilterCategory={setFilterCategory}
       filterStore={filterStore}
       onFilterStore={setFilterStore}
+      filterAccount={filterAccount}
+      onFilterAccount={setFilterAccount}
       onOpenTxn={openEditSheet}
       hideBalances={hideBalances}
     />
