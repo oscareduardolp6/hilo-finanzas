@@ -109,6 +109,20 @@ describe('filtros', () => {
     expect(opciones).toEqual(['Todas las categorías', 'Comida', 'Ropa']);
   });
 
+  it('por cuenta: la transferencia aparece en origen y destino', async () => {
+    const { user, container } = await renderFeature(<HistoryContainer />, { state: base });
+
+    await user.selectOptions(screen.getByLabelText('Cuenta'), 'a2');
+
+    expect(filas(container)).toHaveLength(1);
+    expect(contiene(container, 'Pago')).toBe(true);
+
+    await user.selectOptions(screen.getByLabelText('Cuenta'), 'a1');
+
+    expect(filas(container)).toHaveLength(4);
+    expect(contiene(container, 'Pago')).toBe(true);
+  });
+
   it('categoría y tienda se componen', async () => {
     const { user, container } = await renderFeature(<HistoryContainer />, { state: base });
 
