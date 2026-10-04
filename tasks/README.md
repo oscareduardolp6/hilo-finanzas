@@ -10,6 +10,7 @@ Ideas y funcionalidades que queremos agregar a Hilo, una por archivo. No es un b
 | [Visualización de escritorio](desktop-view.md) | 1 | Implementada |
 | [Migrar a IndexedDB (o similar) para guardado local](local-storage-migration.md) | 2 | Implementada |
 | [Sincronización automática con backend (Firebase)](backend-sync.md) | 2 | Implementada |
+| [Modo local: usar la app sin iniciar sesión](modo-local-sin-login.md) | 2 | Implementada |
 | [Instalar como PWA](pwa-install.md) | 3 | Implementada |
 | [Buscador en el historial](buscador-historial.md) | 3 | Implementada |
 | [Filtro por cuenta en el historial](filtro-cuenta-historial.md) | 3 | Implementada |

@@ -11,17 +11,19 @@ import type { AuthGateway } from '../shared/domain/ports';
 const USER = { uid: 'u1', email: 'u1@example.com', displayName: 'Uno' };
 
 function Hijo() {
-  const { user, signOut } = useAuth();
+  const { user, signIn, signOut, signInError } = useAuth();
   return (
     <div>
-      <p>Hola {user.email}</p>
+      <p>{user ? `Hola ${user.email}` : 'Modo local'}</p>
+      <button onClick={signIn}>Entrar</button>
       <button onClick={signOut}>Salir</button>
+      {signInError && <p>{signInError}</p>}
     </div>
   );
 }
 
 describe('AuthGate', () => {
-  it('sin sesión muestra el login; con sesión monta a los hijos', async () => {
+  it('sin sesión monta a los hijos en modo local (sin pantalla de login); al iniciar sesión les da el usuario', async () => {
     const deps = createDeps({ authGateway: fakeAuthGateway(null) });
     render(
       <AuthGate deps={deps}>
@@ -29,14 +31,15 @@ describe('AuthGate', () => {
       </AuthGate>,
     );
 
-    expect(await screen.findByRole('button', { name: /Iniciar sesión con Google/ })).toBeInTheDocument();
+    expect(await screen.findByText('Modo local')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Iniciar sesión con Google/ })).not.toBeInTheDocument();
 
-    await deps.authGateway.signInWithGoogle();
+    screen.getByRole('button', { name: 'Entrar' }).click();
 
     expect(await screen.findByText(/Hola/)).toBeInTheDocument();
   });
 
-  it('ya logueado, monta a los hijos directo, y "signOut" corta la sesión', async () => {
+  it('ya logueado, monta a los hijos directo, y "signOut" los devuelve al modo local', async () => {
     const deps = createDeps({ authGateway: fakeAuthGateway(USER) });
     render(
       <AuthGate deps={deps}>
@@ -49,7 +52,7 @@ describe('AuthGate', () => {
     screen.getByRole('button', { name: 'Salir' }).click();
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Iniciar sesión con Google/ })).toBeInTheDocument();
+      expect(screen.getByText('Modo local')).toBeInTheDocument();
     });
   });
 
@@ -72,7 +75,7 @@ describe('AuthGate', () => {
     expect(await screen.findByText(/No se pudo conectar con Firebase/)).toBeInTheDocument();
   });
 
-  it('si el login por redirect falla (PWA instalada), muestra el error en la pantalla de login en vez de solo la consola', async () => {
+  it('si el login por redirect falla (PWA instalada), expone el error por contexto en vez de solo la consola', async () => {
     const redirectFailGateway: AuthGateway = {
       signInWithGoogle: async () => {},
       signOut: async () => {},

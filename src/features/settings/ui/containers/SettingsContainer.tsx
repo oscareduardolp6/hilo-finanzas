@@ -25,7 +25,7 @@ function SettingsSheet({ desktop }: SettingsContainerProps) {
   const saveOcrSettings = useHiloStore((s) => s.saveOcrSettings);
   const openFromSettings = useHiloStore((s) => s.openFromSettings);
   const resetTransactions = useHiloStore((s) => s.resetTransactions);
-  const { signOut } = useAuth();
+  const { user, signIn, signOut, signInError } = useAuth();
 
   return (
     <SettingsModal
@@ -35,6 +35,9 @@ function SettingsSheet({ desktop }: SettingsContainerProps) {
       onOpenImport={() => openFromSettings('import')}
       onOpenBackup={() => openFromSettings('backup')}
       onOpenBenefits={() => openFromSettings('benefits')}
+      signedIn={user !== null}
+      signInError={signInError}
+      onSignIn={signIn}
       onSignOut={signOut}
       onClose={() => setOpen(false)}
       desktop={desktop}

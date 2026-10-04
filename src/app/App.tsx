@@ -10,10 +10,12 @@
    (ver `test/integration/helpers.jsx`), sin que producción tenga que pasar
    nada. */
 
+import { useMemo } from 'react';
+import type { ReactNode } from 'react';
 import { COLORS } from '../shared/design/tokens';
 import { useIsDesktop } from '../shared/ui/use-is-desktop';
-import { AuthGate } from './auth-context';
-import { productionDeps } from './dependencies';
+import { AuthGate, useAuth } from './auth-context';
+import { localDeps, productionDeps } from './dependencies';
 import type { Deps } from './dependencies';
 import { HiloStoreProvider, useHiloStore } from './store-context';
 import { useToastAutoDismiss } from './use-toast-auto-dismiss';
@@ -26,10 +28,23 @@ export type AppProps = {
 export default function App({ deps = productionDeps }: AppProps = {}) {
   return (
     <AuthGate deps={deps}>
-      <HiloStoreProvider deps={deps}>
+      <SessionStore deps={deps}>
         <AppBody />
-      </HiloStoreProvider>
+      </SessionStore>
     </AuthGate>
+  );
+}
+
+/* Con sesión, el store habla con Firestore; sin ella, con el IndexedDB local.
+   El `key` fuerza un store nuevo al iniciar/cerrar sesión: cada uno hidrata de
+   su propia fuente y no se arrastra estado de la otra. */
+function SessionStore({ deps, children }: { deps: Deps; children: ReactNode }) {
+  const { user } = useAuth();
+  const sessionDeps = useMemo(() => (user ? deps : localDeps(deps)), [user, deps]);
+  return (
+    <HiloStoreProvider key={user?.uid ?? 'local'} deps={sessionDeps}>
+      {children}
+    </HiloStoreProvider>
   );
 }
 

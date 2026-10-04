@@ -72,6 +72,15 @@ export const productionDeps: Deps = {
   idGenerator: uid,
 };
 
+/** Modo local (sin sesión de Google): el estado vive en el IndexedDB de este
+ *  navegador en vez de Firestore. Reusa el snapshot "legacy" como repositorio
+ *  principal — así, si quien lo probó luego inicia sesión y su Firestore está
+ *  vacío, `migrate-to-firestore.ts` sube lo que armó en local. */
+export const localDeps = (deps: Deps): Deps => ({
+  ...deps,
+  stateRepository: deps.legacyLocalStateRepository,
+});
+
 /** Las de producción con lo que se le pase encima. Pensado para tests. */
 export const createDeps = (overrides: Partial<Deps> = {}): Deps => ({
   ...productionDeps,

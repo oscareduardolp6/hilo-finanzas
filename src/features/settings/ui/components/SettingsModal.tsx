@@ -5,7 +5,7 @@
    con formulario. Nada de eso es dominio. */
 
 import { useState } from 'react';
-import { DatabaseBackup, Gift, LogOut, X } from 'lucide-react';
+import { DatabaseBackup, Gift, LogIn, LogOut, X } from 'lucide-react';
 import { COLORS } from '../../../../shared/design/tokens';
 import type { OcrSettings } from '../../../../shared/domain/types';
 import { SheetOverlay } from '../../../../shared/ui/sheet-overlay';
@@ -18,6 +18,10 @@ export type SettingsModalProps = {
   onOpenImport: () => void;
   onOpenBackup: () => void;
   onOpenBenefits: () => void;
+  /** Sin sesión la app corre en modo local: se ofrece iniciar sesión en vez de cerrarla. */
+  signedIn: boolean;
+  signInError?: string | null;
+  onSignIn: () => void;
   onSignOut: () => void;
   onClose: () => void;
   desktop?: boolean;
@@ -25,7 +29,7 @@ export type SettingsModalProps = {
 
 export function SettingsModal({
   ocrSettings, onSaveOcrSettings, onResetTransactions,
-  onOpenImport, onOpenBackup, onOpenBenefits, onSignOut, onClose, desktop,
+  onOpenImport, onOpenBackup, onOpenBenefits, signedIn, signInError, onSignIn, onSignOut, onClose, desktop,
 }: SettingsModalProps) {
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [keyDraft, setKeyDraft] = useState((ocrSettings && ocrSettings.apiKey) || '');
@@ -58,9 +62,24 @@ export function SettingsModal({
           <Gift size={15} /> Beneficios y promociones
         </button>
         <button onClick={onOpenImport} className="w-full py-3 rounded-xl text-sm font-semibold mb-3" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>Importar desde Monefy</button>
-        <button onClick={onSignOut} className="w-full py-3 rounded-xl text-sm font-semibold mb-3 flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
-          <LogOut size={15} /> Cerrar sesión
-        </button>
+        {signedIn ? (
+          <button onClick={onSignOut} className="w-full py-3 rounded-xl text-sm font-semibold mb-3 flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.text }}>
+            <LogOut size={15} /> Cerrar sesión
+          </button>
+        ) : (
+          <div className="rounded-xl p-3 mb-3" style={{ backgroundColor: COLORS.surfaceAlt }}>
+            <p className="text-sm font-medium mb-1" style={{ color: COLORS.text }}>Modo local</p>
+            <p className="text-xs leading-relaxed mb-3" style={{ color: COLORS.textMuted }}>
+              Estás usando Hilo sin cuenta: tus datos viven solo en este navegador. Inicia sesión con Google para guardarlos en la nube y verlos en tus otros dispositivos.
+            </p>
+            <button onClick={onSignIn} className="w-full py-2 rounded-lg text-sm font-semibold flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.accent, color: COLORS.bg }}>
+              <LogIn size={15} /> Iniciar sesión con Google
+            </button>
+            {signInError && (
+              <p className="text-xs mt-2" style={{ color: COLORS.textFaint }}>{signInError}</p>
+            )}
+          </div>
+        )}
 
         <div className="rounded-xl p-3 mb-3" style={{ backgroundColor: COLORS.surfaceAlt }}>
           <p className="text-sm font-medium mb-1" style={{ color: COLORS.text }}>Escaneo de tickets (IA)</p>

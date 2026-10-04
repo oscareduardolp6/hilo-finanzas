@@ -8,18 +8,25 @@
 
    `status === 'resolving'` reutiliza el mismo placeholder "Cargando…" que
    `AppBody` (App.tsx) pinta mientras hidrata — mismo lenguaje visual para las
-   dos esperas, aunque sean pasos distintos. */
+   dos esperas, aunque sean pasos distintos.
+
+   Sin sesión NO hay pantalla de login: la app se monta igual, en modo local
+   (`user === null`), y quien decide de dónde salen los datos es `App.tsx`
+   (ver `localDeps`). Iniciar sesión es opcional y vive en Ajustes. */
 
 import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { COLORS } from '../shared/design/tokens';
 import type { AuthUser } from '../shared/domain/ports';
 import type { Deps } from './dependencies';
-import { LoginScreen } from './ui/LoginScreen';
 
 export type AuthContextValue = {
-  user: AuthUser;
+  /** `null` = modo local: sin sesión de Google, datos solo en este navegador. */
+  user: AuthUser | null;
+  signIn: () => void;
   signOut: () => void;
+  /** Último fallo al iniciar sesión, para mostrarlo donde está el botón. */
+  signInError: string | null;
 };
 
 /** Exportado (no solo `useAuth`) para que `src/test/render-feature.tsx` pueda
@@ -35,8 +42,7 @@ export function useAuth(): AuthContextValue {
 
 type Status =
   | { kind: 'resolving' }
-  | { kind: 'loggedOut' }
-  | { kind: 'ready'; user: AuthUser }
+  | { kind: 'ready'; user: AuthUser | null }
   /** Config de Firebase ausente/inválida (falta `.env.local`, ver README.md).
    *  Sin este estado, `auth()` avienta dentro del efecto y React se queda en
    *  blanco sin explicar nada — peor que un mensaje claro. */
@@ -62,7 +68,7 @@ export function AuthGate({ deps, children }: AuthGateProps) {
     try {
       return deps.authGateway.onAuthStateChanged(
         (user) => {
-          setStatus(user ? { kind: 'ready', user } : { kind: 'loggedOut' });
+          setStatus({ kind: 'ready', user });
         },
         (message) => setSignInError(message),
       );
@@ -91,12 +97,10 @@ export function AuthGate({ deps, children }: AuthGateProps) {
     );
   }
 
-  if (status.kind === 'loggedOut') {
-    return <LoginScreen onSignIn={handleSignIn} error={signInError} />;
-  }
-
   return (
-    <AuthContext.Provider value={{ user: status.user, signOut: () => void deps.authGateway.signOut() }}>
+    <AuthContext.Provider
+      value={{ user: status.user, signIn: handleSignIn, signOut: () => void deps.authGateway.signOut(), signInError }}
+    >
       {children}
     </AuthContext.Provider>
   );

@@ -86,7 +86,14 @@ export async function renderFeature(
   const user = userEvent.setup();
 
   const { container } = render(
-    <AuthContext.Provider value={{ user: TEST_USER, signOut: () => void deps.authGateway.signOut() }}>
+    <AuthContext.Provider
+      value={{
+        user: TEST_USER,
+        signIn: () => void deps.authGateway.signInWithGoogle(),
+        signOut: () => void deps.authGateway.signOut(),
+        signInError: null,
+      }}
+    >
       <HiloStoreProvider deps={deps} store={store}>
         {ui}
       </HiloStoreProvider>
