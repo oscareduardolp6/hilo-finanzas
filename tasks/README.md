@@ -18,6 +18,7 @@ Ideas y funcionalidades que queremos agregar a Hilo, una por archivo. No es un b
 | [Sincronizar escritorio y móvil](desktop-mobile-sync.md) | 4 | Implementada |
 | [Sincronización incremental (delta) entre dispositivos](sync-incremental.md) | 5 | Implementada |
 | [Campos de producto en transferencias marcadas como gasto](campos-producto-en-transferencia-gasto.md) | 5 | Implementada |
+| [Transferencias marcables como ingreso (beneficios de promociones)](transferencia-marcada-como-ingreso.md) | 5 | Pendiente |
 | [Modo de presupuesto](budget-mode.md) | 5 | Pendiente |
 | [Versionado de la app y changelog público](versionado-y-changelog.md) | 5 | Pendiente |
 | [Métricas / analíticas de uso de la web](analiticas-web.md) | 6 | Pendiente |
