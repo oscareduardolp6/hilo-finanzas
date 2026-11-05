@@ -1,11 +1,11 @@
 ---
 status: pendiente
-priority: 11
+priority: 21
 ---
 
 # Aplicación móvil nativa (más allá de PWA)
 
-Evaluar pasar de "PWA instalable" a tener también una app móvil real (iOS/Android).
+Evaluar pasar de "PWA instalable" a tener también una app móvil real (iOS/Android), es decir, mudar la aplicación a nativo (o a un wrapper nativo). Prioridad baja a propósito: no se hace por sí misma, sino cuando alguna de las tareas que habilita lo justifique.
 
 ## Problema que resuelve
 
@@ -14,7 +14,7 @@ Hoy Hilo se instala como PWA (ver [pwa-install.md](pwa-install.md)), lo cual cub
 ## Idea a alto nivel
 
 - Evaluar el approach: un wrapper tipo Capacitor (reutilizando `hilo-finanzas.jsx` casi tal cual) vs. una reescritura nativa completa.
-- Justifica su prioridad principalmente porque **habilita otras tareas del backlog** que hoy no son viables como PWA: ver [acceso-rapido-android.md](acceso-rapido-android.md) y [consolidar-gastos-pendientes.md](consolidar-gastos-pendientes.md) (lectura de notificaciones del sistema).
+- Justifica su prioridad principalmente porque **habilita otras tareas del backlog** que hoy no son viables como PWA: ver [acceso-rapido-android.md](acceso-rapido-android.md) , [consolidar-gastos-pendientes.md](consolidar-gastos-pendientes.md) y [gastos-desde-notificaciones.md](gastos-desde-notificaciones.md) (lectura de notificaciones del sistema).
 
 ## Dudas abiertas
 
