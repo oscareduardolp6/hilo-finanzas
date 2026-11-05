@@ -7,6 +7,7 @@
    `null` para que un dato viejo no quede colgando cuando el usuario desmarca. */
 
 import type { Transaction, TransactionType } from '../../../shared/domain/types';
+import { draftToBreakdown } from './breakdown';
 import type { TransactionFormDraft } from './form';
 
 /* `Omit` sobre una unión colapsa a las claves COMUNES de sus miembros, que aquí
@@ -47,6 +48,9 @@ export function toTransaction(
       size: trimmedOrNull(payload.size),
       brand: trimmedOrNull(payload.brand),
       quantity: trimmedOrNull(payload.quantity),
+      // Un abono de MSI no se desglosa: el detalle es del plan, no del pago.
+      // Se escribe `null` (no se omite) para que al editar se borre de verdad.
+      breakdown: payload.installmentPlanId ? null : draftToBreakdown(payload.breakdown),
     };
   }
 
@@ -76,5 +80,6 @@ export function toTransaction(
     size: payload.taggedAsExpense ? trimmedOrNull(payload.size) : null,
     brand: payload.taggedAsExpense ? trimmedOrNull(payload.brand) : null,
     quantity: payload.taggedAsExpense ? trimmedOrNull(payload.quantity) : null,
+    breakdown: (payload.taggedAsExpense && !isMsi) ? draftToBreakdown(payload.breakdown) : null,
   };
 }

@@ -40,6 +40,7 @@ export function AddTransactionContainer({ desktop }: AddTransactionContainerProp
   const createCategory = useHiloStore((s) => s.createCategory);
   const createPlan = useHiloStore((s) => s.createPlan);
   const createProgram = useHiloStore((s) => s.createProgram);
+  const addBreakdownLine = useHiloStore((s) => s.addBreakdownLine);
 
   // `useMemo` y no selectores: ambos derivan colecciones nuevas y zustand v5
   // compara por identidad. Son los mismos memos que tenía `App`.
@@ -82,6 +83,7 @@ export function AddTransactionContainer({ desktop }: AddTransactionContainerProp
       onCreateCategory={createCategory}
       onCreatePlan={createPlan}
       onCreateBenefitProgram={createProgram}
+      onAddBreakdownLine={addBreakdownLine}
       desktop={desktop}
       hideBalances={hideBalances}
     />

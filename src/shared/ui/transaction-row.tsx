@@ -4,9 +4,10 @@
    Compacta a propósito — los detalles de producto (`size`/`brand`/`quantity`)
    NO se muestran aquí, solo al abrir el movimiento. */
 
-import { ArrowRightLeft, Layers } from 'lucide-react';
+import { ArrowRightLeft, Layers, Receipt } from 'lucide-react';
 import { IconFor } from '../design/icons';
 import { COLORS } from '../design/tokens';
+import { computeTransactionSavings, getBreakdown } from '../domain/breakdown';
 import { formatMoney } from '../domain/money';
 import type { Account, Category, InstallmentPlan, Transaction } from '../domain/types';
 import { highlightMatch } from './highlight';
@@ -22,6 +23,27 @@ export type TransactionRowProps = {
   hideBalances?: boolean;
   onClick: () => void;
 };
+
+/** La marca de "tiene desglose": cuántos conceptos y cuánto se ahorró. El
+ *  desglose en sí solo se ve al abrir el movimiento. */
+function BreakdownBadge({ txn, hideBalances }: { txn: Transaction; hideBalances?: boolean }) {
+  const b = getBreakdown(txn);
+  if (!b) return null;
+  const savings = computeTransactionSavings(txn);
+  const n = b.items.length;
+  return (
+    <div className="flex items-center gap-1.5 mt-1 pl-2" style={{ borderLeft: `2px dashed ${COLORS.textMuted}` }}>
+      <Receipt size={12} style={{ color: COLORS.textMuted }} />
+      <span className="text-xs font-medium" style={{ color: COLORS.textMuted }}>
+        {/* Un ticket con solo un descuento (sin conceptos) también es desglose. */}
+        {n > 0 ? `Desglose · ${n} ${n === 1 ? 'concepto' : 'conceptos'}` : 'Desglose'}
+      </span>
+      {savings > 0 && (
+        <span className="text-xs font-medium" style={{ color: COLORS.income }}>· Ahorro {formatMoney(savings, hideBalances)}</span>
+      )}
+    </div>
+  );
+}
 
 export function TransactionRow({ txn, accounts, categories, plans, query, hideBalances, onClick }: TransactionRowProps) {
   const accById = (id: string | undefined) => accounts.find(a => a.id === id);
@@ -58,6 +80,7 @@ export function TransactionRow({ txn, accounts, categories, plans, query, hideBa
               <span className="text-xs font-medium" style={{ color: COLORS.accent }}>MSI · {plan.description}{plan.store ? ` (${plan.store})` : ''}</span>
             </div>
           )}
+          <BreakdownBadge txn={txn} hideBalances={hideBalances} />
         </div>
       </button>
     );
@@ -90,6 +113,7 @@ export function TransactionRow({ txn, accounts, categories, plans, query, hideBa
             <span className="text-xs font-medium" style={{ color: COLORS.accent }}>MSI · {plan.description}{plan.store ? ` (${plan.store})` : ''}</span>
           </div>
         )}
+        <BreakdownBadge txn={txn} hideBalances={hideBalances} />
       </div>
     </button>
   );

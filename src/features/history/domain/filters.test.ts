@@ -204,3 +204,22 @@ describe('computeHistorySuggestions', () => {
     expect(computeHistorySuggestions(txns, [], 2)).toEqual(['C', 'B']);
   });
 });
+
+describe('desglose', () => {
+  const cena = gasto('cena', '2026-01-10', {
+    breakdown: {
+      items: [{ id: 'i1', description: 'Nigiris', amount: 40, quantity: null, unitPrice: null, categoryId: 'regalos', size: null, brand: null }],
+      discounts: [{ id: 'd1', label: 'Promo Amex', amount: 5, categoryId: null, benefitProgramId: null }],
+    },
+  } as Partial<Transaction>);
+
+  it('filtrar por la categoría de un renglón encuentra el movimiento', () => {
+    const out = filterHistoryTransactions({ ...base, transactions: [cena], filterCategory: 'regalos' });
+    expect(out.map(t => t.id)).toEqual(['cena']);
+  });
+
+  it('la búsqueda mira conceptos y descuentos del desglose', () => {
+    expect(filterHistoryTransactions({ ...base, transactions: [cena], searching: true, q: 'nigiri' }).map(t => t.id)).toEqual(['cena']);
+    expect(filterHistoryTransactions({ ...base, transactions: [cena], searching: true, q: 'amex' }).map(t => t.id)).toEqual(['cena']);
+  });
+});

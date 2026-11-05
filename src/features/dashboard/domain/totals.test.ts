@@ -67,3 +67,44 @@ describe('computeCategoryTotals', () => {
     expect(computeCategoryTotals([transferencia(10, true, null)], [comida])).toEqual([]);
   });
 });
+
+describe('computeCategoryTotals con desglose', () => {
+  const regalos: Category = { id: 'regalos', name: 'Regalos', icon: 'Gift', color: '#C15C7A', type: 'expense' };
+
+  it('reparte por la categoría de cada renglón; lo no desglosado va a la del movimiento', () => {
+    const cena: Transaction = {
+      id: 'sato', type: 'expense', date: '2026-03-02', amount: 5000, description: 'El Sato',
+      accountId: 'a1', categoryId: 'comida',
+      breakdown: {
+        items: [{ id: 'i1', description: 'Lo del amigo', amount: 1500, quantity: null, unitPrice: null, categoryId: 'regalos', size: null, brand: null }],
+        discounts: [],
+      },
+    };
+    const totals = computeCategoryTotals([cena], [comida, regalos]);
+
+    expect(totals.map(t => [t.id, t.total])).toEqual([['comida', 3500], ['regalos', 1500]]);
+    // El gasto total del mes no cambia: sigue siendo lo pagado.
+    expect(computeTotalExpense([cena])).toBe(5000);
+  });
+
+  it('un descuento resta de su categoría (Café suma lo pagado)', () => {
+    const cafe: Transaction = {
+      id: 'sb', type: 'transfer', date: '2026-03-02', amount: 174, description: 'Starbucks',
+      fromAccountId: 'a1', toAccountId: 'amex', taggedAsExpense: true, categoryId: 'comida',
+      breakdown: {
+        items: [{ id: 'i1', description: 'Latte', amount: 200, quantity: null, unitPrice: null, categoryId: null, size: null, brand: null }],
+        discounts: [{ id: 'd1', label: 'Amex', amount: 26, categoryId: null, benefitProgramId: null }],
+      },
+    };
+    expect(computeCategoryTotals([cafe], [comida]).map(t => [t.id, t.total])).toEqual([['comida', 174]]);
+  });
+
+  it('una categoría que el desglose deja en cero o negativa no entra a la dona', () => {
+    const raro: Transaction = {
+      id: 'r', type: 'expense', date: '2026-03-02', amount: 100, description: '',
+      accountId: 'a1', categoryId: 'comida',
+      breakdown: { items: [], discounts: [{ id: 'd1', label: 'x', amount: 10, categoryId: 'regalos', benefitProgramId: null }] },
+    };
+    expect(computeCategoryTotals([raro], [comida, regalos]).map(t => t.id)).toEqual(['comida']);
+  });
+});

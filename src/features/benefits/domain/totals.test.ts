@@ -48,3 +48,29 @@ describe('computeBenefitTotals', () => {
     expect(computeBenefitTotals(txns, [program('amex')], '2026-02-01')).toEqual({ amex: 30 });
   });
 });
+
+describe('computeBenefitTotals con descuentos del desglose', () => {
+  it('suma el descuento ligado a un programa como ahorro, junto a los ingresos', () => {
+    const cafe: Transaction = {
+      id: 'sb', type: 'expense', date: '2026-01-12', amount: 174, description: 'Starbucks',
+      accountId: 'a1', categoryId: 'cafe',
+      breakdown: {
+        items: [],
+        discounts: [
+          { id: 'd1', label: 'Promo Amex', amount: 26, categoryId: null, benefitProgramId: 'amex' },
+          { id: 'd2', label: 'Sin programa', amount: 9, categoryId: null, benefitProgramId: null },
+        ],
+      },
+    };
+    const totals = computeBenefitTotals([cafe, income('t1', 20, '2026-01-05', 'amex')], [program('amex')]);
+    expect(totals).toEqual({ amex: 46 });
+  });
+
+  it('respeta el corte de fecha', () => {
+    const viejo: Transaction = {
+      id: 'v', type: 'expense', date: '2025-06-01', amount: 100, description: '', accountId: 'a1', categoryId: 'c',
+      breakdown: { items: [], discounts: [{ id: 'd', label: '', amount: 10, categoryId: null, benefitProgramId: 'amex' }] },
+    };
+    expect(computeBenefitTotals([viejo], [program('amex')], '2026-01-01')).toEqual({ amex: 0 });
+  });
+});

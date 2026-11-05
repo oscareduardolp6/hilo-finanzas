@@ -73,7 +73,8 @@ describe('alta de gasto', () => {
       {
         id: 'txn_nuevo', type: 'expense', date: expect.any(String), description: '', amount: 250,
         accountId: 'acc_1', categoryId: 'comida', store: null, installmentPlanId: null,
-        size: null, brand: null, quantity: null, createdAt: AHORA, updatedAt: AHORA,
+        // Sin desglose se escribe `null` explícito: así editar quitándolo lo borra.
+        size: null, brand: null, quantity: null, breakdown: null, createdAt: AHORA, updatedAt: AHORA,
       },
     ]);
     expect(store.getState().toast).toBe('Movimiento agregado');
@@ -165,5 +166,84 @@ describe('borrado', () => {
     expect(store.getState().transactions).toEqual([]);
     expect(store.getState().tombstones).toEqual([{ id: 't1', deletedAt: AHORA }]);
     expect(store.getState().sheetOpen).toBe(false);
+  });
+});
+
+describe('desglose de ticket', () => {
+  it('Starbucks: el total pagado manda; el descuento cuadra el consumo de lista', async () => {
+    const { user, store } = await abrirHoja('expense');
+
+    await user.type(screen.getByPlaceholderText('0.00'), '174');
+    await user.click(screen.getByRole('button', { name: /Desglosar ticket/ }));
+
+    await user.click(screen.getByRole('button', { name: /Agregar concepto/ }));
+    await user.type(screen.getByLabelText('Total del concepto'), '200');
+
+    // $200 de consumo no caben en $174 pagados: aviso y no deja guardar.
+    expect(screen.getByRole('alert')).toHaveTextContent('más que el total');
+    expect(screen.getByRole('button', { name: 'Agregar' })).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: /Agregar descuento/ }));
+    await user.type(screen.getByLabelText('Monto del descuento'), '26');
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Agregar' }));
+
+    const [t] = store.getState().transactions;
+    // Lo que se mueve entre cuentas es lo pagado; el desglose viaja adentro.
+    expect(t).toMatchObject({
+      amount: 174,
+      breakdown: {
+        items: [{ id: 'bitem_nuevo', amount: 200, categoryId: null }],
+        discounts: [{ id: 'bdisc_nuevo', amount: 26, benefitProgramId: null }],
+      },
+    });
+  });
+
+  it('lo no desglosado aparece como "Sin especificar" y baja al agregar conceptos', async () => {
+    const { user } = await abrirHoja('expense');
+
+    await user.type(screen.getByPlaceholderText('0.00'), '5000');
+    await user.click(screen.getByRole('button', { name: /Desglosar ticket/ }));
+    await user.click(screen.getByRole('button', { name: /Agregar concepto/ }));
+    await user.type(screen.getByLabelText('Total del concepto'), '1000');
+
+    expect(screen.getByText(/Sin especificar/).parentElement).toHaveTextContent('4,000');
+    expect(screen.getByRole('button', { name: 'Agregar' })).toBeEnabled();
+  });
+
+  it('abrir un movimiento desglosado muestra sus conceptos', async () => {
+    const cena = {
+      id: 't1', type: 'expense', date: '2026-01-15', amount: 5000, description: 'El Sato',
+      accountId: 'acc_1', categoryId: 'comida', createdAt: 1, updatedAt: 1,
+      breakdown: {
+        items: [{ id: 'i1', description: 'Nigiris', amount: 1000, quantity: null, unitPrice: null, categoryId: null, size: null, brand: null }],
+        discounts: [],
+      },
+    } as Transaction;
+    const { store } = await renderFeature(<AddTransactionContainer />, { state: { ...state, transactions: [cena] } });
+
+    store.getState().openEditSheet(cena);
+
+    expect(await screen.findByText('Nigiris')).toBeInTheDocument();
+    expect(screen.getByText(/Sin especificar/)).toBeInTheDocument();
+    // El borrador lleva strings de input, no los números guardados.
+    expect(store.getState().form?.breakdown?.items[0]).toMatchObject({ amount: '1000' });
+  });
+
+  it('apagar el desglose y guardar lo borra del movimiento', async () => {
+    const cena = {
+      id: 't1', type: 'expense', date: '2026-01-15', amount: 5000, description: 'El Sato',
+      accountId: 'acc_1', categoryId: 'comida', createdAt: 1, updatedAt: 1,
+      breakdown: { items: [], discounts: [] },
+    } as Transaction;
+    const { user, store } = await renderFeature(<AddTransactionContainer />, { state: { ...state, transactions: [cena] } });
+
+    store.getState().openEditSheet(cena);
+    await screen.findByText('Editar gasto');
+    await user.click(screen.getByRole('button', { name: /Desglosar ticket/ }));
+    await user.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+
+    expect(store.getState().transactions[0]).toMatchObject({ id: 't1', breakdown: null });
   });
 });

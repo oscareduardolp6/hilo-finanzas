@@ -113,7 +113,7 @@ export function BenefitsModal({
 
         <p className="text-xs font-semibold mt-6 mb-2 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Resumen de ahorro</p>
         {programs.length === 0 ? (
-          <p className="text-xs" style={{ color: COLORS.textFaint }}>Crea un programa y etiqueta un ingreso con él para ver aquí cuánto llevas ahorrado.</p>
+          <p className="text-xs" style={{ color: COLORS.textFaint }}>Crea un programa y etiqueta con él un ingreso o un descuento del desglose de un gasto para ver aquí cuánto llevas ahorrado.</p>
         ) : (
           <div className="space-y-1.5">
             {programs.map(p => {

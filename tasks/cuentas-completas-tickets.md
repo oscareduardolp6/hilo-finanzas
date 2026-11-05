@@ -1,11 +1,30 @@
 ---
-status: pendiente
+status: implementada
 priority: 1
 ---
 
 # Cuentas completas: agrupar los renglones de un ticket bajo un solo concepto
 
 > Ojo con el nombre: aquí "cuenta" es la **cuenta del súper / del restaurante / de la compra** (el ticket completo), no una `Account` de Hilo (cartera, tarjeta, banco). En el código conviene llamarla `receipt` / `ticket` para no chocar con `accounts`.
+
+## Estado
+
+Implementado, con un diseño distinto al que proponía la idea original de abajo (ver [agents/plans/cuentas-completas-tickets.md](../agents/plans/cuentas-completas-tickets.md)). Decisiones tomadas con el usuario:
+
+- **Un solo movimiento con desglose adentro**, no un ticket + N transacciones: el dinero se mueve una sola vez, por lo realmente pagado. El desglose es un campo opcional (`breakdown`) del gasto o de la transferencia marcada como gasto; no hay colección nueva.
+- **El total es la fuente de la verdad** y el desglose es opt-in ("Desglosar ticket" en el formulario). Lo no desglosado aparece solo como "Sin especificar" en la categoría del movimiento.
+- Cada renglón lleva concepto, cantidad, precio unitario, total, tamaño, marca y **su propia categoría** (por defecto la del movimiento), así una cena puede repartirse entre Restaurantes y Regalos.
+- **Los descuentos son renglones propios** (no se prorratean): restan de su categoría, cuentan como **ahorro** (no ingreso, no tocan saldo) y se pueden ligar a un programa de beneficios, que los suma en "Beneficios y promociones".
+- En el historial se ve una sola fila con `Desglose · N conceptos · Ahorro $X`; al abrirla, el desglose completo.
+
+Fuera de esta iteración (quedan como ideas):
+
+- Que el **escaneo de tickets** genere este movimiento desglosado, y subir tickets largos en varias fotos: tarea propia, [ocr-ticket-desglosado.md](ocr-ticket-desglosado.md).
+- **Seguimiento de precios por producto** (vista 3 de abajo) — ya hay base: cada renglón guarda cantidad, precio unitario, marca y tamaño.
+- **Agrupar a posteriori** movimientos viejos (Monefy, OCR anterior) en un ticket.
+- Guardar la foto del ticket.
+
+La sección de abajo es la idea original, se deja como contexto.
 
 ## Problema que resuelve
 

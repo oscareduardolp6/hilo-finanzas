@@ -4,6 +4,7 @@
 
 import { COLORS } from '../../../shared/design/tokens';
 import type { Category, Transaction } from '../../../shared/domain/types';
+import { computeCategoryPortions, getBreakdown } from '../../transactions/domain/breakdown';
 
 /** Una porción de la dona. `id` es el de la categoría. */
 export type CategoryTotal = {
@@ -46,16 +47,22 @@ export function computeCategoryTotals(
   unknownColor: string = COLORS.textMuted,
 ): CategoryTotal[] {
   const map: Record<string, number> = {};
+  // Las categorías que tocó algún desglose: solo esas pueden quedar en cero o
+  // negativas (un descuento asignado a otra categoría), y una porción así no
+  // tiene sentido en la dona.
+  const fromBreakdown = new Set<string>();
   for (const t of periodTransactions) {
-    let catId: string | null | undefined = null;
-    if (t.type === 'expense') catId = t.categoryId;
-    else if (t.type === 'transfer' && t.taggedAsExpense) catId = t.categoryId;
-    // Una transferencia marcada como gasto pero sin categoría no cuenta: no hay
-    // dónde sumarla.
-    if (!catId) continue;
-    map[catId] = (map[catId] || 0) + t.amount;
+    // Sin desglose, una sola porción: la categoría del movimiento por su monto.
+    const hasBreakdown = !!getBreakdown(t);
+    for (const p of computeCategoryPortions(t)) {
+      // Una transferencia marcada como gasto pero sin categoría no cuenta: no
+      // hay dónde sumarla.
+      if (!p.categoryId) continue;
+      map[p.categoryId] = (map[p.categoryId] || 0) + p.amount;
+      if (hasBreakdown) fromBreakdown.add(p.categoryId);
+    }
   }
-  return Object.entries(map).map(([id, total]) => {
+  return Object.entries(map).filter(([id, total]) => !(fromBreakdown.has(id) && total < 0.005)).map(([id, total]) => {
     const cat = categories.find(c => c.id === id);
     return {
       id,

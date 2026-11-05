@@ -9,9 +9,12 @@ import type { StateCreator } from 'zustand';
 import type { Deps } from '../../../app/dependencies';
 import { runRIO } from '../../../app/run';
 import type { HiloStore } from '../../../app/store';
-import type { Transaction, TransactionType } from '../../../shared/domain/types';
+import type { Transaction, TransactionBreakdown, TransactionType } from '../../../shared/domain/types';
+import { appendBreakdownLine } from '../application/breakdown-lines';
+import type { BreakdownLineKind } from '../application/breakdown-lines';
 import { deleteTransaction, resetTransactions } from '../application/delete-transaction';
 import { saveTransaction } from '../application/save-transaction';
+import { breakdownToDraft } from '../domain/breakdown';
 import { initialFormState } from '../domain/form';
 import type { TransactionFormDraft } from '../domain/form';
 
@@ -23,6 +26,9 @@ export type TransactionsSlice = {
   closeSheet: () => void;
   /** Cambia de pestaña conservando el importe ya tecleado. */
   switchFormType: (type: TransactionType) => void;
+  /** Agrega un renglón o un descuento vacío al desglose del borrador (lo abre
+   *  si no había). El id lo pone el caso de uso. */
+  addBreakdownLine: (kind: BreakdownLineKind) => void;
 
   saveTransaction: (payload: TransactionFormDraft) => void;
   deleteTransaction: (id: string) => void;
@@ -48,11 +54,18 @@ export const createTransactionsSlice =
     },
 
     openEditSheet: (txn) => {
+      // El desglose guardado lleva números; el borrador, strings de input. Un
+      // ingreso no lleva desglose y su borrador no gana la clave.
+      const { breakdown, ...rest } = txn as Transaction & { breakdown?: TransactionBreakdown | null };
       set({
         editingId: txn.id,
         formType: txn.type,
         // El importe se vuelve string: el borrador es lo que teclea el usuario.
-        form: { ...txn, amount: String(txn.amount) },
+        form: {
+          ...rest,
+          amount: String(txn.amount),
+          ...(txn.type === 'income' ? {} : { breakdown: breakdownToDraft(breakdown) }),
+        },
         sheetOpen: true,
       });
     },
@@ -65,6 +78,12 @@ export const createTransactionsSlice =
       // Conservar el importe es deliberado: teclearlo y luego caer en cuenta de
       // que era un ingreso y no un gasto es el caso común.
       set({ formType: type, form: form ? { ...fresh, amount: form.amount } : fresh });
+    },
+
+    addBreakdownLine: (kind) => {
+      const { form } = get();
+      if (!form) return;
+      set({ form: runRIO(appendBreakdownLine(form, kind), deps) });
     },
 
     saveTransaction: (payload) => {

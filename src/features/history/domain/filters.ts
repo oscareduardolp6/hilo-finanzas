@@ -7,6 +7,7 @@
 import { monthKey } from '../../../shared/domain/dates';
 import { normalizeForSearch } from '../../../shared/domain/search';
 import type { InstallmentPlan, Transaction } from '../../../shared/domain/types';
+import { breakdownSearchText, computeCategoryPortions } from '../../transactions/domain/breakdown';
 
 /** `'msi'` no es un `type` de movimiento: es "tiene plan MSI vinculado", y por
  *  eso se filtra distinto que los otros tres. */
@@ -73,7 +74,10 @@ export function filterHistoryTransactions({
         (x.type === 'expense' && x.categoryId === filterCategory) ||
         (x.type === 'income' && x.categoryId === filterCategory) ||
         // Una transferencia solo entra por categoría si cuenta como gasto.
-        (x.type === 'transfer' && !!x.taggedAsExpense && x.categoryId === filterCategory)
+        (x.type === 'transfer' && !!x.taggedAsExpense && x.categoryId === filterCategory) ||
+        // Un renglón del desglose con otra categoría también lo hace aparecer:
+        // filtrar por "Regalos" encuentra la cena donde se invitó a alguien.
+        computeCategoryPortions(t).some(p => p.categoryId === filterCategory && p.amount > 0)
       );
     });
   }
@@ -94,7 +98,8 @@ export function filterHistoryTransactions({
       const plan = x.installmentPlanId ? installmentPlans.find(p => p.id === x.installmentPlanId) : null;
       // El plan vinculado entra en la búsqueda: un abono de MSI se encuentra por
       // el nombre de la compra, aunque su propia descripción no lo diga.
-      const hay = [x.description, x.store, plan && plan.description, plan && plan.store]
+      // Y los conceptos del desglose: "nigiri" encuentra la cena en El Sato.
+      const hay = [x.description, x.store, plan && plan.description, plan && plan.store, ...breakdownSearchText(t)]
         .map(normalizeForSearch)
         .join(' ');
       return hay.includes(q);

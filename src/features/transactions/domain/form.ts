@@ -11,6 +11,7 @@
 
 import { todayIso } from '../../../shared/domain/dates';
 import type { Account, Category, TransactionType } from '../../../shared/domain/types';
+import type { BreakdownDraft } from './breakdown';
 
 export type TransactionFormDraft = {
   date: string;
@@ -28,6 +29,9 @@ export type TransactionFormDraft = {
   size?: string | null;
   brand?: string | null;
   quantity?: string | null;
+  /** El desglose del ticket, opt-in: `null`/ausente = sin desglose. Solo en
+   *  gasto simple y transferencia marcada como gasto, nunca en MSI. */
+  breakdown?: BreakdownDraft | null;
   /* Presentes solo al editar, sembrados desde el movimiento. */
   id?: string;
   type?: TransactionType;
@@ -46,7 +50,7 @@ export function initialFormState(
   const incomeCats = categories.filter(c => c.type === 'income');
   const base = { date: todayIso(), description: '', amount: '', store: '' };
   if (type === 'expense') {
-    return { ...base, accountId: accounts[0] ? accounts[0].id : '', categoryId: expenseCats[0] ? expenseCats[0].id : '', installmentPlanId: null, size: '', brand: '', quantity: '' };
+    return { ...base, accountId: accounts[0] ? accounts[0].id : '', categoryId: expenseCats[0] ? expenseCats[0].id : '', installmentPlanId: null, size: '', brand: '', quantity: '', breakdown: null };
   }
   if (type === 'income') {
     return {
@@ -58,5 +62,5 @@ export function initialFormState(
   }
   // Transferencia: la segunda cuenta por defecto, o la primera si solo hay una.
   const secondAccount = accounts[1] ? accounts[1].id : (accounts[0] ? accounts[0].id : '');
-  return { ...base, fromAccountId: accounts[0] ? accounts[0].id : '', toAccountId: secondAccount, taggedAsExpense: false, categoryId: '', installmentPlanId: null, size: '', brand: '', quantity: '' };
+  return { ...base, fromAccountId: accounts[0] ? accounts[0].id : '', toAccountId: secondAccount, taggedAsExpense: false, categoryId: '', installmentPlanId: null, size: '', brand: '', quantity: '', breakdown: null };
 }

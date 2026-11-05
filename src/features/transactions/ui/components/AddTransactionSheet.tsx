@@ -9,7 +9,7 @@
    borrador pero el usuario puede cambiar sin tocarlo. */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Layers, Link2, Trash2, X } from 'lucide-react';
+import { Layers, Link2, Receipt, Trash2, X } from 'lucide-react';
 import { ACCOUNT_SEARCH_THRESHOLD, COLORS } from '../../../../shared/design/tokens';
 import { accountNameMatches } from '../../../../shared/domain/search';
 import type {
@@ -23,7 +23,10 @@ import { DateInput } from '../../../../shared/ui/date-input';
 import { InstallmentPlanPicker } from '../../../../shared/ui/installment-plan-picker';
 import { SheetOverlay } from '../../../../shared/ui/sheet-overlay';
 import { StoreInput } from '../../../../shared/ui/store-input';
+import type { BreakdownLineKind } from '../../application/breakdown-lines';
+import { computeBreakdownSummary, emptyBreakdownDraft } from '../../domain/breakdown';
 import type { TransactionFormDraft } from '../../domain/form';
+import { BreakdownEditor } from './BreakdownEditor';
 
 type FormUpdater = (f: TransactionFormDraft) => TransactionFormDraft;
 
@@ -45,6 +48,8 @@ export type AddTransactionSheetProps = {
   onCreateCategory: (category: NewCategory) => Category;
   onCreatePlan: (plan: NewInstallmentPlan) => InstallmentPlan;
   onCreateBenefitProgram: (program: NewBenefitProgram) => BenefitProgram;
+  /** Agrega un concepto o un descuento al desglose (el id lo pone el store). */
+  onAddBreakdownLine: (kind: BreakdownLineKind) => void;
   desktop?: boolean;
   /** Modo privado: los montos que muestra `InstallmentPlanPicker` se ocultan. */
   hideBalances?: boolean;
@@ -60,7 +65,7 @@ const TYPES: TransactionType[] = ['expense', 'income', 'transfer'];
 
 export function AddTransactionSheet({
   formType, editingId, form, setForm, accounts, categories, plans, planProgress, benefitPrograms, knownStores,
-  onClose, onSave, onDelete, onSwitchType, onCreateCategory, onCreatePlan, onCreateBenefitProgram, desktop,
+  onClose, onSave, onDelete, onSwitchType, onCreateCategory, onCreatePlan, onCreateBenefitProgram, onAddBreakdownLine, desktop,
   hideBalances,
 }: AddTransactionSheetProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -73,10 +78,26 @@ export function AddTransactionSheet({
     setExpenseMode(form && form.installmentPlanId ? 'msi' : 'single');
   }, [formType]);
 
+  // El desglose solo aplica a un gasto suelto (simple o transferencia marcada
+  // como gasto), nunca a un abono de MSI: el detalle de ésa es del plan.
+  const breakdownAllowed = !!form && expenseMode !== 'msi' &&
+    (formType === 'expense' || (formType === 'transfer' && !!form.taggedAsExpense));
+  const breakdown = breakdownAllowed && form ? form.breakdown ?? null : null;
+  const breakdownSummary = breakdown
+    ? computeBreakdownSummary(parseFloat(form?.amount ?? '') || 0, breakdown)
+    : null;
+
   const isValid = useMemo(() => {
     if (!form) return false;
     const amt = parseFloat(form.amount);
     if (!amt || amt <= 0) return false;
+    if (breakdown && breakdownSummary) {
+      // Cada concepto y cada descuento necesitan monto, y el total tiene que
+      // alcanzar para todos: "sin especificar" no puede quedar negativo.
+      if (breakdown.items.some(i => !(parseFloat(i.amount) > 0))) return false;
+      if (breakdown.discounts.some(d => !(parseFloat(d.amount) > 0))) return false;
+      if (!breakdownSummary.isBalanced) return false;
+    }
     if (formType === 'transfer') {
       // Transferir a la misma cuenta no movería nada.
       if (!form.fromAccountId || !form.toAccountId || form.fromAccountId === form.toAccountId) return false;
@@ -92,7 +113,7 @@ export function AddTransactionSheet({
     if (formType === 'expense' && expenseMode === 'msi' && !form.installmentPlanId) return false;
     if (!form.accountId || !form.categoryId) return false;
     return true;
-  }, [form, formType, expenseMode]);
+  }, [form, formType, expenseMode, breakdown, breakdownSummary]);
 
   if (!form) return null;
 
@@ -223,7 +244,7 @@ export function AddTransactionSheet({
 
       {formType === 'expense' && (
         <div className="px-5 mt-5">
-          <button onClick={() => { const next = expenseMode === 'msi' ? 'single' : 'msi'; setExpenseMode(next); if (next === 'single') setForm(f => ({ ...f, installmentPlanId: null })); }} className="w-full flex items-center justify-between p-3 rounded-xl" style={{ backgroundColor: COLORS.surfaceAlt }}>
+          <button onClick={() => { const next = expenseMode === 'msi' ? 'single' : 'msi'; setExpenseMode(next); if (next === 'single') setForm(f => ({ ...f, installmentPlanId: null })); else setForm(f => ({ ...f, breakdown: null })); }} className="w-full flex items-center justify-between p-3 rounded-xl" style={{ backgroundColor: COLORS.surfaceAlt }}>
             <div className="flex items-center gap-2">
               <Layers size={16} style={{ color: COLORS.accent }} />
               <span className="text-sm font-medium" style={{ color: COLORS.text }}>Vincular a un plan de MSI</span>
@@ -271,7 +292,7 @@ export function AddTransactionSheet({
                 <button onClick={() => { setExpenseMode('single'); setForm(f => ({ ...f, installmentPlanId: null })); }} className="flex-1 py-1.5 rounded-lg text-xs font-semibold" style={{ backgroundColor: expenseMode === 'single' ? COLORS.accent : 'transparent', color: expenseMode === 'single' ? COLORS.bg : COLORS.textMuted }}>
                   Gasto único
                 </button>
-                <button onClick={() => setExpenseMode('msi')} className="flex-1 py-1.5 rounded-lg text-xs font-semibold" style={{ backgroundColor: expenseMode === 'msi' ? COLORS.accent : 'transparent', color: expenseMode === 'msi' ? COLORS.bg : COLORS.textMuted }}>
+                <button onClick={() => { setExpenseMode('msi'); setForm(f => ({ ...f, breakdown: null })); }} className="flex-1 py-1.5 rounded-lg text-xs font-semibold" style={{ backgroundColor: expenseMode === 'msi' ? COLORS.accent : 'transparent', color: expenseMode === 'msi' ? COLORS.bg : COLORS.textMuted }}>
                   Pago de MSI
                 </button>
               </div>
@@ -302,6 +323,38 @@ export function AddTransactionSheet({
         </div>
       )}
 
+      {breakdownAllowed && (
+        <div className="px-5 mt-5">
+          <button onClick={() => setForm(f => ({ ...f, breakdown: f.breakdown ? null : emptyBreakdownDraft() }))} className="w-full flex items-center justify-between p-3 rounded-xl" style={{ backgroundColor: COLORS.surfaceAlt }}>
+            <div className="flex items-center gap-2">
+              <Receipt size={16} style={{ color: COLORS.accent }} />
+              <span className="text-sm font-medium" style={{ color: COLORS.text }}>Desglosar ticket</span>
+            </div>
+            <div className="w-10 h-6 rounded-full relative transition-colors" style={{ backgroundColor: breakdown ? COLORS.accent : COLORS.border }}>
+              <div className="w-5 h-5 rounded-full absolute top-0.5 transition-all" style={{ backgroundColor: COLORS.bg, left: breakdown ? 18 : 2 }} />
+            </div>
+          </button>
+          {breakdown && breakdownSummary ? (
+            <BreakdownEditor
+              breakdown={breakdown}
+              summary={breakdownSummary}
+              parentCategory={expenseCats.find(c => c.id === form.categoryId)}
+              expenseCategories={expenseCats}
+              benefitPrograms={benefitPrograms}
+              accounts={accounts}
+              onChange={(next) => setForm(f => ({ ...f, breakdown: next }))}
+              onAddItem={() => onAddBreakdownLine('item')}
+              onAddDiscount={() => onAddBreakdownLine('discount')}
+              onCreateBenefitProgram={onCreateBenefitProgram}
+            />
+          ) : (
+            <p className="text-xs mt-2 px-1" style={{ color: COLORS.textFaint }}>
+              Reparte el total entre conceptos (cada uno con su categoría) y registra descuentos como ahorro. Lo que no desgloses queda como "Sin especificar".
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="px-5 mt-5 space-y-3">
         <div>
           <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Descripción (opcional)</p>
@@ -311,7 +364,8 @@ export function AddTransactionSheet({
         {(formType === 'expense' || (formType === 'transfer' && form.taggedAsExpense && expenseMode !== 'msi')) && (
           <StoreInput value={form.store || ''} onChange={(v) => setForm(f => ({ ...f, store: v }))} knownStores={knownStores} />
         )}
-        {(formType === 'expense' || (formType === 'transfer' && form.taggedAsExpense)) && (
+        {/* Con desglose, tamaño/marca/cantidad viven en cada concepto. */}
+        {!breakdown && (formType === 'expense' || (formType === 'transfer' && form.taggedAsExpense)) && (
           <div className="grid grid-cols-3 gap-2">
             <div>
               <p className="text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: COLORS.textMuted }}>Tamaño</p>

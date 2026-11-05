@@ -48,6 +48,42 @@ export type ProductDetails = {
   quantity?: string | null;
 };
 
+/** Un renglón del desglose de un ticket ("Nigiris $1,000"). `amount` es el
+ *  total del renglón a precio de lista. */
+export type BreakdownItem = {
+  id: string;
+  description: string;
+  amount: number;
+  quantity: number | null;
+  unitPrice: number | null;
+  /** `null` = hereda la categoría del movimiento. */
+  categoryId: string | null;
+  size: string | null;
+  brand: string | null;
+};
+
+/** Un descuento del desglose (p. ej. la promoción de Amex en Starbucks). Es
+ *  AHORRO, no ingreso: no toca ningún saldo, solo resta del gasto de su
+ *  categoría. `amount` es positivo. */
+export type BreakdownDiscount = {
+  id: string;
+  label: string;
+  amount: number;
+  /** `null` = hereda la categoría del movimiento. */
+  categoryId: string | null;
+  benefitProgramId: string | null;
+};
+
+/** El desglose opcional de un movimiento (la "cuenta completa" de un ticket).
+ *  El `amount` del movimiento sigue siendo la fuente de la verdad — lo que de
+ *  verdad se pagó —; lo no desglosado ("Sin especificar") NO se guarda, se
+ *  deriva: `amount − Σ items + Σ discounts`. Ver
+ *  `features/transactions/domain/breakdown.ts`. */
+export type TransactionBreakdown = {
+  items: BreakdownItem[];
+  discounts: BreakdownDiscount[];
+};
+
 type TransactionBase = Stamped & {
   id: string;
   /** ISO `YYYY-MM-DD`; las vistas por mes hacen prefix match sobre esto. */
@@ -63,6 +99,8 @@ export type ExpenseTransaction = TransactionBase & ProductDetails & {
   store?: string | null;
   /** Un gasto simple también puede abonar a un plan MSI. */
   installmentPlanId?: string | null;
+  /** Agregado después: ausente en registros viejos. Nunca junto con MSI. */
+  breakdown?: TransactionBreakdown | null;
 };
 
 export type IncomeTransaction = TransactionBase & {
@@ -88,6 +126,8 @@ export type TransferTransaction = TransactionBase & ProductDetails & {
   categoryId?: string | null;
   installmentPlanId?: string | null;
   store?: string | null;
+  /** Solo con `taggedAsExpense` y sin MSI. Ausente en registros viejos. */
+  breakdown?: TransactionBreakdown | null;
 };
 
 export type Transaction = ExpenseTransaction | IncomeTransaction | TransferTransaction;
