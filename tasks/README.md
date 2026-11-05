@@ -6,6 +6,7 @@ Ideas y funcionalidades que queremos agregar a Hilo, una por archivo. No es un b
 
 | Task | Prioridad | Status |
 | --- | --- | --- |
+| [Cuentas completas: agrupar los renglones de un ticket](cuentas-completas-tickets.md) | 1 | Pendiente |
 | [Límite al autocomplete del buscador de historial](limite-autocomplete-busqueda-historial.md) | 1 | Implementada |
 | [Visualización de escritorio](desktop-view.md) | 1 | Implementada |
 | [Migrar a IndexedDB (o similar) para guardado local](local-storage-migration.md) | 2 | Implementada |
@@ -28,14 +29,15 @@ Ideas y funcionalidades que queremos agregar a Hilo, una por archivo. No es un b
 | [Agregar testing](testing.md) | 8 | Implementada |
 | [Buscador de cuentas](buscador-de-cuentas.md) | 9 | Implementada |
 | [Input de voz tipo "Ramble" para registrar gastos](captura-por-voz.md) | 10 | Pendiente |
-| [Aplicación móvil nativa](app-movil-nativa.md) | 11 | Pendiente |
 | [Acceso rápido en la cortina de accesos rápidos de Android](acceso-rapido-android.md) | 12 | Pendiente |
 | [Soporte multiidioma (agregar inglés)](multiidioma.md) | 13 | Pendiente |
 | [Flujo para consolidar gastos pendientes de transferencia](consolidar-gastos-pendientes.md) | 14 | Pendiente |
+| [Reaccionar a gastos detectados en notificaciones](gastos-desde-notificaciones.md) | 14 | Pendiente |
 | [Caso especial para gastos de gasolina](gasolina-tracking.md) | 15 | Pendiente |
 | [Ocultar / mostrar saldos](ocultar-saldos.md) | 16 | Implementada |
 | [Seguimiento de beneficios y recompensas de tarjetas de crédito](beneficios-tarjetas.md) | 17 | Implementada |
 | [Refactorizar hacia una arquitectura en capas](layered-architecture.md) | 20 | Implementada |
+| [Aplicación móvil nativa](app-movil-nativa.md) | 21 | Pendiente |
 | [Chat de Telegram para registrar gastos](telegram-bot.md) | 25 | Pendiente |
 
 ## Formato
