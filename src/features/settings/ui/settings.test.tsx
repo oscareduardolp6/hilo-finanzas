@@ -8,6 +8,7 @@ import {
   brokenPersistence, inMemoryOcrSettingsRepository, inMemoryStateRepository,
 } from '../../../shared/infrastructure/in-memory';
 import { renderFeature } from '../../../test/render-feature';
+import { fakeReceiptGateway, fakeReceiptLog } from '../../receipt-ocr/infrastructure/in-memory';
 import { SettingsContainer } from './containers/SettingsContainer';
 
 const gasto: Transaction = {
@@ -15,7 +16,8 @@ const gasto: Transaction = {
   accountId: 'a1', categoryId: 'comida', createdAt: 1, updatedAt: 1,
 };
 
-async function abrirAjustes({ apiKey = '', ocrFalla = false } = {}) {
+async function abrirAjustes({ apiKey = '', ocrFalla = false, verifyFalla = undefined as Error | undefined } = {}) {
+  const receiptLog = fakeReceiptLog();
   const ocrSettingsRepository = inMemoryOcrSettingsRepository({
     initial: apiKey ? { apiKey, model: '' } : null,
     ...(ocrFalla ? { failWith: brokenPersistence() } : {}),
@@ -24,11 +26,11 @@ async function abrirAjustes({ apiKey = '', ocrFalla = false } = {}) {
     initial: { accounts: [], categories: [], transactions: [gasto], installmentPlans: [], tombstones: [], benefitPrograms: [] },
   });
   const rendered = await renderFeature(<SettingsContainer />, {
-    deps: { ocrSettingsRepository, stateRepository },
+    deps: { ocrSettingsRepository, stateRepository, receiptGateway: fakeReceiptGateway(new Error('sin escaneo'), receiptLog, verifyFalla) },
   });
   rendered.store.getState().setSettingsOpen(true);
   await screen.findByText('Ajustes');
-  return { ...rendered, ocrSettingsRepository, stateRepository };
+  return { ...rendered, ocrSettingsRepository, stateRepository, receiptLog };
 }
 
 describe('config de escaneo', () => {
@@ -63,6 +65,47 @@ describe('config de escaneo', () => {
     await waitFor(() => expect(store.getState().toast).toBe('No se pudo guardar la config de escaneo'));
     // La config sí quedó en efecto en memoria: lo que falló fue persistirla.
     expect(store.getState().ocrSettings.apiKey).toBe('sk-ant-x');
+  });
+});
+
+describe('la key en el teléfono', () => {
+  it('se guarda sin espacios ni caracteres invisibles colados al pegarla', async () => {
+    const { user, ocrSettingsRepository } = await abrirAjustes();
+
+    await user.type(screen.getByPlaceholderText('sk-ant-...'), ' sk-ant-\u200Babc def\u00A0 ');
+    await user.click(screen.getByRole('button', { name: 'Guardar' }));
+
+    await waitFor(() => expect(ocrSettingsRepository.peek()).toEqual({ apiKey: 'sk-ant-abcdef', model: '' }));
+  });
+
+  it('no es un campo de contraseña (el gestor del navegador no la pisa) y se puede mostrar', async () => {
+    const { user } = await abrirAjustes();
+    const campo = screen.getByPlaceholderText('sk-ant-...');
+
+    expect(campo).toHaveAttribute('type', 'text');
+    expect(campo).toHaveAttribute('autocomplete', 'off');
+    expect(campo).toHaveStyle({ WebkitTextSecurity: 'disc' });
+    await user.click(screen.getByRole('button', { name: 'Mostrar key' }));
+    expect(campo).not.toHaveStyle({ WebkitTextSecurity: 'disc' });
+  });
+
+  it('"Probar clave" comprueba lo escrito, limpio, y dice el resultado', async () => {
+    const { user, receiptLog } = await abrirAjustes();
+
+    await user.type(screen.getByPlaceholderText('sk-ant-...'), 'sk-ant- buena');
+    await user.click(screen.getByRole('button', { name: 'Probar clave' }));
+
+    expect(await screen.findByText('Clave válida · modelo disponible.')).toBeInTheDocument();
+    expect(receiptLog.verified).toEqual([{ apiKey: 'sk-ant-buena', model: '' }]);
+  });
+
+  it('una key mala se dice ahí mismo, sin escanear', async () => {
+    const { user } = await abrirAjustes({ verifyFalla: new Error('La clave de API no es válida.') });
+
+    await user.type(screen.getByPlaceholderText('sk-ant-...'), 'sk-ant-mala');
+    await user.click(screen.getByRole('button', { name: 'Probar clave' }));
+
+    expect(await screen.findByText('La clave de API no es válida.')).toBeInTheDocument();
   });
 });
 

@@ -30,8 +30,12 @@ export function fileToBase64(blob: Blob): Promise<EncodedImage> {
 
 /* Reescala a JPEG con lado máximo `maxDim` para bajar peso y costo de la API
    y normalizar formatos raros (HEIC/webp). Devuelve el archivo original si ya
-   es un JPEG chico o si el navegador no puede decodificar la imagen. */
-export function downscaleImage(file: File, maxDim = 1600): Promise<Blob> {
+   es un JPEG chico o si el navegador no puede decodificar la imagen.
+
+   2576 px es el lado largo que leen los modelos de visión de alta resolución
+   (Claude 4.7 en adelante): más chico y la letra de un ticket largo se pierde;
+   más grande y el API lo reduce de todos modos. */
+export function downscaleImage(file: File, maxDim = 2576): Promise<Blob> {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
     const img = new Image();

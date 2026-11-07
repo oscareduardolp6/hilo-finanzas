@@ -1,21 +1,18 @@
 /* Componente de LÓGICA de la hoja de escanear ticket.
 
-   Partido en dos como los de `sync`, `backup` y `monefy-import`: el borrador y
-   lo que el usuario lleva corregido viven en `ReceiptScanSheet`, que se
-   desmonta al cerrar. Un ticket a medio revisar no debe seguir ahí la próxima
-   vez que se abra la cámara.
+   Partido en dos como los de `backup` y `monefy-import`: las fotos elegidas
+   viven en `ReceiptScanSheet`, que se desmonta al cerrar. Un ticket a medio
+   fotografiar no debe seguir ahí la próxima vez que se abra la cámara.
 
-   Todo el estado de aquí es borrador de UI —lo que se está editando antes de
-   confirmar—; lo único que sale al store son las dos acciones. */
+   Todo el estado de aquí es borrador de UI —qué fotos van, en qué orden—; lo
+   único que sale al store es la acción de escanear. Si sale bien, el store
+   cierra esta hoja y abre el formulario de movimiento con el ticket. */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useHiloStore } from '../../../../app/store-context';
-import { todayIso } from '../../../../shared/domain/dates';
-import { uid } from '../../../../shared/domain/ids';
-import type { ReceiptDiscount, ReceiptDraft, ReceiptRow } from '../../domain/draft';
-import { computeReviewTotals, rowAccountId } from '../../domain/review';
+import { MAX_RECEIPT_PHOTOS } from '../../domain/config';
 import { ReceiptScanModal } from '../components/ReceiptScanModal';
-import type { ReceiptStep } from '../components/ReceiptScanModal';
+import type { ReceiptPhoto, ReceiptStep } from '../components/ReceiptScanModal';
 
 export type ReceiptScanContainerProps = {
   desktop?: boolean;
@@ -27,103 +24,62 @@ export function ReceiptScanContainer({ desktop }: ReceiptScanContainerProps) {
   return <ReceiptScanSheet desktop={desktop} />;
 }
 
+type Picked = ReceiptPhoto & { file: File };
+
 function ReceiptScanSheet({ desktop }: ReceiptScanContainerProps) {
   const setOpen = useHiloStore((s) => s.setReceiptModalOpen);
   const setSettingsOpen = useHiloStore((s) => s.setSettingsOpen);
-  const accounts = useHiloStore((s) => s.accounts);
-  const categories = useHiloStore((s) => s.categories);
   const ocrSettings = useHiloStore((s) => s.ocrSettings);
   const scanReceipt = useHiloStore((s) => s.scanReceipt);
-  const addReceiptTransactions = useHiloStore((s) => s.addReceiptTransactions);
-  const hideBalances = useHiloStore((s) => s.hideBalances);
-
-  const expenseCategories = useMemo(() => categories.filter(c => c.type === 'expense'), [categories]);
 
   const [step, setStep] = useState<ReceiptStep>('capture');
   const [error, setError] = useState('');
-  const [draft, setDraft] = useState<ReceiptDraft | null>(null);
+  const [photos, setPhotos] = useState<Picked[]>([]);
+  // Ids locales de la lista, no datos de Hilo: un contador basta.
+  const nextId = useRef(0);
 
-  const [store, setStore] = useState('');
-  const [date, setDate] = useState(todayIso());
-  const [rows, setRows] = useState<ReceiptRow[]>([]);
-  const [discounts, setDiscounts] = useState<ReceiptDiscount[]>([]);
-  const [primaryAccountId, setPrimaryAccountId] = useState(accounts[0] ? accounts[0].id : '');
-  // La segunda cuenta como origen por defecto: si se paga con tarjeta, el
-  // dinero rara vez sale de la misma cuenta donde cae el gasto.
-  const [originAccountId, setOriginAccountId] = useState(
-    accounts[1] ? accounts[1].id : (accounts[0] ? accounts[0].id : ''),
-  );
-  // Solo para este ticket: no cambia nada de la cuenta.
-  const [accountModes, setAccountModes] = useState<Record<string, boolean | undefined>>({});
-
-  const totals = computeReviewTotals({
-    rows, discounts, primaryAccountId, originAccountId, accountModes,
-    ticketTotal: draft ? draft.ticketTotal : 0,
-  });
+  // Las miniaturas son `blob:` URLs: se liberan al desmontar la hoja.
+  const photosRef = useRef(photos);
+  photosRef.current = photos;
+  useEffect(() => () => { photosRef.current.forEach(p => URL.revokeObjectURL(p.url)); }, []);
 
   return (
     <ReceiptScanModal
       step={step}
-      accounts={accounts}
-      expenseCategories={expenseCategories}
       hasApiKey={!!ocrSettings.apiKey}
       error={error}
-      draft={draft}
-      store={store}
-      date={date}
-      rows={rows}
-      discounts={discounts}
-      primaryAccountId={primaryAccountId}
-      originAccountId={originAccountId}
-      accountModes={accountModes}
-      totals={totals}
-      onFile={(file) => {
+      photos={photos}
+      maxPhotos={MAX_RECEIPT_PHOTOS}
+      onAddFiles={(files) => {
         setError('');
-        setStep('processing');
-        void scanReceipt(file).then((outcome) => {
-          if (!outcome.ok) { setError(outcome.message); setStep('capture'); return; }
-          setDraft(outcome.draft);
-          setStore(outcome.draft.store);
-          setDate(outcome.draft.date);
-          setRows(outcome.draft.rows);
-          setDiscounts(outcome.draft.discounts);
-          setStep('review');
+        setPhotos(prev => {
+          const room = Math.max(0, MAX_RECEIPT_PHOTOS - prev.length);
+          const added = files.slice(0, room).map(file => ({
+            id: `foto_${++nextId.current}`,
+            url: URL.createObjectURL(file),
+            name: file.name,
+            file,
+          }));
+          return [...prev, ...added];
         });
       }}
-      onStore={setStore}
-      onDate={setDate}
-      onPrimaryAccount={setPrimaryAccountId}
-      onOriginAccount={setOriginAccountId}
-      onPatchRow={(id, patch) => setRows(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r))}
-      onPatchDiscount={(id, patch) => setDiscounts(prev => prev.map(d => d.id === id ? { ...d, ...patch } : d))}
-      onAddDiscount={() => setDiscounts(prev => [...prev, { id: uid('rdsc'), label: '', amount: '', accountId: null, included: true }])}
-      onToggleAccountMode={(accountId) => setAccountModes(prev => ({ ...prev, [accountId]: !prev[accountId] }))}
-      onConfirm={() => {
-        setStep('saving');
-        addReceiptTransactions({
-          date,
-          store: store.trim(),
-          originAccountId,
-          rows: totals.includedRows.map(r => ({
-            description: r.description.trim(),
-            amount: parseFloat(String(r.amount)) || 0,
-            categoryId: r.categoryId,
-            accountId: rowAccountId(r, primaryAccountId),
-            quantity: (r.quantity || '').trim(),
-            viaTransfer: !!accountModes[rowAccountId(r, primaryAccountId)],
-          })),
-          discounts: totals.includedDiscounts.map(d => ({
-            label: d.label.trim(),
-            amount: parseFloat(String(d.amount)) || 0,
-            accountId: d.accountId || primaryAccountId,
-          })),
+      onRemovePhoto={(id) => setPhotos(prev => {
+        const gone = prev.find(p => p.id === id);
+        if (gone) URL.revokeObjectURL(gone.url);
+        return prev.filter(p => p.id !== id);
+      })}
+      onScan={() => {
+        setError('');
+        setStep('processing');
+        void scanReceipt(photos.map(p => p.file)).then((outcome) => {
+          // Si salió bien el store ya cerró esta hoja; si no, las fotos se
+          // quedan para reintentar sin volver a tomarlas.
+          if (!outcome.ok) { setError(outcome.message); setStep('capture'); }
         });
-        setOpen(false);
       }}
       onOpenSettings={() => { setOpen(false); setSettingsOpen(true); }}
       onClose={() => setOpen(false)}
       desktop={desktop}
-      hideBalances={hideBalances}
     />
   );
 }

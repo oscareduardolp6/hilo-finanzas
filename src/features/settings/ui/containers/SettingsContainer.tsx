@@ -23,6 +23,7 @@ function SettingsSheet({ desktop }: SettingsContainerProps) {
   const setOpen = useHiloStore((s) => s.setSettingsOpen);
   const ocrSettings = useHiloStore((s) => s.ocrSettings);
   const saveOcrSettings = useHiloStore((s) => s.saveOcrSettings);
+  const verifyOcrSettings = useHiloStore((s) => s.verifyOcrSettings);
   const openFromSettings = useHiloStore((s) => s.openFromSettings);
   const resetTransactions = useHiloStore((s) => s.resetTransactions);
   const { user, signIn, signOut, signInError } = useAuth();
@@ -31,6 +32,7 @@ function SettingsSheet({ desktop }: SettingsContainerProps) {
     <SettingsModal
       ocrSettings={ocrSettings}
       onSaveOcrSettings={(settings) => void saveOcrSettings(settings)}
+      onVerifyOcrSettings={verifyOcrSettings}
       onResetTransactions={resetTransactions}
       onOpenImport={() => openFromSettings('import')}
       onOpenBackup={() => openFromSettings('backup')}

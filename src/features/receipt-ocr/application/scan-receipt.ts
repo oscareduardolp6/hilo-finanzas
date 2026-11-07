@@ -1,5 +1,6 @@
-/* Escanear la foto: prepararla, mandarla al modelo y devolver el borrador que
-   la hoja edita. Como en `backup` y `monefy-import`, leer no aplica nada.
+/* Escanear el ticket: preparar sus fotos, mandarlas juntas al modelo y
+   devolver el borrador del formulario de movimiento ya lleno. Como en `backup`
+   y `monefy-import`, leer no aplica nada: guardar es del formulario.
 
    `ReaderTaskEither` porque es lo más falible de la app: no hay red, la key no
    sirve, se acabó la cuota, o la foto no se entiende. Los mensajes vienen ya en
@@ -12,34 +13,42 @@ import type { Deps } from '../../../app/dependencies';
 import { receiptApiError } from '../../../shared/domain/errors';
 import type { HiloError } from '../../../shared/domain/errors';
 import { isoFromEpoch } from '../../../shared/domain/dates';
-import type { Category } from '../../../shared/domain/types';
+import type { Account, Category } from '../../../shared/domain/types';
+import type { TransactionFormDraft } from '../../transactions/domain/form';
 import { buildReceiptDraft } from '../domain/draft';
-import type { ReceiptDraft } from '../domain/draft';
+import { receiptToFormDraft } from '../domain/to-form';
 
 export type ScanInput = {
-  file: File;
+  /** Las fotos en orden, de arriba hacia abajo del ticket. */
+  files: File[];
   apiKey: string;
   model: string;
-  expenseCategories: Category[];
+  accounts: Account[];
+  categories: Category[];
 };
 
 export const scanReceipt = (
-  { file, apiKey, model, expenseCategories }: ScanInput,
-): RTE.ReaderTaskEither<Deps, HiloError, ReceiptDraft> =>
+  { files, apiKey, model, accounts, categories }: ScanInput,
+): RTE.ReaderTaskEither<Deps, HiloError, TransactionFormDraft> =>
   pipe(
     RTE.ask<Deps>(),
     RTE.chainTaskEitherK((deps) =>
       TE.tryCatch(
         async () => {
-          const image = await deps.receiptGateway.prepare(file);
-          const scan = await deps.receiptGateway.scan({ apiKey, model, image, expenseCategories });
-          return buildReceiptDraft(scan, {
+          const expenseCategories = categories.filter(c => c.type === 'expense');
+          // En orden y una por una: en un teléfono, decodificar varias fotos de
+          // 12 MP a la vez en `<canvas>` es lo que se queda sin memoria.
+          const images = [];
+          for (const file of files) images.push(await deps.receiptGateway.prepare(file));
+          const scan = await deps.receiptGateway.scan({ apiKey, model, images, expenseCategories });
+          const draft = buildReceiptDraft(scan, {
             expenseCategories,
             newId: deps.idGenerator,
             // `isoFromEpoch` y no `toISOString`: la fecha del ticket es la
             // local del usuario, como en todo el resto de la app.
             today: isoFromEpoch(deps.clock()),
           });
+          return receiptToFormDraft(draft, { accounts, categories, newId: deps.idGenerator });
         },
         // El status no lo sabe este nivel: lo que importa es el texto, que ya
         // viene redactado para el usuario. Cero es "no fue un código HTTP".

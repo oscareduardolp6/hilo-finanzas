@@ -13,11 +13,9 @@ import type { Deps } from '../../../app/dependencies';
 import type { HiloError } from '../../../shared/domain/errors';
 import type { OcrSettings } from '../../../shared/domain/types';
 
-/** `'  sk-…  '` → `'sk-…'`. Lo que se guarda es lo que se manda a la API. */
-export const cleanOcrSettings = (input: Partial<OcrSettings>): OcrSettings => ({
-  apiKey: (input.apiKey || '').trim(),
-  model: (input.model || '').trim(),
-});
+/* La limpieza (quitar espacios e invisibles de la key) es de `shared/domain/`:
+   también la usa "Probar clave", que es de `receipt-ocr`. */
+export { cleanOcrSettings } from '../../../shared/domain/ocr-settings';
 
 export const saveOcrSettings = (
   settings: OcrSettings,

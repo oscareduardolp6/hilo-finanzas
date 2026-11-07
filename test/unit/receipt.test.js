@@ -107,7 +107,7 @@ describe('scanReceipt', () => {
   const args = {
     apiKey: 'sk-test',
     model: 'claude-haiku-4-5',
-    image: { media_type: 'image/jpeg', data: 'QkFTRTY0' },
+    images: [{ media_type: 'image/jpeg', data: 'QkFTRTY0' }],
     expenseCategories,
   };
 
@@ -137,24 +137,43 @@ describe('scanReceipt', () => {
     await expect(scanReceipt(args)).rejects.toThrow('No hay conexión para leer el ticket.');
   });
 
-  it('respuesta OK sin bloque tool_use -> error de interpretación', async () => {
+  it('respuesta OK sin JSON interpretable -> error de interpretación', async () => {
     mockFetch(async () => ({ ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'nada' }] }) }));
     await expect(scanReceipt(args)).rejects.toThrow(/No se pudo interpretar el ticket/i);
   });
 
-  it('respuesta OK con tool_use -> devuelve block.input; el request fuerza la tool y manda la imagen', async () => {
+  it('respuesta OK -> devuelve el JSON del bloque de texto; el request pide salida estructurada y manda la imagen', async () => {
     let sentBody;
     mockFetch(async (url, init) => {
       sentBody = JSON.parse(init.body);
       return {
         ok: true, status: 200,
-        json: async () => ({ content: [{ type: 'tool_use', name: 'emit_receipt', input: { store: 'HEB', lineItems: [], discounts: [], ticketTotal: 0 } }] }),
+        json: async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ store: 'HEB', lineItems: [], discounts: [], ticketTotal: 0 }) }] }),
       };
     });
     const out = await scanReceipt(args);
     expect(out).toMatchObject({ store: 'HEB' });
-    expect(sentBody.tool_choice).toMatchObject({ type: 'tool', name: 'emit_receipt' });
+    expect(sentBody.output_config.format).toMatchObject({ type: 'json_schema' });
+    expect(sentBody.tool_choice).toBeUndefined();
     const imgBlock = sentBody.messages[0].content.find(c => c.type === 'image');
     expect(imgBlock.source.data).toBe('QkFTRTY0');
+  });
+
+  it('varias fotos: cada una va etiquetada, en orden, y el prompt explica el traslape', async () => {
+    let sentBody;
+    mockFetch(async (url, init) => {
+      sentBody = JSON.parse(init.body);
+      return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: '{"store":"HEB","lineItems":[],"discounts":[],"ticketTotal":0}' }] }) };
+    });
+    await scanReceipt({ ...args, images: [{ media_type: 'image/jpeg', data: 'UNO=' }, { media_type: 'image/jpeg', data: 'RE9T' }] });
+    const content = sentBody.messages[0].content;
+    expect(content.map(c => c.type === 'image' ? c.source.data : c.text).slice(0, 4))
+      .toEqual(['Foto 1 de 2:', 'UNO=', 'Foto 2 de 2:', 'RE9T']);
+    expect(content.at(-1).text).toMatch(/se enciman/);
+  });
+
+  it('respuesta cortada por max_tokens -> pide menos fotos', async () => {
+    mockFetch(async () => ({ ok: true, status: 200, json: async () => ({ stop_reason: 'max_tokens', content: [{ type: 'text', text: '{"store":' }] }) }));
+    await expect(scanReceipt(args)).rejects.toThrow(/demasiado largo/i);
   });
 });

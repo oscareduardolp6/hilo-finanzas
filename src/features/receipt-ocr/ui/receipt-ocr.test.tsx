@@ -5,11 +5,12 @@
    pedía parchear `fetch` global y el modal seguía necesitando un canvas que
    jsdom no tiene. */
 
-import { describe, it, expect } from 'vitest';
+import { afterAll, beforeAll, describe, it, expect } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import type { Account, Category } from '../../../shared/domain/types';
 import { inMemoryOcrSettingsRepository } from '../../../shared/infrastructure/in-memory';
 import { renderFeature } from '../../../test/render-feature';
+import { MAX_RECEIPT_PHOTOS } from '../domain/config';
 import type { ReceiptScan } from '../domain/draft';
 import { fakeReceiptGateway, fakeReceiptLog } from '../infrastructure/in-memory';
 import { ReceiptScanContainer } from './containers/ReceiptScanContainer';
@@ -23,9 +24,20 @@ const ticket: ReceiptScan = {
   store: 'Soriana',
   date: '2026-09-01',
   ticketTotal: 40,
-  lineItems: [{ description: 'Leche', listPrice: 45.5, quantity: 2, categoryId: 'comida' }],
+  lineItems: [{ description: 'Leche', listPrice: 45.5, quantity: 2, unitPrice: 22.75, categoryId: 'comida' }],
   discounts: [{ label: 'Ahorro total', amount: 5.5 }],
 };
+
+// jsdom no trae `URL.createObjectURL`, y las miniaturas lo usan.
+const original = { create: URL.createObjectURL, revoke: URL.revokeObjectURL };
+beforeAll(() => {
+  URL.createObjectURL = () => 'blob:fake';
+  URL.revokeObjectURL = () => {};
+});
+afterAll(() => {
+  URL.createObjectURL = original.create;
+  URL.revokeObjectURL = original.revoke;
+});
 
 async function abrirEscaneo(
   { scan = ticket as ReceiptScan | Error, apiKey = 'sk-test' } = {},
@@ -43,82 +55,97 @@ async function abrirEscaneo(
   return { ...rendered, log };
 }
 
-const subirFoto = async (user: Awaited<ReturnType<typeof abrirEscaneo>>['user']) => {
-  const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-  await user.upload(input, new File(['foto'], 'ticket.jpg', { type: 'image/jpeg' }));
-};
+type User = Awaited<ReturnType<typeof abrirEscaneo>>['user'];
+const foto = (name: string) => new File(['foto'], name, { type: 'image/jpeg' });
+
+const tomarFoto = (user: User, name = 'ticket.jpg') =>
+  user.upload(screen.getByTestId('receipt-camera') as HTMLInputElement, foto(name));
+const elegirDeGaleria = (user: User, ...names: string[]) =>
+  user.upload(screen.getByTestId('receipt-gallery') as HTMLInputElement, names.map(foto));
 
 describe('capturar', () => {
   it('sin API key solo ofrece ir a Ajustes', async () => {
     const { user, store } = await abrirEscaneo({ apiKey: '' });
 
-    expect(screen.queryByText('Seleccionar o tomar foto')).not.toBeInTheDocument();
+    expect(screen.queryByText('Tomar foto')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Ir a Ajustes' }));
 
     expect(store.getState().settingsOpen).toBe(true);
     expect(store.getState().receiptModalOpen).toBe(false);
   });
 
-  it('un fallo de la API se queda en un mensaje, y se puede reintentar', async () => {
-    const { user, store } = await abrirEscaneo({ scan: new Error('La clave de API no es válida.') });
+  it('la cámara y la galería son dos entradas: solo la cámara fuerza `capture`', async () => {
+    await abrirEscaneo();
 
-    await subirFoto(user);
-
-    expect(await screen.findByText('La clave de API no es válida.')).toBeInTheDocument();
-    // Sigue en la pantalla de captura: el input está ahí para volver a intentar.
-    expect(screen.getByText('Seleccionar o tomar foto')).toBeInTheDocument();
-    expect(store.getState().transactions).toEqual([]);
+    expect(screen.getByTestId('receipt-camera')).toHaveAttribute('capture', 'environment');
+    expect(screen.getByTestId('receipt-gallery')).not.toHaveAttribute('capture');
+    expect(screen.getByTestId('receipt-gallery')).toHaveAttribute('multiple');
   });
-});
 
-describe('revisar y agregar', () => {
-  it('el ticket leído llega a la hoja con sus renglones y su descuento', async () => {
+  it('las fotos se acumulan en orden, se pueden quitar, y van todas en un solo escaneo', async () => {
     const { user, log } = await abrirEscaneo();
 
-    await subirFoto(user);
+    await tomarFoto(user, 'arriba.jpg');
+    await elegirDeGaleria(user, 'medio.jpg', 'abajo.jpg', 'sobra.jpg');
+    expect(screen.getAllByRole('img')).toHaveLength(4);
 
-    expect(await screen.findByDisplayValue('Soriana')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Leche')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Ahorro total')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Quitar foto 4' }));
+    await user.click(screen.getByRole('button', { name: 'Leer ticket (3 fotos)' }));
+
+    await waitFor(() => expect(log.scanned).toHaveLength(1));
+    expect(log.prepared).toEqual(['arriba.jpg', 'medio.jpg', 'abajo.jpg']);
+    expect(log.scanned[0]!.images.map(i => atob(i.data))).toEqual(['arriba.jpg', 'medio.jpg', 'abajo.jpg']);
     // Al modelo solo se le mandan las categorías de GASTO.
     expect(log.scanned[0]!.expenseCategories).toEqual([comida]);
   });
 
-  it('las sumas se enseñan hechas y el neto cuadra con el total del ticket', async () => {
+  it(`no pasa de ${MAX_RECEIPT_PHOTOS} fotos`, async () => {
     const { user } = await abrirEscaneo();
-    await subirFoto(user);
 
-    await screen.findByText('= Neto');
-    // 45.50 de artículos − 5.50 de descuento = 40, el total impreso.
-    expect(screen.getAllByText('$40.00').length).toBeGreaterThan(0);
-    expect(screen.queryByText(/no cuadra con el total/)).not.toBeInTheDocument();
+    await elegirDeGaleria(user, ...Array.from({ length: MAX_RECEIPT_PHOTOS + 2 }, (_, i) => `f${i}.jpg`));
+
+    expect(screen.getAllByRole('img')).toHaveLength(MAX_RECEIPT_PHOTOS);
+    expect(screen.getByText(`Máximo ${MAX_RECEIPT_PHOTOS} fotos por ticket.`)).toBeInTheDocument();
   });
 
-  it('confirmar agrega el gasto y el descuento como ingreso', async () => {
-    const { user, store } = await abrirEscaneo();
-    await subirFoto(user);
-    await screen.findByDisplayValue('Leche');
+  it('un fallo de la API se queda en un mensaje, con las fotos, y ofrece ir a Ajustes', async () => {
+    const { user, store } = await abrirEscaneo({ scan: new Error('La clave de API no es válida.') });
 
-    await user.click(screen.getByRole('button', { name: /Agregar 2 movimientos/ }));
+    await tomarFoto(user);
+    await user.click(screen.getByRole('button', { name: 'Leer ticket' }));
 
-    await waitFor(() => expect(store.getState().transactions).toHaveLength(2));
-    const [gasto, ingreso] = store.getState().transactions;
-    expect(gasto).toMatchObject({ type: 'expense', amount: 45.5, store: 'Soriana', accountId: 'a1' });
-    expect(ingreso).toMatchObject({ type: 'income', amount: 5.5 });
-    expect(store.getState().receiptModalOpen).toBe(false);
+    expect(await screen.findByText('La clave de API no es válida.')).toBeInTheDocument();
+    // Sigue en la captura con la foto: se reintenta sin volver a tomarla.
+    expect(screen.getAllByRole('img')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Leer ticket' })).toBeEnabled();
+    expect(store.getState().sheetOpen).toBe(false);
+
+    await user.click(screen.getByRole('button', { name: 'Ir a Ajustes' }));
+    expect(store.getState().settingsOpen).toBe(true);
   });
+});
 
-  it('descartar un renglón lo deja fuera y baja el conteo del botón', async () => {
+describe('del ticket al formulario', () => {
+  it('leer el ticket cierra la hoja y abre el formulario de movimiento con el desglose', async () => {
     const { user, store } = await abrirEscaneo();
-    await subirFoto(user);
-    await screen.findByDisplayValue('Leche');
 
-    const casillas = screen.getAllByRole('button').filter(b => b.className.includes('w-5 h-5 rounded-md'));
-    await user.click(casillas[0]!);
+    await tomarFoto(user);
+    await user.click(screen.getByRole('button', { name: 'Leer ticket' }));
 
-    await user.click(await screen.findByRole('button', { name: /Agregar 1 movimiento$/ }));
-
-    await waitFor(() => expect(store.getState().transactions).toHaveLength(1));
-    expect(store.getState().transactions[0]).toMatchObject({ type: 'income', amount: 5.5 });
+    await waitFor(() => expect(store.getState().sheetOpen).toBe(true));
+    const s = store.getState();
+    expect(s.receiptModalOpen).toBe(false);
+    expect(s.formType).toBe('expense');
+    expect(s.editingId).toBeNull();
+    expect(s.form).toMatchObject({
+      // Lo pagado es el total impreso; el descuento no es un ingreso aparte.
+      amount: '40', store: 'Soriana', date: '2026-09-01', categoryId: 'comida', accountId: 'a1',
+      breakdown: {
+        items: [{ description: 'Leche', amount: '45.5', quantity: '2', unitPrice: '22.75', categoryId: null }],
+        discounts: [{ label: 'Ahorro total', amount: '5.5', categoryId: null, benefitProgramId: null }],
+      },
+    });
+    // Escanear no guarda nada: eso es del formulario.
+    expect(s.transactions).toEqual([]);
   });
 });

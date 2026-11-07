@@ -15,6 +15,8 @@ export type ScanLineItem = {
   description?: string;
   listPrice?: number;
   quantity?: number | null;
+  /** Precio por unidad si el ticket lo imprime. */
+  unitPrice?: number | null;
   categoryId?: string | null;
 };
 
@@ -38,8 +40,12 @@ export type ReceiptRow = {
   description: string;
   amount: string | number;
   quantity: string;
+  /** Vacío si el ticket no lo trae. */
+  unitPrice: string;
   categoryId: string;
-  /** `null` = va a la cuenta principal del ticket. */
+  /* `accountId`/`included` son de la hoja de revisión que tenía el escaneo
+     antes de generar un movimiento desglosado; se conservan porque son parte
+     de la forma que fija `test/unit/receipt.test.js`, pero ya nadie los lee. */
   accountId: string | null;
   included: boolean;
 };
@@ -84,6 +90,7 @@ export function buildReceiptDraft(
     description: (it.description || '').trim(),
     amount: Math.abs(Number(it.listPrice) || 0),
     quantity: it.quantity != null && Number(it.quantity) ? String(Number(it.quantity)) : '',
+    unitPrice: it.unitPrice != null && Number(it.unitPrice) ? String(Math.abs(Number(it.unitPrice))) : '',
     categoryId: catIds.has(it.categoryId as string) ? (it.categoryId as string) : fallbackCat,
     accountId: null,
     included: true,

@@ -22,7 +22,7 @@ const SCAN = {
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async () => ({
     ok: true, status: 200,
-    json: async () => ({ content: [{ type: 'tool_use', name: 'emit_receipt', input: SCAN }] }),
+    json: async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(SCAN) }] }),
   })));
   class FakeImage {
     set src(v) { this._src = v; setTimeout(() => this.onerror && this.onerror(new Event('error')), 0); }
@@ -36,7 +36,7 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('Escanear ticket (end-to-end por la UI)', () => {
-  it('foto -> revisión -> confirmar agrega los renglones y el descuento como ingreso', async () => {
+  it('foto -> formulario lleno con el desglose -> agregar guarda UN movimiento por lo pagado', async () => {
     await seedState({
       accounts: [{ id: 'acc1', name: 'Efectivo', type: 'efectivo', color: '#C9A24B', initialBalance: 1000 }],
       categories: [{ id: 'comida', name: 'Comida', icon: 'UtensilsCrossed', color: '#E0793F', type: 'expense' }],
@@ -47,21 +47,23 @@ describe('Escanear ticket (end-to-end por la UI)', () => {
     await user.click(screen.getByRole('button', { name: 'Escanear ticket' }));
     await screen.findByText('Escanear ticket'); // título del modal
 
-    const input = document.querySelector('input[type="file"]');
+    const input = document.querySelector('input[type="file"][multiple]');
     fireEvent.change(input, { target: { files: [new File(['\xFF\xD8\xFF'], 'ticket.jpg', { type: 'image/jpeg' })] } });
+    await user.click(await screen.findByRole('button', { name: /Leer ticket/ }));
 
-    // Revisión: aparecen los renglones detectados
-    expect(await screen.findByDisplayValue('Leche entera')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Pan de caja')).toBeInTheDocument();
+    // El formulario de movimiento, ya lleno: lo pagado, la tienda y el desglose.
+    expect(await screen.findByText('Desglosar ticket')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('0.00')).toHaveValue(70);
+    expect(screen.getAllByText('Leche entera').length).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: /Agregar 3 movimientos/ }));
-
-    expect(await screen.findByText(/3 movimientos agregados desde el ticket/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Agregar' }));
 
     await gotoTab(user, 'Historial');
     await user.click(screen.getByRole('button', { name: 'Ver todo el tiempo' }));
-    expect(await screen.findByText('Leche entera')).toBeInTheDocument();
-    // el descuento entra como ingreso en la categoría "Descuentos" (creada al vuelo)
-    expect(await screen.findByText('Ahorro total')).toBeInTheDocument();
+    // Una sola fila, con sus dos conceptos y el descuento como ahorro (no
+    // como ingreso aparte).
+    expect(await screen.findByText(/Desglose · 2 conceptos/)).toBeInTheDocument();
+    expect(screen.getByText(/Ahorro \$5\.00/)).toBeInTheDocument();
+    expect(screen.queryByText('Ahorro total')).not.toBeInTheDocument();
   });
 });

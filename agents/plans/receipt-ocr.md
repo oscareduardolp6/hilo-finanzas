@@ -2,6 +2,8 @@
 
 > Implementa [tasks/receipt-ocr.md](../../tasks/receipt-ocr.md). Ver la nota de sincronización en [CLAUDE.md](../../CLAUDE.md) — si el código diverge de lo aquí descrito, actualiza este documento en el mismo cambio.
 
+> **Reemplazado en parte por [ocr-ticket-desglosado.md](ocr-ticket-desglosado.md).** Lo de abajo sobre la **salida** del escaneo ya no aplica: no hay hoja de revisión propia, ni un movimiento por renglón, ni `income` en "Descuentos", ni toggle de transferencia por cuenta, ni *forced tool use*, ni `addReceiptTransactions`. Hoy un ticket (de una o varias fotos) abre el formulario de "Nuevo movimiento" lleno con un gasto desglosado. Sigue vigente: la llamada directa a Anthropic con la key del usuario, la key fuera de Firestore/respaldos, y los puntos de entrada (botón en móvil y en la barra de escritorio). Se deja el resto como historia.
+
 ## Context
 
 Capturar a mano un gasto de súper con muchos artículos vía `AddTransactionSheet` es tedioso. La idea: tomarle foto al ticket y que la app extraiga los renglones para pre-llenar movimientos, dejando siempre que el usuario revise y edite antes de guardar.

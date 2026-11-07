@@ -98,6 +98,31 @@ describe('cambiar de tipo', () => {
     expect(store.getState().formType).toBe('income');
     expect(store.getState().form).toMatchObject({ amount: '480' });
   });
+
+  it('de gasto a transferencia conserva el ticket y lo deja marcado como gasto', async () => {
+    // Un ticket escaneado llega como gasto; si se pagó con tarjeta, se cambia
+    // de pestaña y el desglose no se pierde.
+    const { user, store } = await renderFeature(<AddTransactionContainer />, { state });
+    store.getState().openPrefilledSheet('expense', {
+      ...store.getState().form,
+      date: '2026-09-01', description: 'Soriana', store: 'Soriana', amount: '40',
+      accountId: 'acc_1', categoryId: 'comida', installmentPlanId: null,
+      breakdown: { items: [{ id: 'bi', description: 'Leche', quantity: '', unitPrice: '', amount: '45.5', categoryId: null, size: '', brand: '' }], discounts: [] },
+    });
+    await screen.findByText('Nuevo movimiento');
+
+    await user.click(screen.getByRole('button', { name: 'Transferencia' }));
+
+    expect(store.getState().form).toMatchObject({
+      amount: '40', date: '2026-09-01', store: 'Soriana', description: 'Soriana', categoryId: 'comida',
+      taggedAsExpense: true, breakdown: { items: [{ description: 'Leche' }] },
+    });
+
+    // A ingreso solo viaja el importe, como siempre.
+    await user.click(screen.getByRole('button', { name: 'Ingreso' }));
+    expect(store.getState().form).toMatchObject({ amount: '40', description: '' });
+    expect(store.getState().form).not.toHaveProperty('breakdown');
+  });
 });
 
 describe('alta inline de categoría', () => {

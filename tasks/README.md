@@ -7,7 +7,7 @@ Ideas y funcionalidades que queremos agregar a Hilo, una por archivo. No es un b
 | Task | Prioridad | Status |
 | --- | --- | --- |
 | [Cuentas completas: agrupar los renglones de un ticket](cuentas-completas-tickets.md) | 1 | Implementada |
-| [Escaneo de tickets que genera un movimiento desglosado (y tickets de varias fotos)](ocr-ticket-desglosado.md) | 2 | Pendiente |
+| [Escaneo de tickets que genera un movimiento desglosado (y tickets de varias fotos)](ocr-ticket-desglosado.md) | 2 | Implementada |
 | [Límite al autocomplete del buscador de historial](limite-autocomplete-busqueda-historial.md) | 1 | Implementada |
 | [Visualización de escritorio](desktop-view.md) | 1 | Implementada |
 | [Migrar a IndexedDB (o similar) para guardado local](local-storage-migration.md) | 2 | Implementada |

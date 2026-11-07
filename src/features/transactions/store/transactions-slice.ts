@@ -23,8 +23,12 @@ export type TransactionsSlice = {
   openAddSheet: (type: TransactionType) => void;
   /** Abre la hoja sembrada con un movimiento existente. */
   openEditSheet: (txn: Transaction) => void;
+  /** Abre la hoja de alta con un borrador ya lleno (p. ej. el de un ticket
+   *  escaneado). No sabe de dónde viene: solo que aún no es un movimiento. */
+  openPrefilledSheet: (type: TransactionType, form: TransactionFormDraft) => void;
   closeSheet: () => void;
-  /** Cambia de pestaña conservando el importe ya tecleado. */
+  /** Cambia de pestaña conservando el importe ya tecleado (y, entre gasto y
+   *  transferencia, el ticket: desglose, tienda, fecha, concepto, categoría). */
   switchFormType: (type: TransactionType) => void;
   /** Agrega un renglón o un descuento vacío al desglose del borrador (lo abre
    *  si no había). El id lo pone el caso de uso. */
@@ -70,14 +74,36 @@ export const createTransactionsSlice =
       });
     },
 
+    openPrefilledSheet: (type, form) => {
+      set({ editingId: null, formType: type, form, sheetOpen: true });
+    },
+
     closeSheet: () => set({ ...sheetClosed }),
 
     switchFormType: (type) => {
-      const { accounts, categories, form } = get();
+      const { accounts, categories, form, formType } = get();
       const fresh = initialFormState(type, accounts, categories);
+      if (!form) { set({ formType: type, form: fresh }); return; }
       // Conservar el importe es deliberado: teclearlo y luego caer en cuenta de
       // que era un ingreso y no un gasto es el caso común.
-      set({ formType: type, form: form ? { ...fresh, amount: form.amount } : fresh });
+      const next = { ...fresh, amount: form.amount };
+      /* Gasto y transferencia marcada como gasto son el mismo ticket pagado de
+         dos formas (con la cuenta, o con una tarjeta que en Hilo es otra
+         cuenta): cambiar entre ellos no debe tirar lo ya capturado — y un
+         ticket escaneado llega como gasto. Con desglose, la transferencia
+         queda marcada como gasto, que es el único modo que lo admite. */
+      const ticketType = (t: TransactionType) => t === 'expense' || t === 'transfer';
+      if (ticketType(formType) && ticketType(type) && formType !== type) {
+        Object.assign(next, {
+          date: form.date,
+          description: form.description,
+          store: form.store,
+          categoryId: form.categoryId || fresh.categoryId,
+          breakdown: form.breakdown ?? null,
+          ...(type === 'transfer' && form.breakdown ? { taggedAsExpense: true } : {}),
+        });
+      }
+      set({ formType: type, form: next });
     },
 
     addBreakdownLine: (kind) => {

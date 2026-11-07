@@ -1,9 +1,22 @@
 ---
-status: pendiente
+status: implementada
 priority: 2
 ---
 
 # Escaneo de tickets que genera un movimiento desglosado (y tickets de varias fotos)
+
+## Estado
+
+Implementado (ver [agents/plans/ocr-ticket-desglosado.md](../agents/plans/ocr-ticket-desglosado.md)). Decisiones tomadas con el usuario:
+
+- **La revisión es el formulario normal de "Nuevo movimiento"**, abierto ya lleno: total pagado, tienda, fecha, categoría dominante y el desglose activado con un renglón por artículo y los descuentos como ahorro. Una sola cuenta por ticket; si se pagó con tarjeta, se cambia a Transferencia y el desglose se conserva (queda marcada como gasto).
+- **Se reemplazó el modo viejo** (N movimientos + `income` en "Descuentos"). Lo ya guardado con él no se toca.
+- **Varias fotos por ticket** (hasta 8), con "Tomar foto" y "Elegir de la galería" por separado; van en un solo request, etiquetadas en orden, y el prompt le explica al modelo cómo alinear el traslape entre fotos para no repetir renglones. Si aun así se le escapa uno, el desglose no cuadra y el formulario no deja guardar hasta quitarlo.
+- **Un solo total para todo el ticket** (no uno por foto).
+- **Modelo por defecto `claude-haiku-5-5`** (lee las fotos a mayor resolución y cuesta menos); salida estructurada en vez de herramienta forzada.
+- **El error "La clave de API no es válida" en el teléfono**: el campo de la key deja de ser de contraseña (el gestor del navegador podía pisarla), se puede mostrar, se limpian espacios e invisibles colados al pegar, y hay un botón "Probar clave" en Ajustes. Cada dispositivo guarda su propia key.
+
+Las dudas de abajo quedaron resueltas así; se dejan como contexto.
 
 Sigue a [cuentas-completas-tickets.md](cuentas-completas-tickets.md), que agregó el **desglose de un movimiento** (`breakdown` en un gasto o en una transferencia marcada como gasto: renglones con su propia categoría, y descuentos como ahorro ligable a un programa de beneficios). Esa iteración solo cubrió la captura manual; el escaneo de tickets ([receipt-ocr.md](receipt-ocr.md)) sigue funcionando como antes.
 
