@@ -1,5 +1,5 @@
 ---
-status: en-progreso
+status: implementada
 priority: 1
 ---
 
