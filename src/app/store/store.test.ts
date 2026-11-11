@@ -4,6 +4,7 @@
    moverlo a una suscripción, y que la suite de integración solo comprueba de
    forma indirecta a través del DOM. */
 
+import * as TE from 'fp-ts/TaskEither';
 import { describe, it, expect } from 'vitest';
 import { createDeps } from '../dependencies';
 import { subscribePersistence } from '../persistence';
@@ -14,6 +15,7 @@ import {
   inMemoryStateRepository,
 } from '../../shared/infrastructure/in-memory';
 import type { DataState } from '../../shared/domain/types';
+import { LOAD_FAILED_MESSAGE } from '../../shared/domain/errors';
 import { createHiloStore } from './index';
 
 const stateWith = (overrides: Partial<DataState> = {}): DataState => ({
@@ -31,10 +33,17 @@ const cuenta = { id: 'acc_1', name: 'NU', type: 'debito' as const, color: '#000'
 /** Deja correr las promesas pendientes de la suscripción. */
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-function setup(options: { stored?: DataState | null; failSave?: boolean; storedHideBalances?: boolean } = {}) {
-  const stateRepository = inMemoryStateRepository(
-    options.failSave ? { failWith: brokenPersistence() } : { initial: options.stored ?? null },
-  );
+function setup(
+  options: { stored?: DataState | null; failSave?: boolean; failLoad?: boolean; storedHideBalances?: boolean } = {},
+) {
+  const repo = inMemoryStateRepository({ initial: options.stored ?? null });
+  // Cada uno rompe solo su mitad: `failSave` la red que se cae a media sesión,
+  // `failLoad` el arranque sin señal (el guardado sí funcionaría).
+  const stateRepository = options.failSave
+    ? { ...repo, save: () => TE.left(brokenPersistence()) }
+    : options.failLoad
+      ? { ...repo, load: TE.left(brokenPersistence()) }
+      : repo;
   const hideBalancesRepository = inMemoryHideBalancesRepository({ initial: options.storedHideBalances ?? null });
   const deps = createDeps({
     stateRepository,
@@ -152,14 +161,32 @@ describe('guardado automático', () => {
 
     await store.getState().hydrateFromRepositories();
     await flush();
-    // La carga también falla con `failSave`, pero eso se traga en silencio
-    // (ver hydrate.ts) y sin un cambio real ya no hay autoguardado al
-    // hidratar — hace falta un cambio de verdad para que el guardado (y su
-    // fallo) se dispare.
+    // Sin un cambio real no hay autoguardado al hidratar — hace falta un
+    // cambio de verdad para que el guardado (y su fallo) se dispare.
     store.getState().setAccounts([cuenta]);
     await flush();
 
     expect(store.getState().toast).toBe('No se pudo guardar el cambio localmente');
+  });
+
+  it('si la carga falla, avisa y NO guarda la demo encima aunque el usuario haga cambios', async () => {
+    // Es lo que borró datos reales: arrancar sin señal, ver la demo, registrar
+    // algo y que ese guardado subiera la demo encima de los datos del usuario.
+    const { store, stateRepository } = setup({ failLoad: true });
+
+    await store.getState().hydrateFromRepositories();
+    await flush();
+    expect(store.getState().loaded).toBe(true);
+    expect(store.getState().loadFailed).toBe(true);
+    expect(store.getState().toast).toBe(LOAD_FAILED_MESSAGE);
+
+    store.getState().setToast(null);
+    store.getState().setAccounts([cuenta]);
+    await flush();
+
+    expect(stateRepository.peek()).toBeNull();
+    // El aviso vuelve con cada cambio, para que no se crea que se guardó.
+    expect(store.getState().toast).toBe(LOAD_FAILED_MESSAGE);
   });
 
   it('el blob guardado trae exactamente las 6 colecciones, nada de estado local', async () => {

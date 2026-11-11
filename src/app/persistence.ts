@@ -18,10 +18,15 @@
       Firestore hasta el primer cambio real del usuario (o hasta que
       `migrateToFirestore` suba algo, que se guarda aparte, sin pasar por esta
       suscripción).
-   3. **Un fallo se convierte en toast**, no en excepción silenciosa. */
+   3. **Un fallo se convierte en toast**, no en excepción silenciosa.
+   4. **No guarda NADA si la hidratación no pudo leer el estado** (`loadFailed`).
+      En ese caso lo que hay en pantalla es la demo, no los datos del usuario;
+      guardar el primer cambio subiría la demo encima de sus datos reales en
+      Firestore. Cada cambio vuelve a mostrar el aviso, para que no se crea
+      que algo se guardó. */
 
 import * as E from 'fp-ts/Either';
-import { messageFor } from '../shared/domain/errors';
+import { LOAD_FAILED_MESSAGE, messageFor } from '../shared/domain/errors';
 import { persist, persistHideBalances } from './application/persist';
 import type { Deps } from './dependencies';
 import { runRTE } from './run';
@@ -43,6 +48,10 @@ export function subscribePersistence(store: HiloStoreApi, deps: Deps): () => voi
       ] as const,
     async () => {
       if (!store.getState().loaded) return;
+      if (store.getState().loadFailed) {
+        store.getState().setToast(LOAD_FAILED_MESSAGE);
+        return;
+      }
       const result = await runRTE(persist(selectDataState(store.getState())), deps);
       if (E.isLeft(result)) {
         // El toast es un texto fijo (contrato de test, ver errors.ts); la causa

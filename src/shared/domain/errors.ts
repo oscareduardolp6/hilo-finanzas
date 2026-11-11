@@ -31,11 +31,17 @@ export const cameraUnavailable = (message: string, cause: unknown): HiloError =>
   cause,
 });
 
+/** Toast cuando NO se pudo leer el estado guardado al arrancar (p. ej. sin
+ *  señal). La app muestra la demo pero bloquea todo guardado hasta recargar:
+ *  guardar ahí pisaría los datos reales del usuario con la demo. Contrato de
+ *  test, como los de `messageFor`. */
+export const LOAD_FAILED_MESSAGE = 'No se pudieron cargar tus datos. Recarga la app: lo que cambies ahora no se guardará';
+
 /** Texto que ve el usuario en el toast. */
 export const messageFor = (error: HiloError): string => {
   switch (error._tag) {
-    // El único fallo de persistencia que hoy llega a la UI es el de guardado; la
-    // hidratación fallida se traga a propósito y deja los datos de ejemplo.
+    // El fallo de guardado. La hidratación fallida no pasa por aquí: deja los
+    // datos de ejemplo y su propio toast, `LOAD_FAILED_MESSAGE`.
     case 'PersistenceError':
       return 'No se pudo guardar el cambio localmente';
     // Los demás ya traen su mensaje en español desde donde se construyeron:

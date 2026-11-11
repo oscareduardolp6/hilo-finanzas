@@ -19,6 +19,7 @@ import type {
   Tombstone,
   Transaction,
 } from '../../shared/domain/types';
+import { LOAD_FAILED_MESSAGE } from '../../shared/domain/errors';
 import { hydrate } from '../application/hydrate';
 import { migrateToFirestore } from '../application/migrate-to-firestore';
 import type { Deps } from '../dependencies';
@@ -30,6 +31,11 @@ import type { HiloStore } from './index';
 export type DataSlice = {
   /** Hasta que no sea `true`, `App` pinta "Cargando…" y no se persiste nada. */
   loaded: boolean;
+  /** `true` si al hidratar NO se pudo leer el estado guardado. Mientras esté
+   *  así no se guarda nada (`persistence.ts`): lo que hay en pantalla es la
+   *  demo, no los datos del usuario, y guardarlo los pisaría. Se resuelve
+   *  recargando. */
+  loadFailed: boolean;
   accounts: Account[];
   categories: Category[];
   transactions: Transaction[];
@@ -62,6 +68,7 @@ export const createDataSlice =
   (deps: Deps): StateCreator<HiloStore, [], [], DataSlice> =>
   (set) => ({
     loaded: false,
+    loadFailed: false,
     accounts: DEFAULT_ACCOUNTS,
     categories: DEFAULT_CATEGORIES,
     transactions: buildDefaultTransactions(),
@@ -80,7 +87,7 @@ export const createDataSlice =
       // Siembra Firestore con el snapshot local si hace falta, ANTES de leer
       // — así `hydrate` ya ve el dato recién migrado en el primer arranque.
       await runRT(migrateToFirestore, deps);
-      const { data, ocrSettings, hideBalances } = await runRT(hydrate, deps);
+      const { data, dataLoadFailed, ocrSettings, hideBalances } = await runRT(hydrate, deps);
       // UN SOLO `set`, a propósito: el suscriptor de persistencia observa las 5
       // colecciones y `loaded` a la vez, así que esto dispara exactamente un
       // guardado — el mismo que hacía el `useEffect` original al pasar `loaded`
@@ -98,6 +105,8 @@ export const createDataSlice =
           ? { ocrSettings: { apiKey: ocrSettings.apiKey || '', model: ocrSettings.model || '' } }
           : {}),
         hideBalances,
+        loadFailed: dataLoadFailed,
+        ...(dataLoadFailed ? { toast: LOAD_FAILED_MESSAGE } : {}),
         loaded: true,
       });
     },
