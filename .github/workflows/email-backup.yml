@@ -1,5 +1,5 @@
-# Respaldo diario de Hilo por correo: lee tu documento de Firestore y te lo
-# manda como adjunto. Ver scripts/email-backup/ y tasks/respaldo-por-correo.md.
+# Respaldo de Hilo por correo cada 3 días: lee tu documento de Firestore y te
+# lo manda como adjunto. Ver scripts/email-backup/ y tasks/respaldo-por-correo.md.
 #
 # Sin llaves guardadas: GitHub se autentica en Google Cloud con Workload
 # Identity Federation (OIDC) y actúa como una cuenta de servicio que solo
@@ -10,8 +10,11 @@ name: Respaldo por correo
 
 on:
   schedule:
-    - cron: '0 9 * * *' # 03:00 en Ciudad de México
-  workflow_dispatch:
+    # Corre diario a las 03:00 de Ciudad de México, pero solo envía cada 3 días
+    # (ver el paso "¿Toca hoy?"). Un cron `*/3` en el día del mes daría saltos
+    # de 1 o 2 días al cambiar de mes.
+    - cron: '0 9 * * *'
+  workflow_dispatch: # a mano siempre envía
 
 permissions:
   contents: read
@@ -26,19 +29,34 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # Días desde 1970 módulo 3: el mismo resto cada 3 días exactos, sin
+      # importar el mes. Con resto 1 tocan el 13, 16, 19… de noviembre de 2026.
+      - name: ¿Toca hoy?
+        id: due
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ] || [ $(( $(date -u +%s) / 86400 % 3 )) -eq 1 ]; then
+            echo "send=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No toca hoy: el respaldo sale cada 3 días."
+          fi
+      - if: steps.due.outputs.send == 'true'
+        uses: actions/checkout@v4
+      - if: steps.due.outputs.send == 'true'
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: scripts/email-backup/package-lock.json
-      - run: npm ci
+      - if: steps.due.outputs.send == 'true'
+        run: npm ci
         working-directory: scripts/email-backup
-      - uses: google-github-actions/auth@v2
+      - if: steps.due.outputs.send == 'true'
+        uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_BACKUP_SERVICE_ACCOUNT }}
-      - run: node index.mjs
+      - if: steps.due.outputs.send == 'true'
+        run: node index.mjs
         working-directory: scripts/email-backup
         env:
           FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}

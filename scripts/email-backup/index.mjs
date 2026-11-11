@@ -1,4 +1,4 @@
-/* Respaldo diario por correo: lee el documento del usuario en Firestore y lo
+/* Respaldo por correo (cada 3 días, ver el workflow): lee el documento del usuario en Firestore y lo
    manda como adjunto a su Gmail. Lo corre `.github/workflows/email-backup.yml`.
 
    Variables de entorno:

@@ -1,4 +1,4 @@
-# Plan: respaldo diario por correo
+# Plan: respaldo por correo cada 3 días
 
 Implementa [tasks/respaldo-por-correo.md](../../tasks/respaldo-por-correo.md).
 
@@ -6,7 +6,7 @@ Implementa [tasks/respaldo-por-correo.md](../../tasks/respaldo-por-correo.md).
 
 Un workflow programado de GitHub Actions
 ([.github/workflows/email-backup.yml](../../.github/workflows/email-backup.yml)) corre
-cada día a las 09:00 UTC (03:00 en Ciudad de México) un script de Node
+cada día a las 09:00 UTC (03:00 en Ciudad de México), y cada 3 días un script de Node
 ([scripts/email-backup/](../../scripts/email-backup/)) que:
 
 1. Lee `users/{BACKUP_UID}` de Firestore con `firebase-admin`.
@@ -16,7 +16,7 @@ cada día a las 09:00 UTC (03:00 en Ciudad de México) un script de Node
    `device: github-actions`) y lo codifica como `hilo1:<base64 gzip>` — el texto
    comprimido que `parseExportText` ya sabe leer. Pesa ~10 veces menos que el JSON
    plano (506 KB contra 5.2 MB con el historial real de octubre de 2026), para no
-   llenar el correo con un adjunto diario.
+   llenar el correo.
 4. Lo manda por Gmail SMTP (`nodemailer`) como `hilo-respaldo-AAAA-MM-DD.json`. La
    extensión `.json` es para que el selector de archivos de `BackupModal`
    (`accept=".json,application/json"`) lo deje elegir; el contenido no es JSON plano
@@ -24,6 +24,10 @@ cada día a las 09:00 UTC (03:00 en Ciudad de México) un script de Node
 
 Por qué así y no otra cosa:
 
+- **Cada 3 días, no diario**, para no saturar el correo (pedido del usuario). El cron
+  corre diario y un primer paso decide si toca: días desde 1970 módulo 3 igual a 1
+  (13, 16, 19… de noviembre de 2026). Un cron `*/3` en el día del mes daría saltos de
+  1 o 2 días al cambiar de mes (31 → 1). `workflow_dispatch` siempre envía.
 - **No necesita el plan Blaze.** Leer un documento al día con `firebase-admin` cabe
   en la cuota gratis de Spark; no hay Cloud Function. Los respaldos programados
   nativos de Firestore y PITR sí requieren facturación (y el respaldo no te llega a

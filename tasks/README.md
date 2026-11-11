@@ -6,7 +6,7 @@ Ideas y funcionalidades que queremos agregar a Hilo, una por archivo. No es un b
 
 | Task | Prioridad | Status |
 | --- | --- | --- |
-| [Respaldo diario por correo](respaldo-por-correo.md) | 1 | Implementada |
+| [Respaldo por correo cada 3 días](respaldo-por-correo.md) | 1 | Implementada |
 | [Cuentas completas: agrupar los renglones de un ticket](cuentas-completas-tickets.md) | 1 | Implementada |
 | [Escaneo de tickets que genera un movimiento desglosado (y tickets de varias fotos)](ocr-ticket-desglosado.md) | 2 | Implementada |
 | [Límite al autocomplete del buscador de historial](limite-autocomplete-busqueda-historial.md) | 1 | Implementada |
