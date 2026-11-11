@@ -1,0 +1,16 @@
+{
+  "name": "hilo-email-backup",
+  "private": true,
+  "description": "Respaldo diario de Hilo por correo (GitHub Actions). Aparte del package.json de la app para no sumar firebase-admin a su build.",
+  "type": "module",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "firebase-admin": "14.5.0",
+    "nodemailer": "10.2.1"
+  }
+}

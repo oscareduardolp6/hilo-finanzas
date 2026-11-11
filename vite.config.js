@@ -21,8 +21,9 @@ export default defineConfig({
     // de 5s a veces no alcanza. 15s da margen sin esconder un bug real.
     testTimeout: 15000,
     // `test/` es la suite de regresión pre-refactor (no se toca); `src/` lleva
-    // los tests nuevos, colocados junto a la feature que prueban.
-    include: ['test/**/*.test.{js,jsx}', 'src/**/*.test.{js,jsx,ts,tsx}'],
+    // los tests nuevos, colocados junto a la feature que prueban; `scripts/`,
+    // los de los scripts de Node (el respaldo por correo).
+    include: ['test/**/*.test.{js,jsx}', 'src/**/*.test.{js,jsx,ts,tsx}', 'scripts/**/*.test.mjs'],
     coverage: {
       provider: 'v8',
       include: ['src/**/*.{js,jsx,ts,tsx}'],

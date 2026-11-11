@@ -1,0 +1,47 @@
+# Respaldo diario de Hilo por correo: lee tu documento de Firestore y te lo
+# manda como adjunto. Ver scripts/email-backup/ y tasks/respaldo-por-correo.md.
+#
+# Sin llaves guardadas: GitHub se autentica en Google Cloud con Workload
+# Identity Federation (OIDC) y actúa como una cuenta de servicio que solo
+# puede LEER Firestore. El repositorio es público, así que el respaldo nunca
+# se guarda como artefacto ni se imprime en el log: solo viaja por correo.
+
+name: Respaldo por correo
+
+on:
+  schedule:
+    - cron: '0 9 * * *' # 03:00 en Ciudad de México
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # el token OIDC que cambia GitHub por credenciales de Google
+
+concurrency:
+  group: email-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: scripts/email-backup/package-lock.json
+      - run: npm ci
+        working-directory: scripts/email-backup
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_BACKUP_SERVICE_ACCOUNT }}
+      - run: node index.mjs
+        working-directory: scripts/email-backup
+        env:
+          FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          BACKUP_UID: ${{ secrets.BACKUP_UID }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
