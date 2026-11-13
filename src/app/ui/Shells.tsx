@@ -17,6 +17,7 @@ import { AccountFormContainer } from '../../features/accounts/ui/containers/Acco
 import { BackupContainer } from '../../features/backup/ui/containers/BackupContainer';
 import { BenefitsContainer } from '../../features/benefits/ui/containers/BenefitsContainer';
 import { HomeContainer } from '../../features/dashboard/ui/containers/HomeContainer';
+import { EvolutionContainer } from '../../features/evolution/ui/containers/EvolutionContainer';
 import { HistoryContainer } from '../../features/history/ui/containers/HistoryContainer';
 import { MsiContainer } from '../../features/installments/ui/containers/MsiContainer';
 import { MsiPlanFormContainer } from '../../features/installments/ui/containers/MsiPlanFormContainer';
@@ -38,6 +39,7 @@ function ActiveTab({ desktop }: ShellProps) {
   const activeTab = useHiloStore((s) => s.activeTab);
   if (activeTab === 'home') return <HomeContainer desktop={desktop} />;
   if (activeTab === 'history') return <HistoryContainer desktop={desktop} />;
+  if (activeTab === 'evolution') return <EvolutionContainer desktop={desktop} />;
   if (activeTab === 'msi') return <MsiContainer desktop={desktop} />;
   if (activeTab === 'accounts') return <AccountsContainer desktop={desktop} />;
   return null;

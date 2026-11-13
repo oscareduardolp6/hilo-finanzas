@@ -1,8 +1,8 @@
-/* Las cuatro pestañas. Viven en `app/` y no en una feature porque la navegación
+/* Las cinco pestañas. Viven en `app/` y no en una feature porque la navegación
    es del cascarón: la barra inferior de móvil y la lateral de escritorio pintan
    exactamente la misma lista. */
 
-import { Landmark, Layers, LayoutGrid, Receipt } from 'lucide-react';
+import { Landmark, Layers, LayoutGrid, Receipt, TrendingUp } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 export type NavItem = {
@@ -14,6 +14,7 @@ export type NavItem = {
 export const NAV_ITEMS: NavItem[] = [
   { id: 'home', label: 'Inicio', icon: LayoutGrid },
   { id: 'history', label: 'Historial', icon: Receipt },
+  { id: 'evolution', label: 'Evolución', icon: TrendingUp },
   { id: 'msi', label: 'MSI', icon: Layers },
   { id: 'accounts', label: 'Cuentas', icon: Landmark },
 ];
@@ -22,6 +23,7 @@ export const NAV_ITEMS: NavItem[] = [
 export const TAB_TITLES: Record<string, string> = {
   home: 'Inicio',
   history: 'Historial',
+  evolution: 'Evolución del saldo',
   msi: 'Compras a meses',
   accounts: 'Cuentas',
 };

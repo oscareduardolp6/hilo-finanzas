@@ -58,9 +58,9 @@ Cuatro reglas que gobiernan todo el código:
 
 Componentes de **renderizado** (`ui/components/`) reciben props y devuelven JSX, sin store ni casos de uso. Componentes de **lógica** (`ui/containers/`) leen el store, ligan acciones y componen a los primeros.
 
-### Las once features
+### Las doce features
 
-`accounts`, `transactions`, `categories`, `installments` (MSI), `dashboard` (Inicio), `history`, `backup`, `monefy-import`, `receipt-ocr`, `benefits` (beneficios y promociones de tarjeta) y `settings`. Cada una es autocontenida: su dominio, sus casos de uso, su slice y su UI. Las hojas que abre se montan siempre y cada container decide si le toca pintarse.
+`accounts`, `transactions`, `categories`, `installments` (MSI), `dashboard` (Inicio), `history`, `evolution` (pestaña "Evolución": la gráfica del saldo total por plazos, reconstruida plegando los movimientos — sin caso de uso ni slice propio, el plazo elegido es el campo efímero `evolutionRange` de `ui-slice`; ver [tasks/evolucion-saldo.md](tasks/evolucion-saldo.md)), `backup`, `monefy-import`, `receipt-ocr`, `benefits` (beneficios y promociones de tarjeta) y `settings`. Cada una es autocontenida: su dominio, sus casos de uso, su slice y su UI (salvo las que, como `evolution`, no tienen nada que ejecutar). Las hojas que abre se montan siempre y cada container decide si le toca pintarse.
 
 (La sincronización manual entre dispositivos — feature `sync` — existió y se borró al pasar a Firestore; ver [tasks/backend-sync.md](tasks/backend-sync.md). La sesión de Google tampoco es una feature más: vive en `src/app/` porque estructuralmente tiene que resolverse *antes* de que el store — y por lo tanto cualquier feature — exista.)
 

@@ -2,6 +2,8 @@
    Nada de esto se hidrata ni se persiste — igual que antes del refactor. */
 
 import type { StateCreator } from 'zustand';
+import { DEFAULT_EVOLUTION_RANGE } from '../../features/evolution/domain/series';
+import type { EvolutionRangeId } from '../../features/evolution/domain/series';
 import type { TransactionFormDraft } from '../../features/transactions/domain/form';
 import type { Account, BenefitProgram, InstallmentPlan, TransactionType } from '../../shared/domain/types';
 import { makeSetter } from './setter';
@@ -22,6 +24,8 @@ export type UiSlice = {
   filterAccount: string;
   /** Efímero como los demás filtros: no se hidrata ni se persiste. */
   searchQuery: string;
+  /** El plazo de la gráfica de Evolución. Efímero, como los filtros. */
+  evolutionRange: EvolutionRangeId;
 
   sheetOpen: boolean;
   formType: TransactionType;
@@ -54,6 +58,7 @@ export type UiSlice = {
   setFilterStore: Setter<string>;
   setFilterAccount: Setter<string>;
   setSearchQuery: Setter<string>;
+  setEvolutionRange: Setter<EvolutionRangeId>;
 
   setSheetOpen: Setter<boolean>;
   setFormType: Setter<TransactionType>;
@@ -91,6 +96,7 @@ export const createUiSlice: StateCreator<HiloStore, [], [], UiSlice> = (set) => 
   filterStore: 'all',
   filterAccount: 'all',
   searchQuery: '',
+  evolutionRange: DEFAULT_EVOLUTION_RANGE,
 
   sheetOpen: false,
   formType: 'expense',
@@ -118,6 +124,7 @@ export const createUiSlice: StateCreator<HiloStore, [], [], UiSlice> = (set) => 
   setFilterStore: makeSetter<HiloStore, 'filterStore'>(set, 'filterStore'),
   setFilterAccount: makeSetter<HiloStore, 'filterAccount'>(set, 'filterAccount'),
   setSearchQuery: makeSetter<HiloStore, 'searchQuery'>(set, 'searchQuery'),
+  setEvolutionRange: makeSetter<HiloStore, 'evolutionRange'>(set, 'evolutionRange'),
 
   setSheetOpen: makeSetter<HiloStore, 'sheetOpen'>(set, 'sheetOpen'),
   setFormType: makeSetter<HiloStore, 'formType'>(set, 'formType'),
